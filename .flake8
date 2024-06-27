@@ -1,0 +1,12 @@
+[flake8]
+ignore =
+    # we need lambda functions for delegate calls
+    E731
+
+    # we have a lot of maths
+    E126
+    W503
+    W504
+
+indent-size = 2
+max-line-length = 120
