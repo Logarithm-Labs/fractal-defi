@@ -14,9 +14,16 @@ TESTS := tests
 
 # Clean
 clean:
-	rm -rf .mypy_cache
-	rm -rf .pytest_cache
 	rm -rf $(VENV)
+	find . -name __pycache__ -exec rm -rf {} \;
+	find . -name .pytest_cache -exec rm -rf {} \;
+	find . -name .mypy_cache -exec rm -rf {} \;
+	find . -name .coverage -exec rm -rf {} \;
+	find . -name '*runs' -exec rm -rf {} \;
+	find . -name '*mlruns' -exec rm -rf {} \;
+	find . -name '*mlartifacts' -exec rm -rf {} \;
+	find . -name .ipynb_checkpoints -exec rm -rf {} \;
+	find . -name '*loader' -exec rm -rf {} \;
 
 
 # Setup
