@@ -24,6 +24,14 @@ clean:
 	find . -name '*mlartifacts' -exec rm -rf {} \;
 	find . -name .ipynb_checkpoints -exec rm -rf {} \;
 	find . -name '*loader' -exec rm -rf {} \;
+	find . -name '*_cache' -exec rm -rf {} \;
+	find . -name '*_output' -exec rm -rf {} \;
+	find . -name '*_logs' -exec rm -rf {} \;
+	find . -name '*_data' -exec rm -rf {} \;
+	find . -name '*_results' -exec rm -rf {} \;
+	find . -name '*build' -exec rm -rf {} \;
+	find . -name '*dist' -exec rm -rf {} \;
+	find . -name '*egg-info' -exec rm -rf {} \;
 
 
 # Setup
