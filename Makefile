@@ -14,24 +14,24 @@ TESTS := tests
 
 # Clean
 clean:
-	rm -rf $(VENV)
-	find . -name __pycache__ -exec rm -rf {} \;
-	find . -name .pytest_cache -exec rm -rf {} \;
-	find . -name .mypy_cache -exec rm -rf {} \;
-	find . -name .coverage -exec rm -rf {} \;
-	find . -name '*runs' -exec rm -rf {} \;
-	find . -name '*mlruns' -exec rm -rf {} \;
-	find . -name '*mlartifacts' -exec rm -rf {} \;
-	find . -name .ipynb_checkpoints -exec rm -rf {} \;
-	find . -name '*loader' -exec rm -rf {} \;
-	find . -name '*_cache' -exec rm -rf {} \;
-	find . -name '*_output' -exec rm -rf {} \;
-	find . -name '*_logs' -exec rm -rf {} \;
-	find . -name '*_data' -exec rm -rf {} \;
-	find . -name '*_results' -exec rm -rf {} \;
-	find . -name '*build' -exec rm -rf {} \;
-	find . -name '*dist' -exec rm -rf {} \;
-	find . -name '*egg-info' -exec rm -rf {} \;
+	rm -rf $(VENV) || true
+	find . -name __pycache__ -exec rm -rf {} \; || true
+	find . -name .pytest_cache -exec rm -rf {} \; || true
+	find . -name .mypy_cache -exec rm -rf {} \; || true
+	find . -name .coverage -exec rm -rf {} \; || true
+	find . -name '*runs' -exec rm -rf {} \; || true
+	find . -name '*mlruns' -exec rm -rf {} \; || true
+	find . -name '*mlartifacts' -exec rm -rf {} \; || true
+	find . -name .ipynb_checkpoints -exec rm -rf {} \; || true
+	find . -name '*loader' -exec rm -rf {} \; || true
+	find . -name '*_cache' -exec rm -rf {} \; || true
+	find . -name '*_output' -exec rm -rf {} \; || true
+	find . -name '*_logs' -exec rm -rf {} \; || true
+	find . -name '*_data' -exec rm -rf {} \; || true
+	find . -name '*_results' -exec rm -rf {} \; || true
+	find . -name '*build' -exec rm -rf {} \; || true
+	find . -name 'dist' -exec rm -rf {} \; || true
+	find . -name '*.egg-info' -exec rm -rf {} \; || true
 
 
 # Setup
@@ -67,17 +67,22 @@ lint: isort flake mypy pylint
 
 # Test
 .pytest:
-	pytest -s -v
+	pytest -vvs
 
 test: .venv .pytest
 
 
-# Docker
 build:
-	docker-compose build
+	python3 setup.py sdist bdist_wheel
 
-run: build
-	docker-compose up -d
+
+# Requires export TWINE_PASSWORD=...
+twine_upload:
+	twine upload dist/*
+
+
+twine_upload_test:
+	twine upload --repository testpypi dist/*
 
 # All
 dev: setup format lint test
