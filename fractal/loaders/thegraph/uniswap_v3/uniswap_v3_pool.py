@@ -1,19 +1,26 @@
-import json
 from datetime import datetime, timedelta
 
 import pandas as pd
-import requests
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.structs import PoolHistory
+from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_arbitrum import \
+    ArbitrumUniswapV3Loader
+from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
+    EthereumUniswapV3Loader
 
 
-class UniswapV3EthereumDayDataLoader(Loader):
+class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
 
-    def __init__(self, pool: str, loader_type: LoaderType) -> None:
-        super().__init__(loader_type)
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+        """
+        Args:
+            api_key (str): The Graph API key
+            pool (str): Pool address
+            loader_type (LoaderType): loader type
+        """
+        super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = pool
-        self._url: str = 'https://api.thegraph.com/subgraphs/name/uniswap/uniswap-v3'
 
     def extract(self):
         query = """
@@ -31,9 +38,8 @@ class UniswapV3EthereumDayDataLoader(Loader):
             }
         }
         """ % self.pool.lower()
-        response = requests.post(self._url, json={'query': query}, timeout=10)
-        data = json.loads(response.text)
-        self._data = pd.DataFrame(data['data']['poolDayDatas'])
+        response = self._make_request(query)
+        self._data = pd.DataFrame(response['poolDayDatas'])
 
     def transform(self):
         self._data['date'] = self._data['date'].apply(lambda x: datetime.utcfromtimestamp(x))
@@ -56,16 +62,18 @@ class UniswapV3EthereumDayDataLoader(Loader):
             volumes=self._data['volumeUSD'].astype(float).values,
             fees=self._data['feesUSD'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date']).values
+            time=self._data['date'].values
         )
 
 
-class UniswapV3ArbitrumDayDataLoader(Loader):
+class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
 
-    def __init__(self, pool: str, loader_type: LoaderType) -> None:
-        super().__init__(loader_type)
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+        super().__init__(
+            api_key=api_key,
+            loader_type=loader_type,
+        )
         self.pool: str = pool
-        self._url: str = 'https://api.thegraph.com/subgraphs/name/messari/uniswap-v3-arbitrum'
 
     def extract(self):
         query = """
@@ -83,9 +91,8 @@ class UniswapV3ArbitrumDayDataLoader(Loader):
             }
         }
         """ % self.pool.lower()
-        response = requests.post(self._url, json={'query': query}, timeout=10)
-        data = json.loads(response.text)
-        self._data = pd.DataFrame(data['data']['liquidityPoolDailySnapshots'])
+        response = self._make_request(query)
+        self._data = pd.DataFrame(response['liquidityPoolDailySnapshots'])
 
     def transform(self):
         self._data['date'] = self._data['timestamp'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
@@ -108,14 +115,14 @@ class UniswapV3ArbitrumDayDataLoader(Loader):
             volumes=self._data['volumeUSD'].astype(float).values,
             fees=self._data['feesUSD'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date']).values
+            time=self._data['date'].values
         )
 
 
-class UniswapV3ArbitrumHourDataLoader(UniswapV3ArbitrumDayDataLoader):
+class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
 
-    def __init__(self, pool: str, loader_type: LoaderType) -> None:
-        super().__init__(pool, loader_type=loader_type)
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+        super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
 
     def transform(self):
         super().transform()
@@ -137,10 +144,10 @@ class UniswapV3ArbitrumHourDataLoader(UniswapV3ArbitrumDayDataLoader):
         self._data['date'] = self._data['index']
 
 
-class UniswapV3EthereumHourDataLoader(UniswapV3EthereumDayDataLoader):
+class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
-    def __init__(self, pool: str, loader_type: LoaderType) -> None:
-        super().__init__(pool, loader_type=loader_type)
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+        super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
 
     def transform(self):
         super().transform()

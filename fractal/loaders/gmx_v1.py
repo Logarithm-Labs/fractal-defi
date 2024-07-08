@@ -3,7 +3,7 @@ import json
 import pandas as pd
 import requests
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import FundingHistory
 
 

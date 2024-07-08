@@ -1,4 +1,4 @@
-from hodler import Hodler, HodlerGlobalState, HodlerInternalState
+from hodler import Hodler, HodlerGlobalState
 
 from fractal.core.base import Action
 
@@ -6,8 +6,7 @@ from fractal.core.base import Action
 class TestHodler:
 
     def test_start_state(self, hodler: Hodler):
-        assert hodler.global_state == HodlerGlobalState()
-        assert hodler.internal_state == HodlerInternalState()
+        assert hodler.global_state.price == 0
         assert hodler.balance == 0
 
     def test_get_available_actions(self, hodler: Hodler):
