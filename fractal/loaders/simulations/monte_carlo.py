@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import numpy as np
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import PriceHistory
 
 
