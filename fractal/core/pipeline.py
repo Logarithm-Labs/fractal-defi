@@ -46,13 +46,13 @@ class ExperimentConfig:
     Attributes:
         strategy_type (Type[BaseStrategy]): Strategy class to run.
         params_grid (ParameterGrid): Grid of parameters to run the strategy.
-        fractal_observations (Optional[List[Observation]]): Observations for fractaling.
+        backtest_observations (Optional[List[Observation]]): Observations for fractaling.
         fractal_trajectories (Optional[List[List[Observation]]): Trajectories for fractaling.
         window_size (Optional[int]): Window size for scenarios.
     """
     strategy_type: Type[BaseStrategy]
     params_grid: Iterable[BaseStrategyParams] | ParameterGrid
-    fractal_observations: Optional[List[Observation]] = None
+    backtest_observations: Optional[List[Observation]] = None
     fractal_trajectories: Optional[List[List[Observation]]] = None
     window_size: Optional[int] = None
     debug: Optional[bool] = False
@@ -150,9 +150,9 @@ class DefaultPipeline(Pipeline):
         with mlflow.start_run(run_name=run_name):
             mlflow.log_params(params)
             # check all levels of experiment
-            if self._config.fractal_observations:
+            if self._config.backtest_observations:
                 strategy_data: StrategyResult = launcher.run_strategy(
-                    self._config.fractal_observations, debug=self._config.debug
+                    self._config.backtest_observations, debug=self._config.debug
                 )
                 strategy_data_df: pd.DataFrame = strategy_data.to_dataframe()
                 metrics: StrategyMetrics = strategy_data.get_metrics(strategy_data_df)
@@ -177,7 +177,7 @@ class DefaultPipeline(Pipeline):
                 self.__log_secondary_metrics(metrics, prefix="fractal_trajectories")
             if self._config.window_size:
                 strategy_data_list: List[StrategyResult] = launcher.run_scenario(
-                    self._config.fractal_observations, self._config.window_size, debug=False
+                    self._config.backtest_observations, self._config.window_size, debug=False
                 )
                 metrics: List[StrategyMetrics] = [
                     strategy_data.get_metrics(strategy_data.to_dataframe()) for strategy_data in strategy_data_list

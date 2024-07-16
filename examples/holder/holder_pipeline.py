@@ -48,7 +48,7 @@ if __name__ == '__main__':
     )
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=BinanceHodlerStrategy,
-        fractal_observations=build_observations(),
+        backtest_observations=build_observations(),
         window_size=24,
         params_grid=build_grid(),
         debug=True,
