@@ -38,10 +38,18 @@ class AaveEntity(BaseLendingEntity):
     """
     Represents an Aave isolated market entity.
     """
-    def __init__(self, *args, max_ltv: float = 0.8, liq_threshold: float = 0.85, **kwargs):
+
+    def __init__(self, *args, max_ltv: float = 0.8, liq_thr: float = 0.85, **kwargs):
+        """
+        Initializes an Aave entity.
+
+        Args:
+            max_ltv (float, optional): The maximum loan-to-value ratio.
+            liq_thr (float, optional): The liquidation threshold.
+        """
         super().__init__(*args, **kwargs)
         self.max_ltv: float = max_ltv
-        self.liq_threshold: float = liq_threshold
+        self.liq_thr: float = liq_thr
 
     def _initialize_states(self):
         self._internal_state: AaveInternalState = AaveInternalState()
@@ -55,10 +63,7 @@ class AaveEntity(BaseLendingEntity):
             amount_in_product (float, optional): The amount to redeem in product value.
         """
         if amount_in_product > self._internal_state.borrowed:
-            raise EntityException(
-                f"Repay amount exceeds borrowed amount. Borrowed:\
-                {self._internal_state.borrowed}, Repay: {amount_in_product}"
-            )
+            raise EntityException("Repay amount exceeds borrowed amount")
         self._internal_state.borrowed -= amount_in_product
 
     def action_borrow(self, amount_in_product: float):
@@ -68,9 +73,13 @@ class AaveEntity(BaseLendingEntity):
         Args:
             amount_in_product (float, optional): The amount to borrow in product value.
         """
+        if self._internal_state.collateral == 0:
+            raise EntityException("No collateral available.")
         if (
-            amount_in_product * self._global_state.product_price
-            > self._internal_state.collateral * self._global_state.notional_price * self.max_ltv
+            amount_in_product
+            * self._global_state.product_price
+            / (self._internal_state.collateral * self._global_state.notional_price)
+            > self.max_ltv
         ):
             raise EntityException("Exceeds maximum loan-to-value ratio.")
         self._internal_state.borrowed += amount_in_product
@@ -93,12 +102,35 @@ class AaveEntity(BaseLendingEntity):
         Args:
             amount_in_notional (float): The amount to withdraw in notional value.
         """
+        if amount_in_notional > self._internal_state.collateral:
+            raise EntityException("Withdrawal amount exceeds collateral.")
         if (
-            self._internal_state.borrowed * self._global_state.product_price
+            self._internal_state.borrowed
+            * self._global_state.product_price
             / ((self._internal_state.collateral - amount_in_notional) * self._global_state.notional_price)
-        ) > self.max_ltv:
+            > self.max_ltv
+        ):
             raise EntityException("Exceeds maximum loan-to-value ratio.")
         self._internal_state.collateral -= amount_in_notional
+
+    def calculate_repay(self, target_ltv: float) -> float:
+        """
+        Calculates the amount to repay in order to reach the target loan-to-value ratio.
+
+        Args:
+            target_ltv (float): The target loan-to-value ratio.
+
+        Returns:
+            float: The amount to repay in product value.
+        """
+        if target_ltv < 0 or target_ltv > self.ltv:
+            raise EntityException("Invalid target LTV.")
+        return (
+            self._internal_state.collateral
+            * self._global_state.notional_price
+            * (self.ltv - target_ltv)
+            / self._global_state.product_price
+        )
 
     @property
     def balance(self) -> float:
@@ -122,11 +154,15 @@ class AaveEntity(BaseLendingEntity):
         Calculates the loan-to-value (LTV) ratio of the Aave entity.
 
         LTV ratio is calculated as the ratio of the borrowed amount to the collateral.
+
         Returns:
             float: The LTV ratio.
         """
+        if self._internal_state.borrowed == 0:
+            return 0
         return (
-            self._internal_state.borrowed * self._global_state.product_price
+            self._internal_state.borrowed
+            * self._global_state.product_price
             / (self._internal_state.collateral * self._global_state.notional_price)
         )
 
@@ -136,12 +172,12 @@ class AaveEntity(BaseLendingEntity):
 
         Liquidation occurs when the LTV ratio exceeds the liquidation threshold.
         """
-        if self.ltv >= self.liq_threshold:
+        if self._internal_state.collateral == 0 or self.ltv >= self.liq_thr:
             self._internal_state.collateral = 0
             self._internal_state.borrowed = 0
 
     def update_state(self, state: AaveGlobalState):
         self._global_state = state
-        self._internal_state.collateral *= (state.lending_rate + 1)
-        self._internal_state.borrowed *= (state.borrowing_rate + 1)
+        self._internal_state.collateral *= state.lending_rate + 1
+        self._internal_state.borrowed *= state.borrowing_rate + 1
         self.check_liquidation()
