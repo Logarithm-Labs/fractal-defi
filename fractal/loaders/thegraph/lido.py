@@ -54,7 +54,7 @@ class StETHLoader(ArbitrumGraphLoader):
         self._data = self._data.set_index("blockTime")
         self._data = self._data.resample("1h").mean().ffill()
         self._data = self._data.reset_index()
-        self._data['apr'] /= (365 * 24)
+        self._data['apr'] /= (365 * 24 * 100)
         self._data = self._data.rename(columns={"blockTime": "time", "apr": "rate"})
 
     def load(self):
