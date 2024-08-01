@@ -1,6 +1,14 @@
 fractal.core.entities package
 =============================
 
+Subpackages
+-----------
+
+.. toctree::
+   :maxdepth: 4
+
+   fractal.core.entities.models
+
 Submodules
 ----------
 
