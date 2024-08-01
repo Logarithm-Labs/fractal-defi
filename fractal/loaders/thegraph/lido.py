@@ -1,18 +1,27 @@
-import json
 import time
 
 import pandas as pd
-import requests
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.structs import RateHistory
+from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader
 
 
-class LidoLoader(Loader):
+class StETHLoader(ArbitrumGraphLoader):
+    """
+    StETH (Lido) Loader.
+    https://thegraph.com/explorer/subgraphs/Sxx812XgeKyzQPaBpR5YZWmGV5fZuBaPdh7DFhzSwiQ?view=Query&chain=arbitrum-one
 
-    def __init__(self) -> None:
-        super().__init__(LoaderType.CSV)
-        self.url: str = "https://api.thegraph.com/subgraphs/name/StakedETHfinance/StakedETH"
+    SUBGRAPH_ID: Sxx812XgeKyzQPaBpR5YZWmGV5fZuBaPdh7DFhzSwiQ
+    """
+    SUBGRAPH_ID = "Sxx812XgeKyzQPaBpR5YZWmGV5fZuBaPdh7DFhzSwiQ"
+
+    def __init__(self, api_key: str, loader_type: LoaderType) -> None:
+        super().__init__(
+            api_key=api_key,
+            loader_type=loader_type,
+            subgraph_id=self.SUBGRAPH_ID,
+        )
 
     def extract(self):
         dfs = []
@@ -30,16 +39,11 @@ class LidoLoader(Loader):
             }
             }
             """ % blockTime
-
-            response = requests.post(self.url, json={"query": query}, timeout=10)
-            if response.status_code != 200:
-                time.sleep(1)
-                continue
-            data = json.loads(response.text)
-            if not data["data"]["totalRewards"]:
+            data = self._make_request(query)
+            if data is None or data["totalRewards"] is None or len(data["totalRewards"]) == 0:
                 break
-            blockTime = data["data"]["totalRewards"][-1]["blockTime"]
-            dfs.append(pd.DataFrame(data["data"]["totalRewards"]))
+            blockTime = data["totalRewards"][-1]["blockTime"]
+            dfs.append(pd.DataFrame(data["totalRewards"]))
         self._data = pd.concat(dfs, ignore_index=True)
 
     def transform(self):
@@ -50,7 +54,7 @@ class LidoLoader(Loader):
         self._data = self._data.set_index("blockTime")
         self._data = self._data.resample("1h").mean().ffill()
         self._data = self._data.reset_index()
-        self._data['apr'] /= (365 * 24)
+        self._data['apr'] /= (365 * 24 * 100)
         self._data = self._data.rename(columns={"blockTime": "time", "apr": "rate"})
 
     def load(self):
