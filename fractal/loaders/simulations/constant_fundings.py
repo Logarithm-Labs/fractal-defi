@@ -1,13 +1,19 @@
 import pandas as pd
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import FundingHistory
 
 
 class ConstantFundingsLoader(Loader):
+    """
+    Generates a constant funding rate for a given period.
+    """
     def __init__(self, rate: float = -0.001, freq: str = "D",
                  start: str = '2020-01-01', end: str = '2025-01-01') -> None:
-        super().__init__(LoaderType.CSV)
+        """
+        Generates a constant funding rate for a given period.
+        """
+        super().__init__(loader_type=LoaderType.CSV)
         self.rate = rate
         self.freq = freq
         self.start = start

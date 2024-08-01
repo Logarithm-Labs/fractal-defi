@@ -8,7 +8,7 @@ import pandas as pd
 from catboost import CatBoostRegressor
 from scipy import stats
 
-from fractal.loaders.loader import Loader, LoaderType
+from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import PoolHistory, PriceHistory
 
 
@@ -63,7 +63,6 @@ class LPMLSimulatedStatesLoader(Loader):
         _random (random.Random): The random number generator.
         _np_random (numpy.random.Generator): The numpy random number generator.
         _seed (int): The seed for random number generation.
-
     """
 
     def __init__(

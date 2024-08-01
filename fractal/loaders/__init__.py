@@ -1,22 +1,23 @@
 from fractal.loaders.aave import AaveV2EthereumLoader, AaveV3ArbitrumLoader
+from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.binance import (BinanceDayPriceLoader,
                                      BinanceFundingLoader,
                                      BinanceHourPriceLoader)
-from fractal.loaders.constant_fundings import ConstantFundingsLoader
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
-from fractal.loaders.lido import LidoLoader
-from fractal.loaders.loader import Loader, LoaderType
-from fractal.loaders.lp_ml_simulated import (LPMLSimulatedStatesLoader,
-                                             LPSimulatedStates)
-from fractal.loaders.monte_carlo import MonteCarloHourPriceLoader
-from fractal.loaders.structs import (FundingHistory, PoolHistory, PriceHistory,
-                                     RateHistory)
-from fractal.loaders.uniswap_v2_lp import UniswapV2LPLoader
-from fractal.loaders.uniswap_v3 import (UniswapV3ArbitrumDayDataLoader,
-                                        UniswapV3ArbitrumHourDataLoader,
-                                        UniswapV3EthereumDayDataLoader,
-                                        UniswapV3EthereumHourDataLoader)
-from fractal.loaders.uniswap_v3_spot import UniswapV3PricesLoader
+from fractal.loaders.simulations import (ConstantFundingsLoader,
+                                         LPMLSimulatedStatesLoader,
+                                         LPSimulatedStates,
+                                         MonteCarloHourPriceLoader)
+from fractal.loaders.structs import (FundingHistory, LendingHistory,
+                                     PoolHistory, PriceHistory, RateHistory)
+from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
+                                      EthereumUniswapV2PoolDataLoader,
+                                      GraphLoaderException, StETHLoader,
+                                      UniswapV3ArbitrumPoolDayDataLoader,
+                                      UniswapV3ArbitrumPoolHourDataLoader,
+                                      UniswapV3ArbitrumPricesLoader,
+                                      UniswapV3EthereumPoolDayDataLoader,
+                                      UniswapV3EthereumPoolHourDataLoader)
 
 __all__ = [
     "Loader",
@@ -32,14 +33,18 @@ __all__ = [
     "BinanceHourPriceLoader",
     "GMXV1FundingLoader",
     "MonteCarloHourPriceLoader",
-    "UniswapV3ArbitrumDayDataLoader",
-    "UniswapV3ArbitrumHourDataLoader",
-    "UniswapV3EthereumDayDataLoader",
-    "UniswapV3EthereumHourDataLoader",
-    "LidoLoader",
+    "UniswapV3ArbitrumPoolDayDataLoader",
+    "UniswapV3ArbitrumPoolHourDataLoader",
+    "UniswapV3EthereumPoolDayDataLoader",
+    "UniswapV3EthereumPoolHourDataLoader",
+    "StETHLoader",
     "ConstantFundingsLoader",
     "LPMLSimulatedStatesLoader",
     "LPSimulatedStates",
-    "UniswapV2LPLoader",
-    "UniswapV3PricesLoader",
+    "EthereumUniswapV2PoolDataLoader",
+    "BaseGraphLoader",
+    "GraphLoaderException",
+    "ArbitrumGraphLoader",
+    "LendingHistory",
+    "UniswapV3ArbitrumPricesLoader"
 ]

@@ -48,7 +48,7 @@ mlflow_config: MLFlowConfig = MLFlowConfig(
 )
 experiment_config: ExperimentConfig = ExperimentConfig(
     strategy=GMXV2UniswapV3Basis,
-    fractal_observations=build_observations(),
+    backtest_observations=build_observations(),
     window_size=24,
     params_grid=build_grid(),
     debug=True
