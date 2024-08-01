@@ -125,7 +125,7 @@ class GMXV2Entity(BaseHedgeEntity):
             raise GMXV2EntityException(f"Not enough balance to withdraw: {self.balance} < {amount_in_notional}.")
         max_withdrawal: float = self.balance - np.abs(self.size * self._global_state.price) / self.LIQUIDATION_LEVERAGE
         if amount_in_notional > max_withdrawal:
-            raise GMXV2EntityException("Exceeds maximum withdrawal limit: {amount_in_notional} > {max_withdrawal}.")
+            raise GMXV2EntityException(f"Exceeds maximum withdrawal limit: {amount_in_notional} > {max_withdrawal}.")
         self._internal_state.collateral -= amount_in_notional
 
     def action_open_position(self, amount_in_product: float):

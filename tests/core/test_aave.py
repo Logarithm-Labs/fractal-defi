@@ -93,3 +93,12 @@ def test_update_state(aave_entity: AaveEntity):
     aave_entity.update_state(state)
     assert aave_entity.internal_state.collateral == 1000 * (1 + 0.01)
     assert aave_entity.internal_state.borrowed == 50 * (1 + 0.02)
+
+def test_calculate_repay(aave_entity: AaveEntity):
+    aave_entity.internal_state.collateral = 1000
+    aave_entity.internal_state.borrowed = 50
+    aave_entity.global_state.product_price = 10
+    aave_entity.global_state.notional_price = 1
+    target_ltv = 0.4
+    expected_repay = 10
+    assert aave_entity.calculate_repay(target_ltv) == pytest.approx(expected_repay, 1e-6)
