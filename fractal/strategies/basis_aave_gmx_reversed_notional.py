@@ -41,6 +41,33 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
         5. Rebalance the entities to maintain the target leverage ratio.
         6. Re-lend the assets to maintain the target loan-to-value ratio.
 
+    Example strategy using WETH notional, AAVE V3 lending, and WETH-USDC GMXV2-UNIV3 underlying Basis strategy:
+    1. Starting with Y in WETH:
+        - Deposit Y WETH on AAVE as collateral.
+        - Borrow X = Y * LTV * P USDC from AAVE.
+        - Buy (X * LVG) / (P * (LVG + 1)) WETH on UNIV3 for (X * LVG) / (LVG + 1) USDC.
+        - Deposit X / (LVG + 1) USDC as collateral on GMXV2.
+        - Open a short position on GMXV2 with the same size in WETH as on UNIV3.
+
+    2. If leverage on GMXV2 exceeds the maximum leverage:
+        - Sell part of WETH on UNIV3.
+        - Transfer cash to GMXV2.
+        - Partially close the GMXV2 short to maintain a delta-neutral strategy.
+
+    3. If LTV on AAVE exceeds the maximum LTV:
+        - Calculate the needed repay amount as:
+            N = L_A * LTV_0 * P - B_A,
+            where L_A is the amount lent on AAVE, B_A is the amount borrowed on AAVE, 
+            P is the current price, and LTV_0 is the target LTV.
+        - Calculate:
+            alpha = (C_H * N) / (S_H * P + C_H),
+            beta = (S_H * N) / (S_H * P + C_H),
+            where C_H is the GMXV2 collateral, and S_H is the size of the short.
+        - Sell beta amount of WETH on UNIV3.
+        - Partially close the position on GMXV2 for the same size.
+        - Withdraw alpha USDC from GMXV2 to AAVE collateral.
+        - Withdraw beta * P USDC from UNIV3 to AAVE collateral.
+
     Attributes:
         _params (BasisAaveGmxReversedNotionalParams): Hyperparameters for the strategy.
         _debug (bool): Flag to enable debug mode.
