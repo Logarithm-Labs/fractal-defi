@@ -10,50 +10,67 @@ from fractal.core.entities.uniswap_v3_spot import UniswapV3SpotEntity
 
 
 @dataclass
-class ReversedNotionalHyperparams(BaseStrategyParams):
+class BasisAaveGmxReversedNotionalParams(BaseStrategyParams):
+    """
+    Hyperparameters for the BasisAaveGmxReversedNotional strategy.
+
+    Attributes:
+        TARGET_LEVERAGE (float): The target leverage ratio.
+        MAX_LEVERAGE (float): The maximum leverage ratio.
+        TARGET_LTV (float): The target loan-to-value ratio.
+        MAX_LTV (float): The maximum loan-to-value ratio.
+        INITIAL_BALANCE (float): The initial balance to deposit into the strategy.
+        STAKE (bool): Indicates whether to stake spot.
+    """
     TARGET_LEVERAGE: float
     MAX_LEVERAGE: float
     TARGET_LTV: float
     MAX_LTV: float
     INITIAL_BALANCE: float
+    STAKE: bool
 
 
-class ReversedNotionalStrategy(BaseStrategy):
+class BasisAaveGmxReversedNotional(BaseStrategy):
     """
     A basis strategy with non usd notional.
+    Strategy is based on the following steps:
+        1. Lend notional (for example, ETH) to Aave.
+        2. Borrow stablecoin (for example, USDC) from Aave.
+        3. Buy spot (for example, ETH) with borrowed stablecoin.
+        4. Open a short position on GMX with spot.
+        5. Rebalance the entities to maintain the target leverage ratio.
+        6. Re-lend the assets to maintain the target loan-to-value ratio.
 
     Attributes:
-        _params (ReversedNotionalHyperparams): Hyperparameters for the strategy.
-        _stake (bool): Indicates whether to stake assets.
+        _params (BasisAaveGmxReversedNotionalParams): Hyperparameters for the strategy.
+        _debug (bool): Flag to enable debug mode.
 
     Examples:
         For correct calculation of metrics, the notional price should be provided.
 
-        >>> result = ReversedNotionalStrategy(params).run()
+        >>> result = BasisAaveGmxReversedNotional(params).run()
         >>> metrics = result.get_metrics(result.to_dataframe(), notional_price='SPOT_price')
     """
 
     def __init__(
         self,
         *args,
-        params: Optional[ReversedNotionalHyperparams] = None,
+        params: Optional[BasisAaveGmxReversedNotionalParams] = None,
         debug: bool = False,
-        stake: bool = True,
         **kwargs,
     ):
         """
-        Initializes the ReversedNotionalStrategy.
+        Initializes the BasisAaveGmxReversedNotional.
 
         Args:
             *args: Variable length argument list.
-            params (Optional[ReversedNotionalHyperparams]): Hyperparameters for the strategy.
+            params (Optional[BasisAaveGmxReversedNotionalParams]): Hyperparameters for the strategy.
             debug (bool): Flag to enable debug mode.
-            stake (bool): Flag to indicate whether to stake assets.
             **kwargs: Arbitrary keyword arguments.
         """
-        self._params: ReversedNotionalHyperparams = None  # set for type hinting
+        self._params: BasisAaveGmxReversedNotionalParams = None  # set for type hinting
         super().__init__(params=params, debug=debug, *args, **kwargs)
-        self._stake = stake
+        self._stake = params.STAKE
 
     def set_up(self, *args, **kwargs):
         """
