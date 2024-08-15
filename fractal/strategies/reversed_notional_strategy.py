@@ -19,6 +19,20 @@ class ReversedNotionalHyperparams(BaseStrategyParams):
 
 
 class ReversedNotionalStrategy(BaseStrategy):
+    """
+    A basis strategy with non usd notional.
+
+    Attributes:
+        _params (ReversedNotionalHyperparams): Hyperparameters for the strategy.
+        _stake (bool): Indicates whether to stake assets.
+
+    Examples:
+        For correct calculation of metrics, the notional price should be provided.
+
+        >>> result = ReversedNotionalStrategy(params).run()
+        >>> metrics = result.get_metrics(result.to_dataframe(), notional_price='SPOT_price')
+    """
+
     def __init__(
         self,
         *args,
@@ -27,11 +41,28 @@ class ReversedNotionalStrategy(BaseStrategy):
         stake: bool = True,
         **kwargs,
     ):
+        """
+        Initializes the ReversedNotionalStrategy.
+
+        Args:
+            *args: Variable length argument list.
+            params (Optional[ReversedNotionalHyperparams]): Hyperparameters for the strategy.
+            debug (bool): Flag to enable debug mode.
+            stake (bool): Flag to indicate whether to stake assets.
+            **kwargs: Arbitrary keyword arguments.
+        """
         self._params: ReversedNotionalHyperparams = None  # set for type hinting
         super().__init__(params=params, debug=debug, *args, **kwargs)
         self._stake = stake
 
     def set_up(self, *args, **kwargs):
+        """
+        Sets up the strategy by registering entities.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+        """
         self.register_entity(NamedEntity(entity_name="HEDGE", entity=GMXV2Entity()))
         self.register_entity(NamedEntity(entity_name="LENDING", entity=AaveEntity()))
         if self._stake:
@@ -40,6 +71,16 @@ class ReversedNotionalStrategy(BaseStrategy):
             self.register_entity(NamedEntity(entity_name="SPOT", entity=UniswapV3SpotEntity()))
 
     def predict(self, *args, **kwargs) -> List[ActionToTake]:
+        """
+        Predicts the actions to take based on the current state of the entities.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            List[ActionToTake]: A list of actions to take.
+        """
         hedge: BaseHedgeEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
         lending: BaseLendingEntity = self.get_entity("LENDING")
@@ -62,6 +103,15 @@ class ReversedNotionalStrategy(BaseStrategy):
         return []
 
     def _relend(self, liquidated: bool = False) -> List[ActionToTake]:
+        """
+        Re-lends the assets to maintain the target loan-to-value ratio.
+
+        Args:
+            liquidated (bool): Flag to indicate if the lending entity is liquidated.
+
+        Returns:
+            List[ActionToTake]: A list of actions to take.
+        """
         hedge: BaseHedgeEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
         lending: BaseLendingEntity = self.get_entity("LENDING")
@@ -124,8 +174,13 @@ class ReversedNotionalStrategy(BaseStrategy):
 
     def _rehedge(self, liquidated: bool = False) -> List[ActionToTake]:
         """
-        Rebalance the entities to maintain the target leverage ratio.
-        Returns a list of ActionToTake objects representing the rebalancing actions to be executed.
+        Rebalances the entities to maintain the target leverage ratio.
+
+        Args:
+            liquidated (bool): Flag to indicate if the hedge entity is liquidated.
+
+        Returns:
+            List[ActionToTake]: A list of actions to take.
         """
         hedge: BaseHedgeEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
@@ -195,7 +250,12 @@ class ReversedNotionalStrategy(BaseStrategy):
         return []
 
     def _deposit_into_strategy(self) -> List[ActionToTake]:
+        """
+        Deposits initial funds into the strategy.
 
+        Returns:
+            List[ActionToTake]: A list of actions to take.
+        """
         lending: BaseLendingEntity = self.get_entity("LENDING")
 
         product_to_hedge_lambda = lambda obj: -obj.get_entity("SPOT").internal_state.amount
