@@ -1,8 +1,8 @@
 from fractal.loaders.base_loader import LoaderType
-from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader
+from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import UniswapV3Loader
 
 
-class EthereumUniswapV3Loader(ArbitrumGraphLoader):
+class EthereumUniswapV3Loader(UniswapV3Loader):
     """
     Loader for Uniswap V3 Ethereum.
     The Graph:
