@@ -1,6 +1,5 @@
-
-from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from datetime import datetime
+from typing import Optional
 
 import pandas as pd
 import requests
@@ -20,6 +19,17 @@ class HyperliquidFundingRatesLoader(Loader):
         self.public_key = ''
 
     def extract(self, ticker: str, start_time: datetime = None, end_time: datetime = None):
+        """
+
+        Args:
+            ticker:         Hyperliquid asset alias
+            start_time:     Collection start time
+            end_time:       Collection end time
+
+        Returns:
+            pd.DataFrame: pandas Dataframe with collected funding rates and premiums
+
+        """
 
         headers = {
             "Content-Type": "application/json"
@@ -35,13 +45,12 @@ class HyperliquidFundingRatesLoader(Loader):
         else:
             end_time = int(datetime.strptime(str(end_time), "%Y-%m-%d").timestamp() * 1000)
 
-
         param_dict = {'type': "fundingHistory",
                       'coin': self.ticker,
                       'startTime': start_time,
                       'endTime': end_time}
 
-        response = requests.post(self._url,headers=headers, json=param_dict)
+        response = requests.post(self._url, headers=headers, json=param_dict)
 
         if response.status_code == 200:
             self._data = pd.DataFrame(response.json())
@@ -56,8 +65,17 @@ class HyperliquidFundingRatesLoader(Loader):
     def load(self):
         self._load(self.ticker)
 
-
     def read(self, with_run: bool = False):
+        """
+        Reads the funding history data from the HyperLiquid loader.
+
+        Args:
+            with_run: with_run (bool, optional): If True, runs the loader before reading the data. Defaults to False.
+
+        Returns:
+            FundingHistory: structure with funding rate values
+
+        """
         if with_run:
             self.run()
         else:
@@ -68,7 +86,6 @@ class HyperliquidFundingRatesLoader(Loader):
         )
 
 
-
 class HyperLiquidPerpsPricesLoader(Loader):
 
     def __init__(self, ticker: str, loader_type: LoaderType):
@@ -77,6 +94,18 @@ class HyperLiquidPerpsPricesLoader(Loader):
         self._url: str = 'https://api.hyperliquid.xyz/info'
 
     def extract(self, ticker: str, interval: str, start_time: datetime = None, end_time: datetime = None):
+        """
+
+        Args:
+            ticker:         Hyperliquid asset alias
+            interval:       kline collection interval; Available intervals: ("1m", "5m", "15m", "1h", "1d")
+            start_time:     Collection start time
+            end_time:       Collection end time
+
+        Returns:
+            pd.DataFrame: pandas Dataframe with collected price klines data
+
+        """
 
         headers = {
             "Content-Type": "application/json"
@@ -91,8 +120,6 @@ class HyperLiquidPerpsPricesLoader(Loader):
             end_time = int(datetime.strptime("2023-05-13", "%Y-%m-%d").timestamp() * 1000)
         else:
             end_time = int(datetime.strptime(str(end_time), "%Y-%m-%d").timestamp() * 1000)
-
-        # interval = "15m"  # Test # Interval for the klines ("1m", "5m", "15m", "1h", "1d")
 
         paramdict = {
             "type": "candleSnapshot",
@@ -110,7 +137,8 @@ class HyperLiquidPerpsPricesLoader(Loader):
         if response_klines.status_code == 200:
             self._data = pd.DataFrame(response_klines.json())
         else:
-            print(f'Failed to make request to {self._url}: status code: {response_klines.status_code} ({response_klines.text})')
+            print(f'Failed to make request to {self._url}: '
+                  f'status code: {response_klines.status_code} ({response_klines.text})')
 
     def transform(self):
         self._data['t'] = pd.to_datetime(self._data['t'], unit='ms', origin='unix')
@@ -135,7 +163,7 @@ class HyperLiquidPerpsPricesLoader(Loader):
 
     def read(self, with_run: bool = False) -> PriceHistory:
         """
-        Reads the price history data from the HyperLiquid loader.
+        Reads the funding history data from the HyperLiquid loader.
 
         Args:
             with_run (bool, optional): If True, runs the loader before reading the data. Defaults to False.
