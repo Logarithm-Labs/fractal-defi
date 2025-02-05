@@ -17,7 +17,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/Fractal',
     include_package_data=True,
-    python_requires=">=3.8, <4",
+    python_requires=">=3.8, <3.13",
     install_requires=parse_requirements('requirements.txt'),
     classifiers=[
         'Programming Language :: Python :: 3',

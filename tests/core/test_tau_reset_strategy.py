@@ -12,10 +12,13 @@ def strategy():
     """
     Initialize the τ-reset strategy with test parameters.
     """
+    TauResetStrategy.token0_decimals = 6
+    TauResetStrategy.token1_decimals = 18
+    TauResetStrategy.tick_spacing = 60
     return TauResetStrategy(
         debug=True,
         params=TauResetParams(
-            TAU=100,  # Price range width
+            TAU=15,  # Price range width
             INITIAL_BALANCE=100_000  # Initial liquidity balance
         )
     )
@@ -74,8 +77,9 @@ def test_rebalance_on_price_outside_range(strategy: TauResetStrategy):
 
     uniswap_lp = strategy.get_entity("UNISWAP_V3")
     assert uniswap_lp.internal_state.cash == 0
-    assert uniswap_lp.internal_state.price_lower == 3100  # New lower bound
-    assert uniswap_lp.internal_state.price_upper == 3300  # New upper bound
+    assert uniswap_lp.internal_state.price_init == 3050  # New price
+    assert uniswap_lp.internal_state.price_lower == 2787.502657974827  # New lower bound
+    assert uniswap_lp.internal_state.price_upper == 3337.216548793694  # New upper bound
 
 def test_rebalance_within_bounds(strategy: TauResetStrategy):
     """
@@ -105,8 +109,8 @@ def test_rebalance_within_bounds(strategy: TauResetStrategy):
     )
 
     uniswap_lp = strategy.get_entity("UNISWAP_V3")
-    assert uniswap_lp.internal_state.price_lower == 2900  # Original lower bound
-    assert uniswap_lp.internal_state.price_upper == 3100  # Original upper bound
+    assert uniswap_lp.internal_state.price_lower == 2741.8058930899933  # Original lower bound
+    assert uniswap_lp.internal_state.price_upper == 3282.5080807806826  # Original upper bound
 
 def test_multiple_rebalances(strategy: TauResetStrategy):
     """
@@ -150,5 +154,5 @@ def test_multiple_rebalances(strategy: TauResetStrategy):
     uniswap_lp = strategy.get_entity("UNISWAP_V3")
     # Ensure multiple reallocations were triggered
     assert uniswap_lp.internal_state.price_init == 3350
-    assert uniswap_lp.internal_state.price_lower == 3250
-    assert uniswap_lp.internal_state.price_upper == 3450
+    assert uniswap_lp.internal_state.price_lower == 3061.683247283826
+    assert uniswap_lp.internal_state.price_upper == 3665.4673568717626
