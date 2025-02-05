@@ -36,3 +36,21 @@ def test_uniswap_v3_loaders(THE_GRAPH_API_KEY: str):
         assert data["fees"].dtype == "float64"
         assert data["liquidity"].dtype == "float64"
         assert data["tvl"].iloc[-1] > 0
+
+
+def test_uniswap_v3_get_pool_decimals(THE_GRAPH_API_KEY: str):
+    loader: UniswapV3EthereumPoolDayDataLoader = UniswapV3EthereumPoolDayDataLoader(
+            api_key=THE_GRAPH_API_KEY,
+            pool="0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8",  # USDC/ETH
+            loader_type=LoaderType.CSV
+    )
+    decimals = loader.get_pool_decimals("0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8")
+    assert decimals == (6, 18)
+
+    loader: UniswapV3ArbitrumPoolDayDataLoader = UniswapV3ArbitrumPoolDayDataLoader(
+            api_key=THE_GRAPH_API_KEY,
+            pool="0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443",  # USDC/ETH
+            loader_type=LoaderType.CSV
+    )
+    decimals = loader.get_pool_decimals("0xC31E54c7a869B9FcBEcc14363CF510d1c41fa443")
+    assert decimals == (18, 6)

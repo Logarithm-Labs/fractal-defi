@@ -59,7 +59,7 @@ class UniswapV3LPConfig:
         fees_rate (float): The fees rate.
         token0_decimals (int): The token0 decimals.
         token1_decimals (int): The token1 decimals.
-        trading_fee (float): The trading fee.
+        trading_fee (float): The trading fee while opening/closing a position.
     """
     fees_rate: float = 0.005
     token0_decimals: int = 18
@@ -119,7 +119,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         if amount_in_notional > self._internal_state.cash:
             raise EntityException("Insufficient funds to open position.")
         self._internal_state.cash -= amount_in_notional
-        amount_in_position = amount_in_notional * (1 - self.trading_fee)
+        amount_in_position = amount_in_notional
         self.is_position = True
         self.calculate_position_from_notional(
             deposit_amount_in_notional=amount_in_position,
@@ -217,7 +217,7 @@ class UniswapV3LPEntity(BasePoolEntity):
 
     def calculate_position(
         self, deposit_amount: float, price_current: float, price_lower: float, price_upper: float
-    ) -> str:
+    ):
         """
         Add position to positions dict
 
@@ -226,9 +226,6 @@ class UniswapV3LPEntity(BasePoolEntity):
             price_current (float): token1/token0 price
             price_upper (float): upper price bound
             price_lower (float): lower price bound
-
-        Returns:
-            id (str): id of position
         """
 
         if price_lower >= price_upper:
@@ -245,7 +242,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             raise EntityException("price_lower must be positive")
 
         # provide liquidity by the token1 amount
-        token1_amount = deposit_amount
+        token1_amount = deposit_amount * (1 - self.trading_fee)
         liquidity = deposit_amount / (1 / (price_current**0.5) - 1 / (price_upper**0.5))
         token0_amount = liquidity * (price_current**0.5 - price_lower**0.5)
 
@@ -269,7 +266,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         price_current: float,
         price_lower: float,
         price_upper: float,
-    ) -> str:
+    ):
         """
         Add a new position by notional amount.
         !Notional amount is the amount of token1!
@@ -279,9 +276,6 @@ class UniswapV3LPEntity(BasePoolEntity):
             price_current (float): token1/token0 price
             price_upper (float): upper price bound
             price_lower (float): lower price bound
-
-        Returns:
-            id (str): id of position
         """
         X = deposit_amount_in_notional
         token0 = self.get_desired_token0_amount(

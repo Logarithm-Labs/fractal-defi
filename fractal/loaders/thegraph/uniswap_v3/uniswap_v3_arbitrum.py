@@ -1,10 +1,10 @@
 from typing import Tuple
 
 from fractal.loaders.base_loader import LoaderType
-from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader
+from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import UniswapV3Loader
 
 
-class ArbitrumUniswapV3Loader(ArbitrumGraphLoader):
+class ArbitrumUniswapV3Loader(UniswapV3Loader):
     """
     Loader for Uniswap V3 Arbitrum.
     The Graph:
@@ -45,4 +45,4 @@ class ArbitrumUniswapV3Loader(ArbitrumGraphLoader):
         data = self._make_request(query)
         decimals0 = data["liquidityPools"][0]["inputTokens"][0]["decimals"]
         decimals1 = data["liquidityPools"][0]["inputTokens"][1]["decimals"]
-        return decimals0, decimals1
+        return float(decimals0), float(decimals1)
