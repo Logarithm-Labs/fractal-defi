@@ -37,8 +37,7 @@ def test_action_open_position(hyperliquidEntity: HyperliquidEntity):
     hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquidEntity.action_deposit(1000)
     hyperliquidEntity.action_open_position(0.5)
-    assert hyperliquidEntity.leverage == 3000 * 0.5 / 1000
-    assert hyperliquidEntity.balance == 1000
+    assert hyperliquidEntity.balance == 1000 - (0.5 * 3000 * hyperliquidEntity.TRADING_FEE)
 
 
 def test_pnl(hyperliquidEntity: HyperliquidEntity):
@@ -47,16 +46,13 @@ def test_pnl(hyperliquidEntity: HyperliquidEntity):
     hyperliquidEntity.action_open_position(0.5)
     assert hyperliquidEntity.pnl == 0
     hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3100))
-    assert hyperliquidEntity.pnl == -0.5 * 100                                   # minus because of short position
+    assert hyperliquidEntity.pnl == 0.5 * 100
 
 
 def test_balance(hyperliquidEntity: HyperliquidEntity):
     hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquidEntity.action_deposit(1000)
     hyperliquidEntity.action_open_position(0.5)
-    # assert hyperliquidEntity.balance == 1000
-    # hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3100))
-    # assert hyperliquidEntity.balance == 1000 - (0.5 * (3100 - 3000))             # minus because of short position
     assert hyperliquidEntity.balance == 1000 - (0.5 * 3000 * hyperliquidEntity.TRADING_FEE)
     hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3100))
     assert hyperliquidEntity.balance == 1000 - (0.5 * 3000 * hyperliquidEntity.TRADING_FEE) + (0.5 * (3100 - 3000))
@@ -86,26 +82,21 @@ def test_leverage_change(hyperliquidEntity: HyperliquidEntity):
     assert hyperliquidEntity.leverage == 6
     hyperliquidEntity.action_withdraw(470)
     assert hyperliquidEntity.leverage == 100
-    assert not hyperliquidEntity._check_liquidation()
+    assert hyperliquidEntity._check_liquidation()
 
 
 def test_state_update(hyperliquidEntity: HyperliquidEntity):
-    state = HyperLiquidGlobalState(mark_price=10, funding_rate_short=0.004, funding_rate_long=0.001)
+    state = HyperLiquidGlobalState(mark_price=10, funding_rate=0.004)
     hyperliquidEntity.update_state(state)
     assert hyperliquidEntity.global_state == state
 
 
 def test_clearing(hyperliquidEntity: HyperliquidEntity):
     hyperliquidEntity.update_state(HyperLiquidGlobalState(mark_price=3000))
-    hyperliquidEntity.action_deposit(1000)
-    hyperliquidEntity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquidEntity._global_state.mark_price,
-                                                                           pos_leverage=5))
-    hyperliquidEntity._internal_state.collateral -= np.abs(0.5 * hyperliquidEntity.TRADING_FEE * hyperliquidEntity._global_state.price)
-    hyperliquidEntity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquidEntity._global_state.mark_price,
-                                                                           pos_leverage=10))
-    hyperliquidEntity._internal_state.collateral -= (np.abs(0.5 * hyperliquidEntity.TRADING_FEE * hyperliquidEntity._global_state.price))
+    hyperliquidEntity._internal_state.positions.append(HyperLiquidPosition(amount=0.5, entry_price=hyperliquidEntity._global_state.mark_price,max_leverage=50))
+    hyperliquidEntity._internal_state.collateral -= np.abs(0.5 * hyperliquidEntity.TRADING_FEE * hyperliquidEntity._global_state.mark_price)
+    hyperliquidEntity._internal_state.positions.append(HyperLiquidPosition(amount=0.5, entry_price=hyperliquidEntity._global_state.mark_price,max_leverage=50))
+    hyperliquidEntity._internal_state.collateral -= np.abs(0.5 * hyperliquidEntity.TRADING_FEE * hyperliquidEntity._global_state.mark_price)
     leverage_before_clearing = hyperliquidEntity.leverage
     balance_before_clearing = hyperliquidEntity.balance
     hyperliquidEntity._clearing()

@@ -20,18 +20,18 @@ class HyperLiquidPosition:
     It includes the amount, the entry price and desired leverage of the position.
         """
 
-    def __init__(self, amount: float, entry_price: float, pos_leverage: float):
+    def __init__(self, amount: float, entry_price: float, max_leverage: float):
         """
         Initializes the HyperLiquidPosition.
 
         Args:
             amount (float): The amount of the position in product (e.g. BTC, ETH, etc.)
             entry_price (float): The entry price of the position in notional (e.g. USD, USDC, etc.)
-            pos_leverage (float): Position leverage to open with. Can be set by value from 1 to MAX_LEVERAGE
+            max_leverage (float): Pair's max leverage available to trade (from 3x to 50x on HyperLiquid)
         """
-        self.amount: float = amount
+        self.amount: float = amount  # negative if short
         self.entry_price: float = entry_price
-        self.pos_leverage: float = pos_leverage
+        self.max_leverage: float = max_leverage
 
     def __repr__(self):
         return (f"HyperLiquidPosition(amount={self.amount}, "
@@ -41,9 +41,9 @@ class HyperLiquidPosition:
         """
         Calculates the profit and loss (PNL) of the position.
 
-        PNL = -1 * Amount * (Price - Entry Price)
+        PNL = Amount * (Price - Entry Price)
         """
-        return -1 * (self.amount * (price - self.entry_price))
+        return self.amount * (price - self.entry_price)
 
 
 @dataclass
@@ -54,8 +54,7 @@ class HyperLiquidGlobalState(GlobalState):
     For example, price, time, etc.
     """
     mark_price: float = 0.0
-    funding_rate_short: float = 0.0
-    funding_rate_long: float = 0.0
+    funding_rate: float = 0.0
     longs_pay_shorts: bool = True
 
 
@@ -75,16 +74,14 @@ class HyperliquidEntity(BaseHedgeEntity):
     Represents a Hyperliquid isolated market entity.
     """
 
-    def __init__(self, *args, max_leverage: int = 20, trading_fee: float = 0.00025, **kwargs):
+    def __init__(self, *args, trading_fee: float = 0.00035, **kwargs):
         """
         Initializes the Hyperliquid entity.
 
         Args:
-            trading_fee (float, optional): Trading fee. Defaults to 0.00025.
-            MAX_LEVERAGE (float, optional): Max leverage available for current pair (from 3x to 50x on HyperLiquid) default 20
+            trading_fee (float, optional): Trading fee. Defaults to 0.00035.
         """
         super().__init__(*args, **kwargs)
-        self.MAX_LEVERAGE = max_leverage
         self.TRADING_FEE = trading_fee
 
     def _initialize_states(self):
@@ -121,19 +118,19 @@ class HyperliquidEntity(BaseHedgeEntity):
 
         self._internal_state.collateral -= amount_in_notional
 
-    def action_open_position(self, portion_of_product):
+    def action_open_position(self, amount_in_product):
         """
         Opens a position with a specified amount of product.
 
         Args:
-            portion_of_product (float): The amount of product to open the position with.
+            amount_in_product (float): The amount of product to open the position with.
         """
         self._internal_state.positions.append(
-            HyperLiquidPosition(amount=portion_of_product,
+            HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
-                                pos_leverage=self.leverage))
+                                max_leverage=self.leverage))
 
-        self._internal_state.collateral -= np.abs(self._internal_state.collateral * portion_of_product * self.TRADING_FEE)
+        self._internal_state.collateral -= np.abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
 
         self._clearing()  # consider only one position for simplicity
 
@@ -183,48 +180,19 @@ class HyperliquidEntity(BaseHedgeEntity):
             return 0
         return np.abs(self.size * self._global_state.mark_price / self.balance)
 
-    def _clearing(self):
+    def _clearing(self, max_leverage=50):
         """
         Performs clearing of the entity's state.
         It helps to manage only one position for simplicity.
+
+        Args:
+            max_leverage: max leverage for the position pair
         """
         self._internal_state.collateral = self.balance
         size = self.size
         price = self._global_state.mark_price
         self._internal_state.positions = [
-            HyperLiquidPosition(amount=size, entry_price=price, pos_leverage=size * price / self.balance)]
-
-    def _check_liquidation(self) -> bool:
-        """
-        A liquidation event occurs when a trader's positions move against them to the point
-        where the account equity falls below the maintenance margin.
-
-        The maintenance margin is half of the initial margin at max leverage, which varies from 3-50x.
-
-        In other words, the maintenance margin is between
-        1% (for 50x max leverage assets)
-        and 16.7% (for 3x max leverage assets) depending on the asset.
-
-        Returns:
-            bool: True if the entity is at risk of liquidation, False otherwise.
-        """
-
-        entry_price: float = sum(
-            pos.entry_price for pos in self._internal_state.positions)  # Valid if only one position is opened
-
-        if self.size == 0:
-            return 0
-
-        liquidation_price = entry_price + self.balance * (self.MAX_LEVERAGE - 2) / (self.MAX_LEVERAGE * self.size)
-
-        print(f"liquidation_price is {liquidation_price},\n"
-              f"mark_price is {self._global_state.mark_price}, \n"
-              # f"entry_price is {sum(pos.entry_price for pos in self._internal_state.positions)}, \n"
-              f"balance is {self.balance}, \n"
-              f"max leverage is {self.MAX_LEVERAGE},\n"
-              f"position_size is {self.size}")
-
-        return self._global_state.mark_price >= liquidation_price
+            HyperLiquidPosition(amount=size, entry_price=price, max_leverage=max_leverage)]
 
     def update_state(self, state: HyperLiquidGlobalState, *args, **kwargs) -> None:
         """
@@ -245,4 +213,55 @@ class HyperliquidEntity(BaseHedgeEntity):
         global_price: float = self._global_state.mark_price
         current_size: float = self.size
 
-        self._internal_state.collateral += current_size * global_price * self._global_state.funding_rate_short
+        self._internal_state.collateral += current_size * global_price * self._global_state.funding_rate
+
+    def _check_liquidation(self):
+        """
+        Determine if a position should be liquidated on Hyperliquid.
+
+        Returns:
+          bool : True if liquidation should be triggered, False otherwise.
+
+        Liquidation is determined based on the liquidation price:
+          For a long position (side = 1): if current_price <= liq_price --> liquidate.
+          For a short position (side = -1): if current_price >= liq_price --> liquidate.
+
+        The formula used:
+          maintenance_margin_required = (entry_price * position_size) / (2 * leverage)
+          margin_available = margin_balance - maintenance_margin_required
+          liq_price = entry_price - side * (margin_available) / (position_size * (1 - (1/leverage)*side))
+
+        This formula follows the Hyperliquid documentation on computing liquidation price.
+        """
+
+        if not self._internal_state.positions:
+            return False
+
+        position_size = sum(np.abs(pos.amount) for pos in self._internal_state.positions)
+        entry_price: float = sum(
+            (pos.entry_price * np.abs(pos.amount) / position_size) for pos in self._internal_state.positions)
+        current_price = self._global_state.mark_price
+        margin_balance = self._internal_state.collateral
+        leverage = self._internal_state.positions[0].max_leverage  # One position has one max leverage value
+        side = self._internal_state.positions[0].amount / np.abs(self._internal_state.positions[0].amount)
+
+        maintenance_margin = (entry_price * position_size) / (2 * leverage)
+
+        margin_available = margin_balance - maintenance_margin
+
+        # If margin_available is negative, the position should be liquidated immediately.
+        if margin_available < 0:
+            return True
+
+        # Note: (1 - (1/leverage)*side) is:
+        #   For a long (side=1): 1 - 1/leverage.
+        #   For a short (side=-1): 1 + 1/leverage.
+        liq_price = entry_price - side * (margin_available) / (position_size * (1 - (1 / leverage) * side))
+
+        if liq_price <= 0:
+            liq_price = 0
+
+        if side < 0:
+            return current_price >= liq_price
+        else:
+            return current_price <= liq_price
