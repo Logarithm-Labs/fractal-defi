@@ -55,7 +55,6 @@ class HyperLiquidGlobalState(GlobalState):
     """
     mark_price: float = 0.0
     funding_rate: float = 0.0
-    longs_pay_shorts: bool = True
 
 
 @dataclass
@@ -116,9 +115,21 @@ class HyperliquidEntity(BaseHedgeEntity):
         if self.balance < amount_in_notional:
             raise HyperliquidEntityException(f"Not enough balance to withdraw: {self.balance} < {amount_in_notional}.")
 
+        if self._internal_state.positions:
+            position_size = sum(np.abs(pos.amount) for pos in self._internal_state.positions)
+            entry_price: float = sum(
+                (pos.entry_price * np.abs(pos.amount) / position_size) for pos in self._internal_state.positions)
+            leverage = self._internal_state.positions[0].max_leverage
+
+            maintenance_margin: float = (entry_price * position_size) / (2 * leverage)
+
+            if self.balance - amount_in_notional < maintenance_margin:
+                raise HyperliquidEntityException(
+                    f"Not enough maintenance margin after withdraw: {maintenance_margin} < "
+                    f"{self.balance - amount_in_notional}.")
         self._internal_state.collateral -= amount_in_notional
 
-    def action_open_position(self, amount_in_product):
+    def action_open_position(self, amount_in_product, *args, **kwargs):
         """
         Opens a position with a specified amount of product.
 
@@ -128,7 +139,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
-                                max_leverage=self.leverage))
+                                max_leverage=kwargs.get('max_leverage')))
 
         self._internal_state.collateral -= np.abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
 
@@ -180,7 +191,7 @@ class HyperliquidEntity(BaseHedgeEntity):
             return 0
         return np.abs(self.size * self._global_state.mark_price / self.balance)
 
-    def _clearing(self, max_leverage=50):
+    def _clearing(self):
         """
         Performs clearing of the entity's state.
         It helps to manage only one position for simplicity.
@@ -190,7 +201,11 @@ class HyperliquidEntity(BaseHedgeEntity):
         """
         self._internal_state.collateral = self.balance
         size = self.size
-        price = self._global_state.mark_price
+        price = sum(pos.entry_price * pos.amount / size for pos in self._internal_state.positions
+                    if pos.amount / self._internal_state.positions[0].amount > 0)
+
+        max_leverage = self._internal_state.positions[
+            0].max_leverage  # max leverage could not be changed after position opening
         self._internal_state.positions = [
             HyperLiquidPosition(amount=size, entry_price=price, max_leverage=max_leverage)]
 
@@ -209,7 +224,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         if self._check_liquidation():
             self._internal_state.collateral = 0
             self._internal_state.positions = []
-        # settle short position fundings
+
         global_price: float = self._global_state.mark_price
         current_size: float = self.size
 
