@@ -129,7 +129,7 @@ class HyperliquidEntity(BaseHedgeEntity):
                     f"{self.balance - amount_in_notional}.")
         self._internal_state.collateral -= amount_in_notional
 
-    def action_open_position(self, amount_in_product, *args, **kwargs):
+    def action_open_position(self, amount_in_product, max_leverage):
         """
         Opens a position with a specified amount of product.
 
@@ -139,7 +139,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
-                                max_leverage=kwargs.get('max_leverage')))
+                                max_leverage=max_leverage))
 
         self._internal_state.collateral -= np.abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
 
@@ -228,7 +228,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         global_price: float = self._global_state.mark_price
         current_size: float = self.size
 
-        self._internal_state.collateral += current_size * global_price * self._global_state.funding_rate
+        self._internal_state.collateral -= current_size * global_price * self._global_state.funding_rate
 
     def _check_liquidation(self):
         """

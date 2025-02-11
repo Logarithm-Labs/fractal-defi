@@ -14,6 +14,9 @@ from fractal.core.entities.uniswap_v3_lp import (UniswapV3LPConfig,
                                                  UniswapV3LPGlobalState)
 from fractal.core.entities.uniswap_v3_spot import (UniswapV3SpotEntity,
                                                    UniswapV3SpotGlobalState)
+from fractal.core.entities.hyperliquid import (HyperliquidEntity, HyperLiquidGlobalState,
+                                          HyperLiquidInternalState)
+
 
 __all__ = [
     "BaseHedgeEntity",
@@ -25,6 +28,9 @@ __all__ = [
     "GMXV2Entity",
     "GMXV2GlobalState",
     "GMXV2Position",
+    "HyperliquidEntity",
+    "HyperLiquidGlobalState",
+    "HyperLiquidInternalState",
     "StakedETHEntity",
     "StakedETHGlobalState",
     "UniswapV2LPConfig",
