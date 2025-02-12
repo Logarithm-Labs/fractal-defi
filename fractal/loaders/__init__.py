@@ -18,7 +18,7 @@ from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       UniswapV3ArbitrumPricesLoader,
                                       UniswapV3EthereumPoolDayDataLoader,
                                       UniswapV3EthereumPoolHourDataLoader)
-from fractal.loaders.hyperliquid_loader import (
+from fractal.loaders.hyperliquid import (
     HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
 )
 
@@ -52,5 +52,6 @@ __all__ = [
     "LendingHistory",
     "UniswapV3ArbitrumPricesLoader"
     "HyperliquidFundingRatesLoader",
-    "HyperLiquidPerpsPricesLoader"
+    "HyperLiquidPerpsPricesLoader",
+    "HyperliquidFundingRatesLoader",
 ]

@@ -1,8 +1,7 @@
 from datetime import datetime
 
-from fractal.loaders.hyperliquid_loader import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
-
-from fractal.loaders import (FundingHistory, PriceHistory)
+from fractal.loaders.hyperliquid import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
+from fractal.loaders import FundingHistory, PriceHistory
 
 
 def test_hyperliquid_fundings_loader():
