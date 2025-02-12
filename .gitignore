@@ -173,3 +173,4 @@ catboost_info
 /mlruns
 /mlartifact
 /fractal_data
+/.idea
