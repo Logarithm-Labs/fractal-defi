@@ -169,8 +169,8 @@ class UniswapV3EthereumPoolMinuteDataLoader(UniswapV3EthereumPoolDayDataLoader):
         self._data.index = pd.to_datetime(self._data['date'])
         self._data.drop(columns=['date'], inplace=True)
         self._data.index = self._data.index.to_period('D')
-        self._data = self._data.resample('H').ffill()
+        self._data = self._data.resample('min').ffill()
         self._data['fees'] /= 24 * 60
         self._data['volume'] /= 24 * 60
         self._data.reset_index(inplace=True)
-        self._data['date'].dt.to_timestamp()
+        self._data['date'] = self._data['date'].dt.to_timestamp()

@@ -7,9 +7,9 @@ import pandas as pd
 
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.thegraph.uniswap_v3 import (
-    UniswapV3EthereumPoolHourDataLoader, EthereumUniswapV3Loader
+    UniswapV3EthereumPoolHourDataLoader, EthereumUniswapV3Loader, UniswapV3EthereumPoolMinuteDataLoader
 )
-from fractal.loaders.binance import BinanceHourPriceLoader
+from fractal.loaders.binance import BinanceHourPriceLoader, BinanceMinutePriceLoader
 from fractal.loaders.structs import PriceHistory, PoolHistory
 
 from fractal.core.base import Observation
@@ -51,14 +51,20 @@ def get_observations(
 
 def build_observations(
         ticker: str, pool_address: str, api_key: str,
-        start_time: datetime = None, end_time: datetime = None
+        start_time: datetime = None, end_time: datetime = None, fidelity: str = 'hour',
     ) -> List[Observation]:
     """
     Build observations for the TauResetStrategy from the given start and end time.
     """
-    pool_data: PoolHistory = UniswapV3EthereumPoolHourDataLoader(
-        api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=False)
-    binance_prices: PriceHistory = BinanceHourPriceLoader(ticker, loader_type=LoaderType.CSV).read(with_run=False)
+    if fidelity == 'hour':
+        pool_data: PoolHistory = UniswapV3EthereumPoolHourDataLoader(
+            api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=True)
+        binance_prices: PriceHistory = BinanceHourPriceLoader(ticker, loader_type=LoaderType.CSV).read(with_run=True)
+    elif fidelity == 'minute':
+        pool_data: PoolHistory = UniswapV3EthereumPoolMinuteDataLoader(
+            api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=True)
+        binance_prices: PriceHistory = BinanceMinutePriceLoader(ticker, loader_type=LoaderType.CSV,
+                                                                start_time=start_time, end_time=end_time).read(with_run=True)
     return get_observations(pool_data, binance_prices, start_time, end_time)
 
 
@@ -69,14 +75,11 @@ if __name__ == '__main__':
     THE_GRAPH_API_KEY = os.getenv('THE_GRAPH_API_KEY')
 
     # Load data
-    binance_prices: PriceHistory = BinanceHourPriceLoader(ticker, loader_type=LoaderType.CSV).read(with_run=False)
-    pool_data: PoolHistory = UniswapV3EthereumPoolHourDataLoader(
-        THE_GRAPH_API_KEY, pool_address, loader_type=LoaderType.CSV).read(with_run=False)
     token0_decimals, token1_decimals = EthereumUniswapV3Loader(
         THE_GRAPH_API_KEY, loader_type=LoaderType.CSV).get_pool_decimals(pool_address)
 
     # Init the strategy
-    params: TauResetParams = TauResetParams(TAU=5, INITIAL_BALANCE=1_000_000)
+    params: TauResetParams = TauResetParams(TAU=90, INITIAL_BALANCE=1_000_000)
     TauResetStrategy.token0_decimals = token0_decimals
     TauResetStrategy.token1_decimals = token1_decimals
     TauResetStrategy.tick_spacing = 60
@@ -84,9 +87,10 @@ if __name__ == '__main__':
 
     # Build observations
     entities = strategy.get_all_available_entities().keys()
-    observations: List[Observation] = get_observations(
-        pool_data, binance_prices,
-        start_time=datetime(2024, 7, 1), end_time=datetime(2024, 9, 30)
+    observations: List[Observation] = build_observations(
+        ticker=ticker, pool_address=pool_address, api_key=THE_GRAPH_API_KEY,
+        start_time=datetime(2025, 1, 11), end_time=datetime(2025, 2, 11),
+        fidelity='minute'
     )
     observation0 = observations[0]
     # check if the observation has the right entities
@@ -95,4 +99,5 @@ if __name__ == '__main__':
     # Run the strategy
     result = strategy.run(observations)
     print(result.get_default_metrics())  # show metrics
-    result.to_dataframe().to_csv('result.csv')  # save results of strategy states
+    result.to_dataframe().to_csv('tau_strategy_result.csv')  # save results of strategy states
+    print(result.to_dataframe().iloc[-1])  # show the last state of the strategy

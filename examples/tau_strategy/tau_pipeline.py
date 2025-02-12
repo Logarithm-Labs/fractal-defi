@@ -23,18 +23,22 @@ def build_grid():
 if __name__ == '__main__':
     ticker: str = 'ETHUSDT'
     pool_address: str = '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8'
-    start_time=datetime(2022, 1, 1)
-    end_time=datetime(2025, 1, 1)
-    experiment_name = f'tau_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
+    start_time = datetime(2024, 7, 1)
+    end_time = datetime(2024, 9, 30)
+    fidelity = 'minute'
+    experiment_name = f'rtau_{fidelity}_{ticker}_{pool_address}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
     TauResetStrategy.token0_decimals = 6
     TauResetStrategy.token1_decimals = 18
     TauResetStrategy.tick_spacing = 60
+
     # Define MLFlow and Experiment configurations
     mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:5000',
+        mlflow_uri=os.getenv('MLFLOW_URI'),
         experiment_name=experiment_name,
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
     )
-    observations = build_observations(ticker, pool_address, THE_GRAPH_API_KEY, start_time, end_time)
+    observations = build_observations(ticker, pool_address, THE_GRAPH_API_KEY, start_time, end_time, fidelity=fidelity)
     assert len(observations) > 0
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=TauResetStrategy,
