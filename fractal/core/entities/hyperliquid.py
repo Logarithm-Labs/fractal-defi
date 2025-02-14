@@ -34,8 +34,7 @@ class HyperLiquidPosition:
         self.max_leverage: float = max_leverage
 
     def __repr__(self):
-        return (f"HyperLiquidPosition(amount={self.amount}, "
-                f"entry_price={self.entry_price}")
+        return (f"HyperLiquidPosition(amount={self.amount}, entry_price={self.entry_price})")
 
     def unrealised_pnl(self, price: float) -> float:
         """
@@ -73,7 +72,7 @@ class HyperliquidEntity(BaseHedgeEntity):
     Represents a Hyperliquid isolated market entity.
     """
 
-    def __init__(self, *args, trading_fee: float = 0.00035, **kwargs):
+    def __init__(self, *args, max_leverage: int = 50, trading_fee: float = 0.00035, **kwargs):
         """
         Initializes the Hyperliquid entity.
 
@@ -82,6 +81,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         """
         super().__init__(*args, **kwargs)
         self.TRADING_FEE = trading_fee
+        self.MAX_LEVERAGE = max_leverage
 
     def _initialize_states(self):
         self._internal_state: HyperLiquidInternalState = HyperLiquidInternalState()
@@ -112,6 +112,8 @@ class HyperliquidEntity(BaseHedgeEntity):
         Raises:
             ValueError: If there is not enough balance to withdraw.
         """
+        if amount_in_notional < 0:
+            raise HyperliquidEntityException(f"Invalid withdraw amount: {amount_in_notional} < 0.")
         if self.balance < amount_in_notional:
             raise HyperliquidEntityException(f"Not enough balance to withdraw: {self.balance} < {amount_in_notional}.")
 
@@ -123,13 +125,13 @@ class HyperliquidEntity(BaseHedgeEntity):
 
             maintenance_margin: float = (entry_price * position_size) / (2 * leverage)
 
-            if self.balance - amount_in_notional < maintenance_margin:
+            if self._internal_state.collateral - amount_in_notional < maintenance_margin:
                 raise HyperliquidEntityException(
                     f"Not enough maintenance margin after withdraw: {maintenance_margin} < "
                     f"{self.balance - amount_in_notional}.")
         self._internal_state.collateral -= amount_in_notional
 
-    def action_open_position(self, amount_in_product, max_leverage):
+    def action_open_position(self, amount_in_product):
         """
         Opens a position with a specified amount of product.
 
@@ -139,10 +141,9 @@ class HyperliquidEntity(BaseHedgeEntity):
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
-                                max_leverage=max_leverage))
+                                max_leverage=self.MAX_LEVERAGE))
 
         self._internal_state.collateral -= np.abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
-
         self._clearing()  # consider only one position for simplicity
 
     @property
@@ -187,27 +188,41 @@ class HyperliquidEntity(BaseHedgeEntity):
         Returns:
             float: The leverage.
         """
-        if self.balance == 0 and self.size == 0:
+        if self.balance == 0 or self.size == 0:
             return 0
         return np.abs(self.size * self._global_state.mark_price / self.balance)
 
     def _clearing(self):
         """
-        Performs clearing of the entity's state.
-        It helps to manage only one position for simplicity.
-
-        Args:
-            max_leverage: max leverage for the position pair
+        Aggregates the entity's state into a single position.
+        
+        This method handles cases where new trades partially close an existing position.
+        For example, if there's an open short position of -10 and a long position of +5 is opened,
+        the effective entry price should remain that of the original short for the remaining -5 position.
+        
+        Algorithm:
+        1. Compute net_amount as the sum of all position amounts.
+        2. If net_amount equals zero, it means the position is fully closed; clear the positions list.
+        3. If net_amount is positive (a net long), compute the weighted average entry price using only the long trades.
+        4. If net_amount is negative (a net short), compute the weighted average entry price using only the short trades.
         """
-        self._internal_state.collateral = self.balance
-        size = self.size
-        price = sum(pos.entry_price * pos.amount / size for pos in self._internal_state.positions
-                    if pos.amount / self._internal_state.positions[0].amount > 0)
+        net_amount = self.size
+        if net_amount == 0:
+            self._internal_state.positions = []
+            return
 
-        max_leverage = self._internal_state.positions[
-            0].max_leverage  # max leverage could not be changed after position opening
-        self._internal_state.positions = [
-            HyperLiquidPosition(amount=size, entry_price=price, max_leverage=max_leverage)]
+        longs = [pos for pos in self._internal_state.positions if pos.amount > 0]
+        shorts = [pos for pos in self._internal_state.positions if pos.amount < 0]
+
+        if net_amount > 0:
+            total_long = sum(pos.amount for pos in longs)
+            effective_entry_price = sum(pos.entry_price * pos.amount for pos in longs) / total_long
+        else:
+            total_short = sum(abs(pos.amount) for pos in shorts)
+            effective_entry_price = sum(pos.entry_price * abs(pos.amount) for pos in shorts) / total_short            
+
+        new_position = HyperLiquidPosition(amount=net_amount, entry_price=effective_entry_price, max_leverage=self.MAX_LEVERAGE)
+        self._internal_state.positions = [new_position]
 
     def update_state(self, state: HyperLiquidGlobalState, *args, **kwargs) -> None:
         """
@@ -227,7 +242,6 @@ class HyperliquidEntity(BaseHedgeEntity):
 
         global_price: float = self._global_state.mark_price
         current_size: float = self.size
-
         self._internal_state.collateral -= current_size * global_price * self._global_state.funding_rate
 
     def _check_liquidation(self):

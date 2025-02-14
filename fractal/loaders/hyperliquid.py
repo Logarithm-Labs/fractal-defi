@@ -1,3 +1,5 @@
+import time
+
 from datetime import datetime
 from typing import Optional
 
@@ -28,7 +30,7 @@ class HyperliquidBaseLoader(Loader):
         }
         response = requests.post(self._url, headers=headers, json=param_dict)
         if response.status_code == 200:
-            return pd.DataFrame(response.json())
+            return response.json()
         else:
             raise Exception(f'Failed to make request to {self._url}: '
                             f'status code: {response.status_code} ({response.text})')
@@ -40,33 +42,39 @@ class HyperliquidBaseLoader(Loader):
 class HyperliquidFundingRatesLoader(HyperliquidBaseLoader):
 
     def extract(self):
-        """
-        Args:
+        end_time = self._end_time
+        data = self._extract_batch()
+        all_data = data
+        last_time = data[-1]['time']
+        while last_time < end_time:
+            self._start_time = last_time
+            data = self._extract_batch()
+            if len(data) <= 1:
+                break
+            all_data += data
+            last_time = data[-1]['time']
+            time.sleep(1)
+        self._data = pd.DataFrame(all_data)
 
-        ticker:         Hyperliquid asset alias
-        start_time:     Collection start time
-        end_time:       Collection end time
-
-        Returns:
-            pd.DataFrame: pandas Dataframe with collected funding rates and premiums
-        """
+    def _extract_batch(self):
         params = {
             'type': "fundingHistory",
             'coin': self._ticker,
             'startTime': self._start_time,
             'endTime': self._end_time
         }
-        self._data = pd.DataFrame(self._make_request(params))
+        return self._make_request(params)
 
     def transform(self):
         self._data['time'] = pd.to_datetime(self._data['time'], unit='ms', origin='unix')
+        self._data['time'] = self._data['time'].dt.floor('S')
         self._data['fundingRate'] = self._data['fundingRate'].astype(float)
 
     def read(self, with_run: bool = False):
         if with_run:
             self.run()
         else:
-            self._read(self.ticker)
+            self._read(self._ticker)
         return FundingHistory(
             rates=self._data['fundingRate'].values,
             time=pd.to_datetime(self._data['time'].values)
@@ -81,16 +89,6 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
         self._interval: str = interval
 
     def extract(self):
-        """
-        Args:
-            ticker:         Hyperliquid asset alias
-            interval:       kline collection interval; Available intervals: ("1m", "5m", "15m", "1h", "1d")
-            start_time:     Collection start time
-            end_time:       Collection end time
-
-        Returns:
-            pd.DataFrame: pandas Dataframe with collected price klines data
-        """
         params = {
             "type": "candleSnapshot",
             "req": {
@@ -103,15 +101,15 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
         self._data = pd.DataFrame(self._make_request(params))
 
     def transform(self):
-        self._data['close_time'] = pd.to_datetime(self._data['T'], unit='ms', origin='unix')
-        self._data['close_price'] = self._data['c'].astype(float)
+        self._data['open_time'] = pd.to_datetime(self._data['t'], unit='ms', origin='unix')
+        self._data['open_price'] = self._data['o'].astype(float)
 
     def read(self, with_run: bool = False) -> PriceHistory:
         if with_run:
             self.run()
         else:
-            self._read(self.ticker)
+            self._read(self._ticker)
         return PriceHistory(
-            prices=self._data['close_price'].values,
-            time=pd.to_datetime(self._data['close_time']).values
+            prices=self._data['open_price'].values,
+            time=pd.to_datetime(self._data['open_time']).values
         )
