@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from copy import copy
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, NamedTuple, Optional, Type
@@ -206,7 +206,7 @@ class BaseStrategy(ABC):
             timestamps.append(observation.timestamp)
             balances.append({entity_name: entity.balance for entity_name, entity in self._entities.items()})
             # make copy of internal state to avoid changing it in the future
-            internal_states.append({entity_name: copy(entity.internal_state)
+            internal_states.append({entity_name: deepcopy(entity.internal_state)
                                     for entity_name, entity in self._entities.items()})
             global_states.append({entity_name: entity.global_state
                                   for entity_name, entity in self._entities.items()})
