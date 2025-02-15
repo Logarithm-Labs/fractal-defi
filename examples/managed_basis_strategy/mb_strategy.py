@@ -40,10 +40,10 @@ def get_observations(
         start_time: datetime = None, end_time: datetime = None
     ) -> List[Observation]:
     """
-    Get observations from the pool and price data for the TauResetStrategy.
+    Get observations from the pool and price data for the ManagedBasisStrategy.
 
     Returns:
-        List[Observation]: The observation list for TauResetStrategy.
+        List[Observation]: The observation list for ManagedBasisStrategy.
     """
     observations_df: pd.DataFrame = price_data.join(rate_data)
     observations_df = observations_df.dropna()
@@ -68,7 +68,7 @@ def build_observations(
         ticker: str, start_time: datetime = None, end_time: datetime = None, fidelity: str = 'hour',
     ) -> List[Observation]:
     """
-    Build observations for the TauResetStrategy from the given start and end time.
+    Build observations for the ManagedBasisStrategy from the given start and end time.
     """
     rate_data: RateHistory = HyperliquidFundingRatesLoader(
         ticker, loader_type=LoaderType.CSV).read(with_run=True)
