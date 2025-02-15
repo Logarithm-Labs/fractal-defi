@@ -125,7 +125,7 @@ class HyperliquidEntity(BaseHedgeEntity):
 
             maintenance_margin: float = (entry_price * position_size) / (2 * leverage)
 
-            if self._internal_state.collateral - amount_in_notional < maintenance_margin:
+            if self.balance - amount_in_notional < maintenance_margin:
                 raise HyperliquidEntityException(
                     f"Not enough maintenance margin after withdraw: {maintenance_margin} < "
                     f"{self.balance - amount_in_notional}.")
