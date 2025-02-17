@@ -71,13 +71,13 @@ class HyperliquidEntity(BaseHedgeEntity):
     """
     Represents a Hyperliquid isolated market entity.
     """
-
-    def __init__(self, *args, max_leverage: int = 50, trading_fee: float = 0.00035, **kwargs):
+    def __init__(self, *args, trading_fee: float = 0.00035, max_leverage: float = 50, **kwargs):
         """
         Initializes the Hyperliquid entity.
 
         Args:
             trading_fee (float, optional): Trading fee. Defaults to 0.00035.
+            max_leverage (float, optional): Maximum leverage. Defaults to 50.
         """
         super().__init__(*args, **kwargs)
         self.TRADING_FEE = trading_fee
@@ -190,39 +190,63 @@ class HyperliquidEntity(BaseHedgeEntity):
         """
         if self.balance == 0 or self.size == 0:
             return 0
-        return np.abs(self.size * self._global_state.mark_price / self.balance)
+        return abs(self.size) * self._global_state.mark_price / self.balance
 
     def _clearing(self):
         """
-        Aggregates the entity's state into a single position.
-        
-        This method handles cases where new trades partially close an existing position.
-        For example, if there's an open short position of -10 and a long position of +5 is opened,
-        the effective entry price should remain that of the original short for the remaining -5 position.
-        
-        Algorithm:
-        1. Compute net_amount as the sum of all position amounts.
-        2. If net_amount equals zero, it means the position is fully closed; clear the positions list.
-        3. If net_amount is positive (a net long), compute the weighted average entry price using only the long trades.
-        4. If net_amount is negative (a net short), compute the weighted average entry price using only the short trades.
+        Aggregates all positions into a single position.
+
+        If positions of opposite sides are present (i.e., a closing trade occurs),
+        the entry price of the remaining open position does not change, and the 
+        realized PnL for the closed quantity is added to the collateral.
+        For positions on the same side (i.e., opening trades), the entry price 
+        is updated to the weighted average.
         """
-        net_amount = self.size
-        if net_amount == 0:
-            self._internal_state.positions = []
+        positions = self._internal_state.positions
+        if not positions or len(positions) == 1:
             return
 
-        longs = [pos for pos in self._internal_state.positions if pos.amount > 0]
-        shorts = [pos for pos in self._internal_state.positions if pos.amount < 0]
+        # Use the first position as the aggregated base position.
+        base = positions[0]
+        realized_pnl = 0.0
 
-        if net_amount > 0:
-            total_long = sum(pos.amount for pos in longs)
-            effective_entry_price = sum(pos.entry_price * pos.amount for pos in longs) / total_long
+        # Process all subsequent positions.
+        for pos in positions[1:]:
+            # If both positions are in the same direction, aggregate them.
+            if base.amount * pos.amount > 0:
+                new_amount = base.amount + pos.amount
+                base.entry_price = (base.amount * base.entry_price + pos.amount * pos.entry_price) / new_amount
+                base.amount = new_amount
+            else:
+                # Opposite direction: a closing trade.
+                closed_qty = min(abs(base.amount), abs(pos.amount))
+                # Determine the side of the base position: 1 for long, -1 for short.
+                sign = 1 if base.amount > 0 else -1
+                # For a long base (sign = 1): realized pnl = closed_qty * (pos.entry_price - base.entry_price)
+                # For a short base (sign = -1): realized pnl = closed_qty * (base.entry_price - pos.entry_price)
+                realized_pnl += closed_qty * (pos.entry_price - base.entry_price) * sign
+                # Reduce the base position by the closed quantity.
+                base.amount -= sign * closed_qty
+                # Calculate the remaining quantity in the incoming position.
+                remaining = abs(pos.amount) - closed_qty
+                if remaining > 0:
+                    # If the base position is fully closed, adopt the remainder as the new base position.
+                    if abs(base.amount) < 1e-9:
+                        base = HyperLiquidPosition(
+                            amount = remaining if pos.amount > 0 else -remaining,
+                            entry_price = pos.entry_price,
+                            max_leverage = self.MAX_LEVERAGE
+                        )
+                    # If the base position is not fully closed, the remaining incoming position is effectively absorbed.
+        
+        # Add the realized pnl from the closed quantity to the collateral.
+        self._internal_state.collateral += realized_pnl
+
+        # If the aggregated position is effectively closed (net amount nearly zero), clear the positions.
+        if abs(base.amount) < 1e-9:
+            self._internal_state.positions = []
         else:
-            total_short = sum(abs(pos.amount) for pos in shorts)
-            effective_entry_price = sum(pos.entry_price * abs(pos.amount) for pos in shorts) / total_short            
-
-        new_position = HyperLiquidPosition(amount=net_amount, entry_price=effective_entry_price, max_leverage=self.MAX_LEVERAGE)
-        self._internal_state.positions = [new_position]
+            self._internal_state.positions = [base]
 
     def update_state(self, state: HyperLiquidGlobalState, *args, **kwargs) -> None:
         """
@@ -266,16 +290,14 @@ class HyperliquidEntity(BaseHedgeEntity):
         if not self._internal_state.positions:
             return False
 
-        position_size = sum(np.abs(pos.amount) for pos in self._internal_state.positions)
-        entry_price: float = sum(
-            (pos.entry_price * np.abs(pos.amount) / position_size) for pos in self._internal_state.positions)
+        position_size = abs(self.size)
+        entry_price: float = self._internal_state.positions[0].entry_price
         current_price = self._global_state.mark_price
-        margin_balance = self._internal_state.collateral
+        margin_balance = self.balance
         leverage = self._internal_state.positions[0].max_leverage  # One position has one max leverage value
         side = self._internal_state.positions[0].amount / np.abs(self._internal_state.positions[0].amount)
 
         maintenance_margin = (entry_price * position_size) / (2 * leverage)
-
         margin_available = margin_balance - maintenance_margin
 
         # If margin_available is negative, the position should be liquidated immediately.
@@ -285,8 +307,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         # Note: (1 - (1/leverage)*side) is:
         #   For a long (side=1): 1 - 1/leverage.
         #   For a short (side=-1): 1 + 1/leverage.
-        liq_price = entry_price - side * (margin_available) / (position_size * (1 - (1 / leverage) * side))
-
+        liq_price = current_price - side * (margin_available) / (position_size * (1 - (1 / leverage) * side))
         if liq_price <= 0:
             liq_price = 0
 
