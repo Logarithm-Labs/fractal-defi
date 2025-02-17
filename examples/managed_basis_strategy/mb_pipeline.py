@@ -8,17 +8,17 @@ from sklearn.model_selection import ParameterGrid
 from fractal.core.pipeline import (
     DefaultPipeline, MLFlowConfig, ExperimentConfig)
 
-from mb_strategy import HyperliquidBasis, build_observations
+from mb_hl_strategy import HyperliquidBasis, build_observations
 
 warnings.filterwarnings('ignore')
 
 
 def build_grid():
     raw_grid = ParameterGrid({
-        'MIN_LEVERAGE': np.arange(1, 1.9, 0.5).tolist(),
-        'TARGET_LEVERAGE': np.arange(1, 2.4, 0.5).tolist(),
-        'MAX_LEVERAGE': np.arange(1, 2.9, 0.5).tolist(),
-        'EXECUTION_COST': [0.004],
+        'MIN_LEVERAGE': np.arange(1, 12, 1).tolist(),
+        'TARGET_LEVERAGE': np.arange(1, 12, 1).tolist(),
+        'MAX_LEVERAGE': np.arange(1, 12, 1).tolist(),
+        'EXECUTION_COST': [0.002],
         'INITIAL_BALANCE': [1_000_000]
     })
 
@@ -26,18 +26,18 @@ def build_grid():
         params for params in raw_grid
         if round(params['MIN_LEVERAGE'], 1) < round(params['TARGET_LEVERAGE'], 1) < round(params['MAX_LEVERAGE'], 1)
     ]
+    print(f'Length of valid grid: {len(valid_grid)}')
     return valid_grid
 
 
 if __name__ == '__main__':
-    ticker: str = 'VIRTUAL'
-    start_time = datetime(2024, 1, 1)
+    ticker: str = 'BTC'
+    start_time = datetime(2022, 1, 1)
     end_time = datetime(2025, 1, 1)
-    fidelity = 'day'
-    experiment_name = f'T_mb_hl_virtual_{fidelity}_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
+    fidelity = '1h'
+    experiment_name = f'mb_binance_{fidelity}_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
 
-# Define MLFlow and Experiment configurations
-
+    # Define MLFlow and Experiment configurations
     mlflow_uri = os.getenv('MLFLOW_URI')
     aws_key = os.getenv('AWS_ACCESS_KEY_ID')
     aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -60,7 +60,7 @@ if __name__ == '__main__':
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=HyperliquidBasis,
         backtest_observations=observations,
-        window_size=24,
+        window_size=24 * 30,
         params_grid=build_grid(),
         debug=True,
     )
