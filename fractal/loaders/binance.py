@@ -1,5 +1,5 @@
+from datetime import datetime, UTC
 from typing import List
-from datetime import datetime
 from time import time
 
 import pandas as pd
@@ -103,8 +103,8 @@ class BinancePriceLoader(Loader):
         self.ticker: str = ticker
         self.inverse_price: bool = inverse_price
         self.interval: str = interval
-        self.start_time: datetime = start_time
-        self.end_time: datetime = end_time
+        self.start_time: datetime = start_time.replace(tzinfo=UTC) if start_time else None
+        self.end_time: datetime = end_time.replace(tzinfo=UTC) if end_time else None
         self._url: str = "https://fapi.binance.com/fapi/v1/klines"
 
     def get_klines(self) -> list:
@@ -191,7 +191,7 @@ class BinancePriceLoader(Loader):
         self._data = pd.DataFrame(self.get_klines())
 
     def transform(self):
-        self._data['date'] = pd.to_datetime(self._data['openTime'], unit='ms')
+        self._data['date'] = pd.to_datetime(self._data['openTime'], unit='ms', utc=True)
         self._data = self._data.sort_values('date')
         self._data['close'] = self._data['close'].astype(float)
         if self.inverse_price:
