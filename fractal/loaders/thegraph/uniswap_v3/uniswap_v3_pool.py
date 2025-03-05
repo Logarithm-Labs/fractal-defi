@@ -44,7 +44,7 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
 
     def transform(self):
         self._data['date'] = self._data['date'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
-        self._data['date'] = self._data['date'].dt.date + timedelta(days=1)
+        self._data['date'] = self._data['date'].dt.date
         self._data['volume'] = self._data['volumeUSD'].astype(float)
         self._data['tvl'] = self._data['tvlUSD'].astype(float)
         self._data['fees'] = self._data['feesUSD'].astype(float)
