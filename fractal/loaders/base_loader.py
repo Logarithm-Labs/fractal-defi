@@ -21,7 +21,10 @@ class Loader(ABC):
         self._data: pd.DataFrame = None
         base_path: str = os.getenv('DATA_PATH', '')
         if base_path == '':
-            self.__base_path: str = os.getenv('PYTHONPATH') + '/fractal_data/'
+            base_path = os.getenv('PYTHONPATH', '')
+            if base_path == '':
+                base_path = os.getcwd()
+        self.__base_path: str = base_path + '/fractal_data/'
 
     @abstractmethod
     def extract(self):
