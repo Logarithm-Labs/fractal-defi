@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from copy import copy
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Dict, List, NamedTuple, Optional, Type
@@ -52,7 +52,9 @@ class BaseStrategy(ABC):
         self.set_params(params)
         self._entities: Dict[str, BaseEntity] = {}
         self.set_up()
-        self._logger: BaseLogger = self._create_logger()
+        self._logger: Optional[BaseLogger] = None
+        if self.debug:
+            self._logger: BaseLogger = self._create_logger()
 
     def _create_logger(self, base_artifacts_path: Optional[str] = None) -> BaseLogger:
         return DefaultLogger(base_artifacts_path=base_artifacts_path, class_name=self.__class__.__name__)
@@ -66,6 +68,8 @@ class BaseStrategy(ABC):
         Log a debug message if debug mode is enabled.
         It uses loguru logger.
         """
+        if self.logger is None:
+            return
         if self.debug:
             self._logger.debug(message)
 
@@ -205,8 +209,9 @@ class BaseStrategy(ABC):
             self.step(observation)
             timestamps.append(observation.timestamp)
             balances.append({entity_name: entity.balance for entity_name, entity in self._entities.items()})
-            # make copy of internal state to avoid changing it in the future
-            internal_states.append({entity_name: copy(entity.internal_state)
+
+            # make copy of internal state to avoid their mutation in the future
+            internal_states.append({entity_name: deepcopy(entity.internal_state)
                                     for entity_name, entity in self._entities.items()})
             global_states.append({entity_name: entity.global_state
                                   for entity_name, entity in self._entities.items()})

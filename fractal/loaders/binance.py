@@ -1,4 +1,5 @@
 from datetime import datetime, UTC
+from typing import List
 from time import time
 
 import pandas as pd
