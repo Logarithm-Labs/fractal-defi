@@ -24,7 +24,7 @@ class Loader(ABC):
             base_path = os.getenv('PYTHONPATH', '')
             if base_path == '':
                 base_path = os.getcwd()
-        self.__base_path: str = base_path + '/fractal_data/'
+        self.__base_path: str = base_path + 'fractal_data/'
 
     @abstractmethod
     def extract(self):
