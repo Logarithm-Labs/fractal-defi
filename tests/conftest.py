@@ -13,7 +13,7 @@ def hodler_strategy() -> HodlerStrategy:
     strategy = HodlerStrategy(debug=True, params=HodlerParams())
     return strategy
 
-@pytest.fixture(scope='module', autouse=True)
+@pytest.fixture(scope='module', autouse=False)
 def THE_GRAPH_API_KEY() -> str:
     api_key = os.getenv('THE_GRAPH_API_KEY')
     if not api_key:

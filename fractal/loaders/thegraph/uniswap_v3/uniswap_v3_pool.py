@@ -28,6 +28,7 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             poolDayDatas(
                 first: 1000
                 orderBy: date
+                orderDirection: desc
                 where: {pool: "%s"}
             ) {
                 date
@@ -42,11 +43,11 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
         self._data = pd.DataFrame(response['poolDayDatas'])
 
     def transform(self):
-        self._data['date'] = self._data['date'].apply(lambda x: datetime.utcfromtimestamp(x))
-        self._data['date'] = self._data['date'].dt.date + timedelta(days=1)
-        self._data['volumeUSD'] = self._data['volumeUSD'].astype(float)
-        self._data['tvlUSD'] = self._data['tvlUSD'].astype(float)
-        self._data['feesUSD'] = self._data['feesUSD'].astype(float)
+        self._data['date'] = self._data['date'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
+        self._data['date'] = self._data['date'].dt.date
+        self._data['volume'] = self._data['volumeUSD'].astype(float)
+        self._data['tvl'] = self._data['tvlUSD'].astype(float)
+        self._data['fees'] = self._data['feesUSD'].astype(float)
         self._data['liquidity'] = self._data['liquidity'].astype(float)
 
     def load(self):
@@ -57,12 +58,13 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             self.run()
         else:
             self._read(self.pool)
+        self._data['date'] = pd.to_datetime(self._data['date'])
         return PoolHistory(
-            tvls=self._data['tvlUSD'].astype(float).values,
-            volumes=self._data['volumeUSD'].astype(float).values,
-            fees=self._data['feesUSD'].astype(float).values,
+            tvls=self._data['tvl'].astype(float).values,
+            volumes=self._data['volume'].astype(float).values,
+            fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=self._data['date'].values
+            time=self._data['date'].values,
         )
 
 
@@ -95,11 +97,11 @@ class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
         self._data = pd.DataFrame(response['liquidityPoolDailySnapshots'])
 
     def transform(self):
-        self._data['date'] = self._data['timestamp'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
+        self._data['date'] = pd.to_datetime(self._data['timestamp'].astype(int) * 1000)
         self._data['date'] = self._data['date'].dt.date + timedelta(days=1)
-        self._data['volumeUSD'] = 0  # mocked
-        self._data['feesUSD'] = self._data['dailyTotalRevenueUSD'].astype(float)
-        self._data['tvlUSD'] = self._data['totalValueLockedUSD'].astype(float)
+        self._data['volume'] = 0  # mocked
+        self._data['fees'] = self._data['dailyTotalRevenueUSD'].astype(float)
+        self._data['tvl'] = self._data['totalValueLockedUSD'].astype(float)
         self._data['liquidity'] = self._data['activeLiquidity'].astype(float)
 
     def load(self):
@@ -111,9 +113,9 @@ class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
         else:
             self._read(self.pool)
         return PoolHistory(
-            tvls=self._data['tvlUSD'].astype(float).values,
-            volumes=self._data['volumeUSD'].astype(float).values,
-            fees=self._data['feesUSD'].astype(float).values,
+            tvls=self._data['tvl'].astype(float).values,
+            volumes=self._data['volume'].astype(float).values,
+            fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
             time=self._data['date'].values
         )
@@ -127,21 +129,14 @@ class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
     def transform(self):
         super().transform()
         # stretch daily data to hourly and data values devided by 24
-        self._data = PoolHistory(
-            tvls=self._data['tvlUSD'].astype(float).values,
-            volumes=self._data['volumeUSD'].astype(float).values,
-            fees=self._data['feesUSD'].astype(float).values,
-            liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date']).values
-        )
-
+        self._data.index = pd.to_datetime(self._data['date'])
+        self._data.drop(columns=['date'], inplace=True)
         self._data.index = self._data.index.to_period('D')
         self._data = self._data.resample('H').ffill()
-        self._data['feesUSD'] = self._data['fees'] / 24
-        self._data['volumeUSD'] = self._data['volume'] / 24
-        self._data['tvlUSD'] = self._data['tvl']
+        self._data['fees'] /= 24
+        self._data['volume'] /= 24
         self._data.reset_index(inplace=True)
-        self._data['date'] = self._data['index']
+        self._data['date'].dt.to_timestamp()
 
 
 class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
@@ -152,17 +147,29 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
     def transform(self):
         super().transform()
         # stretch daily data to hourly and data values devided by 24
-        self._data = PoolHistory(
-            tvls=self._data['tvlUSD'].astype(float).values,
-            volumes=self._data['volumeUSD'].astype(float).values,
-            fees=self._data['feesUSD'].astype(float).values,
-            liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date']).values
-        )
+        self._data.index = pd.to_datetime(self._data['date'])
+        self._data.drop(columns=['date'], inplace=True)
         self._data.index = self._data.index.to_period('D')
         self._data = self._data.resample('H').ffill()
-        self._data['feesUSD'] = self._data['fees'] / 24
-        self._data['volumeUSD'] = self._data['volume'] / 24
-        self._data['tvlUSD'] = self._data['tvl']
+        self._data['fees'] /= 24
+        self._data['volume'] /= 24
         self._data.reset_index(inplace=True)
-        self._data['date'] = self._data['index']
+        self._data['date'] = self._data['date'].dt.to_timestamp()
+
+
+class UniswapV3EthereumPoolMinuteDataLoader(UniswapV3EthereumPoolDayDataLoader):
+
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+        super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
+
+    def transform(self):
+        super().transform()
+        # stretch daily data to hourly and data values devided by 24 * 60
+        self._data.index = pd.to_datetime(self._data['date'])
+        self._data.drop(columns=['date'], inplace=True)
+        self._data.index = self._data.index.to_period('D')
+        self._data = self._data.resample('min').ffill()
+        self._data['fees'] /= 24 * 60
+        self._data['volume'] /= 24 * 60
+        self._data.reset_index(inplace=True)
+        self._data['date'] = self._data['date'].dt.to_timestamp()

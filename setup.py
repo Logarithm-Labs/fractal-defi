@@ -8,7 +8,7 @@ def parse_requirements(filename):
 
 setup(
     name='fractal-defi',
-    version='1.1.0',
+    version='1.2.0',
     packages=find_packages(),
     author='Logarithm Labs',
     author_email='dev@logarithm.fi',
@@ -17,7 +17,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/Fractal',
     include_package_data=True,
-    python_requires=">=3.8, <4",
+    python_requires=">=3.8, <3.13",
     install_requires=parse_requirements('requirements.txt'),
     classifiers=[
         'Programming Language :: Python :: 3',

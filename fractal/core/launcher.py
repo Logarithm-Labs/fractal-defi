@@ -16,11 +16,11 @@ class Launcher:
         self._params: BaseStrategyParams = params
         self._last_created_instance: BaseStrategy | None = None
 
-    def strategy_instance(self) -> BaseStrategy:
+    def strategy_instance(self, debug: bool) -> BaseStrategy:
         """
         Get the copy of the strategy to avoid storing outdated states.
         """
-        instance: BaseStrategy = self._strategy_type(params=self._params)
+        instance: BaseStrategy = self._strategy_type(params=self._params, debug=debug)
         self._last_created_instance: BaseStrategy = instance
         return instance
 
@@ -32,8 +32,7 @@ class Launcher:
         """
         Run strategy for a single trajectory.
         """
-        strategy: BaseStrategy = self.strategy_instance()
-        strategy.debug = debug
+        strategy: BaseStrategy = self.strategy_instance(debug=debug)
         return strategy.run(observations)
 
     def run_multiple_trajectories(self, observations: List[List[Observation]],

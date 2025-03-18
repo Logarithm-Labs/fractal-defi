@@ -86,4 +86,4 @@ if __name__ == '__main__':
     strategy = BinanceHodlerStrategy(debug=True, params=params)
     result = strategy.run(observations)
     print(result.get_default_metrics())  # show metrics
-    result.to_dataframe().to_csv()  # save results of strategy states
+    result.to_dataframe().to_csv('resutl.csv')  # save results of strategy states
