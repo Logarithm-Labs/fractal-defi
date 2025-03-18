@@ -100,28 +100,62 @@ class StrategyResult:
     def to_dataframe(self) -> pd.DataFrame:
         """
         Convert the result to a DataFrame.
+        This version recursively flattens nested attributes in internal_states and global_states.
 
         Returns:
             pd.DataFrame: DataFrame with the result.
         """
-        columns = ['timestamp']
-        columns += [f"{entity_name}_{field}"
-                    for entity_name in self.internal_states[0]
-                    for field in self.internal_states[0][entity_name].__dict__]
-        columns += [f"{entity_name}_{field}"
-                    for entity_name in self.global_states[0]
-                    for field in self.global_states[0][entity_name].__dict__]
-        columns += [f"{entity_name}_balance" for entity_name in self.balances[0]]
-        data = []
-        for i, _ in enumerate(self.timestamps):
-            row = [self.timestamps[i]]
-            for entity_name in self.internal_states[i]:
-                row += list(self.internal_states[i][entity_name].__dict__.values())
-            for entity_name in self.global_states[i]:
-                row += list(self.global_states[i][entity_name].__dict__.values())
-            for entity_name in self.balances[i]:
-                row.append(self.balances[i][entity_name])
-            data.append(row)
-        df = pd.DataFrame(data, columns=columns)
-        df['net_balance'] = df[[col for col in df.columns if 'balance' in col]].sum(axis=1)
+        def flatten(value, parent_key='', sep='_'):
+            """
+            Recursively flattens an object or list to a dict with compound keys.
+            """
+            items = {}
+            # Base case: simple types
+            if isinstance(value, (str, int, float, bool, type(None))):
+                items[parent_key] = value
+            # If it's a list, flatten each element with an index appended to the key.
+            elif isinstance(value, list):
+                for i, elem in enumerate(value):
+                    new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+                    items.update(flatten(elem, new_key, sep=sep))
+            # If it has a __dict__ (like a dataclass or custom object), flatten its attributes.
+            elif hasattr(value, '__dict__'):
+                for k, v in value.__dict__.items():
+                    new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                    items.update(flatten(v, new_key, sep=sep))
+            # If it's a dictionary, flatten its items.
+            elif isinstance(value, dict):
+                for k, v in value.items():
+                    new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                    items.update(flatten(v, new_key, sep=sep))
+            else:
+                # Fallback: use the value as-is
+                items[parent_key] = value
+            return items
+
+        rows = []
+        # Iterate through each timestamp and flatten the corresponding state and balance info.
+        for i, timestamp in enumerate(self.timestamps):
+            row = {'timestamp': timestamp}
+
+            # Flatten each internal state under its entity name.
+            for entity_name, internal_state in self.internal_states[i].items():
+                flat_internal = flatten(internal_state, parent_key=entity_name)
+                row.update(flat_internal)
+
+            # Flatten each global state under its entity name.
+            for entity_name, global_state in self.global_states[i].items():
+                flat_global = flatten(global_state, parent_key=entity_name)
+                row.update(flat_global)
+
+            # Add balances (assumed to be scalars).
+            for entity_name, balance in self.balances[i].items():
+                row[f"{entity_name}_balance"] = balance
+
+            rows.append(row)
+
+        df = pd.DataFrame(rows)
+        # Optionally, calculate a net_balance column by summing all balances.
+        balance_cols = [col for col in df.columns if col.endswith('_balance')]
+        df['net_balance'] = df[balance_cols].sum(axis=1)
         return df

@@ -10,7 +10,7 @@ class BaseHedgeEntity(BaseEntity):
     Hedge entities are entities that can open positions on the exchange.
     """
     @abstractmethod
-    def action_open_position(self, amount_in_product: float):
+    def action_open_position(self, amount_in_product: float, *args, **kwargs):
         """
         Opens a position on the protocol.
 

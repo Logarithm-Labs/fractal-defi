@@ -19,27 +19,32 @@ class Loader(ABC):
             raise ValueError(f"Loader type {loader_type} not supported")
         self.loader_type: LoaderType = loader_type
         self._data: pd.DataFrame = None
-        self.__base_path: str = os.path.dirname(os.path.abspath(__file__))
+        base_path: str = os.getenv('DATA_PATH', '')
+        if base_path == '':
+            base_path = os.getenv('PYTHONPATH', '')
+            if base_path == '':
+                base_path = os.getcwd()
+        self.__base_path: str = base_path + 'fractal_data/'
 
     @abstractmethod
     def extract(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def transform(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def load(self):
-        raise NotImplementedError
+        pass
 
     @abstractmethod
     def read(self, with_run: bool = False) -> pd.DataFrame:
-        raise NotImplementedError
+        pass
 
     def file_path(self, *args):
         file_name = '_'.join(args)
-        return self.__class__.__name__.lower() + '/' + file_name
+        return self.__base_path + self.__class__.__name__.lower() + '/' + file_name
 
     def _load(self, *args):
         file_name = '_'.join(args)
@@ -60,17 +65,18 @@ class Loader(ABC):
             return
         raise ValueError(f"Loader type {self.loader_type} not supported")
 
-    def _read(self, *args) -> pd.DataFrame:
+    def _read(self, *args):
         file_path: str = self.file_path(*args)
         if self.loader_type == LoaderType.CSV:
-            return pd.read_csv(f'{file_path}.csv')
-        if self.loader_type == LoaderType.JSON:
-            return pd.read_json(f'{file_path}.json', orient='records')
-        if self.loader_type == LoaderType.SQL:
+            self._data = pd.read_csv(f'{file_path}.csv')
+        elif self.loader_type == LoaderType.JSON:
+            self._data = pd.read_json(f'{file_path}.json', orient='records')
+        elif self.loader_type == LoaderType.SQL:
             raise NotImplementedError("SQL loader not implemented")
-        if self.loader_type == LoaderType.PICKLE:
-            return pd.read_pickle(f'{file_path}.pkl')
-        raise ValueError(f"Loader type {self.loader_type} not supported")
+        elif self.loader_type == LoaderType.PICKLE:
+            self._data = pd.read_pickle(f'{file_path}.pkl')
+        else:
+            raise ValueError(f"Loader type {self.loader_type} not supported")
 
     def run(self):
         self.extract()

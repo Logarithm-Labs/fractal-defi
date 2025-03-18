@@ -161,7 +161,8 @@ class DefaultPipeline(Pipeline):
                 strategy_data_df.to_csv(csv_buffer, index=False)
                 mlflow.log_text(csv_buffer.getvalue(), "strategy_backtest_data.csv")
                 mlflow.log_metrics(metrics.__dict__)
-                mlflow.log_artifact(launcher.last_created_instance.logger.logs_path)
+                if launcher.last_created_instance.debug:
+                    mlflow.log_artifact(launcher.last_created_instance.logger.logs_path)
             if self._config.backtest_trajectories:
                 strategy_data_list: List[StrategyResult] = launcher.run_multiple_trajectories(
                     self._config.backtest_trajectories, debug=False

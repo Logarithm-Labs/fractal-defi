@@ -92,6 +92,10 @@ class BasisTradingStrategy(BaseStrategy):
                     action=Action('sell', {'amount_in_product': -delta_spot / spot.global_state.price})
                 ),
                 ActionToTake(
+                    entity_name='SPOT',
+                    action=Action('withdraw', {'amount_in_notional': delegate_get_cash})
+                ),
+                ActionToTake(
                     entity_name='HEDGE',
                     action=Action('deposit', {'amount_in_notional': delegate_get_cash})
                 ),
@@ -99,10 +103,6 @@ class BasisTradingStrategy(BaseStrategy):
                     entity_name='HEDGE',
                     action=Action('open_position', {'amount_in_product': (self._params.TARGET_LEVERAGE * delta_spot /
                                                     spot.global_state.price)})
-                ),
-                ActionToTake(
-                    entity_name='SPOT',
-                    action=Action('withdraw', {'amount_in_notional': delegate_get_cash})
                 ),
             ]
 
