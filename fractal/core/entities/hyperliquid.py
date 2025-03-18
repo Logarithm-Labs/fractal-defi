@@ -197,9 +197,9 @@ class HyperliquidEntity(BaseHedgeEntity):
         Aggregates all positions into a single position.
 
         If positions of opposite sides are present (i.e., a closing trade occurs),
-        the entry price of the remaining open position does not change, and the 
+        the entry price of the remaining open position does not change, and the
         realized PnL for the closed quantity is added to the collateral.
-        For positions on the same side (i.e., opening trades), the entry price 
+        For positions on the same side (i.e., opening trades), the entry price
         is updated to the weighted average.
         """
         positions = self._internal_state.positions
@@ -233,12 +233,12 @@ class HyperliquidEntity(BaseHedgeEntity):
                     # If the base position is fully closed, adopt the remainder as the new base position.
                     if abs(base.amount) < 1e-9:
                         base = HyperLiquidPosition(
-                            amount = remaining if pos.amount > 0 else -remaining,
-                            entry_price = pos.entry_price,
-                            max_leverage = self.MAX_LEVERAGE
+                            amount=remaining if pos.amount > 0 else -remaining,
+                            entry_price=pos.entry_price,
+                            max_leverage=self.MAX_LEVERAGE
                         )
                     # If the base position is not fully closed, the remaining incoming position is effectively absorbed.
-        
+
         # Add the realized pnl from the closed quantity to the collateral.
         self._internal_state.collateral += realized_pnl
 

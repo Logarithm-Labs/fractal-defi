@@ -101,7 +101,7 @@ class StrategyResult:
         """
         Convert the result to a DataFrame.
         This version recursively flattens nested attributes in internal_states and global_states.
-        
+
         Returns:
             pd.DataFrame: DataFrame with the result.
         """
@@ -137,21 +137,21 @@ class StrategyResult:
         # Iterate through each timestamp and flatten the corresponding state and balance info.
         for i, timestamp in enumerate(self.timestamps):
             row = {'timestamp': timestamp}
-            
+
             # Flatten each internal state under its entity name.
             for entity_name, internal_state in self.internal_states[i].items():
                 flat_internal = flatten(internal_state, parent_key=entity_name)
                 row.update(flat_internal)
-            
+
             # Flatten each global state under its entity name.
             for entity_name, global_state in self.global_states[i].items():
                 flat_global = flatten(global_state, parent_key=entity_name)
                 row.update(flat_global)
-            
+
             # Add balances (assumed to be scalars).
             for entity_name, balance in self.balances[i].items():
                 row[f"{entity_name}_balance"] = balance
-            
+
             rows.append(row)
 
         df = pd.DataFrame(rows)

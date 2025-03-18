@@ -2,6 +2,9 @@ from fractal.core.entities.aave import AaveEntity, AaveGlobalState
 from fractal.core.entities.gmx_v2 import (GMXV2Entity, GMXV2GlobalState,
                                           GMXV2Position)
 from fractal.core.entities.hedge import BaseHedgeEntity
+from fractal.core.entities.hyperliquid import (HyperliquidEntity,
+                                               HyperLiquidGlobalState,
+                                               HyperLiquidInternalState)
 from fractal.core.entities.lending import BaseLendingEntity
 from fractal.core.entities.pool import BasePoolEntity
 from fractal.core.entities.spot import BaseSpotEntity
@@ -14,9 +17,6 @@ from fractal.core.entities.uniswap_v3_lp import (UniswapV3LPConfig,
                                                  UniswapV3LPGlobalState)
 from fractal.core.entities.uniswap_v3_spot import (UniswapV3SpotEntity,
                                                    UniswapV3SpotGlobalState)
-from fractal.core.entities.hyperliquid import (HyperliquidEntity, HyperLiquidGlobalState,
-                                          HyperLiquidInternalState)
-
 
 __all__ = [
     "BaseHedgeEntity",

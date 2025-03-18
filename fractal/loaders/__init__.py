@@ -4,6 +4,8 @@ from fractal.loaders.binance import (BinanceDayPriceLoader,
                                      BinanceFundingLoader,
                                      BinanceHourPriceLoader)
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
+from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
+                                         HyperLiquidPerpsPricesLoader)
 from fractal.loaders.simulations import (ConstantFundingsLoader,
                                          LPMLSimulatedStatesLoader,
                                          LPSimulatedStates,
@@ -18,10 +20,6 @@ from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       UniswapV3ArbitrumPricesLoader,
                                       UniswapV3EthereumPoolDayDataLoader,
                                       UniswapV3EthereumPoolHourDataLoader)
-from fractal.loaders.hyperliquid import (
-    HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
-)
-
 
 __all__ = [
     "Loader",
@@ -54,4 +52,5 @@ __all__ = [
     "HyperliquidFundingRatesLoader",
     "HyperLiquidPerpsPricesLoader",
     "HyperliquidFundingRatesLoader",
+    "UniswapV3ArbitrumPricesLoader",
 ]

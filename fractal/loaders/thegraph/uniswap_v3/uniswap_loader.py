@@ -1,5 +1,5 @@
-from typing import Tuple
 from abc import abstractmethod
+from typing import Tuple
 
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader

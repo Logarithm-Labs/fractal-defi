@@ -1,9 +1,10 @@
-from typing import List
 from dataclasses import dataclass
+from typing import List
 
-from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams
-from fractal.core.entities import UniswapV3LPEntity, UniswapV3LPConfig
+from fractal.core.base import (Action, ActionToTake, BaseStrategy,
+                               BaseStrategyParams)
 from fractal.core.base.strategy import NamedEntity
+from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
 
 
 @dataclass
@@ -81,7 +82,7 @@ class TauResetStrategy(BaseStrategy):
 
         # If the price moves outside the range, reallocate liquidity
         if current_price < lower_bound or current_price > upper_bound:
-            self.logger.debug(f"Price {current_price} moved outside range [{lower_bound}, {upper_bound}]. Rebalancing...")
+            self.logger.debug(f"Rebalance {current_price} moved outside range [{lower_bound}, {upper_bound}].")
             return self._rebalance()
         return []
 
@@ -112,8 +113,8 @@ class TauResetStrategy(BaseStrategy):
         tau = self._params.TAU
         reference_price: float = entity.global_state.price
         tick_spacing = self.tick_spacing
-        price_lower = reference_price * 1.0001 ** (-tau*tick_spacing)
-        price_upper = reference_price * 1.0001 ** (tau*tick_spacing)
+        price_lower = reference_price * 1.0001 ** (-tau * tick_spacing)
+        price_upper = reference_price * 1.0001 ** (tau * tick_spacing)
 
         # Step 3: Open a new position centered around the new price
         delegate_get_cash = lambda obj: obj.get_entity('UNISWAP_V3').internal_state.cash

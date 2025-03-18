@@ -8,7 +8,7 @@ def test_aave_v2_ethereum():
     loader: AaveV2EthereumLoader = AaveV2EthereumLoader(
         asset_address="0x6b175474e89094c44da98b954eedeac495271d0f",  # DAI
         loader_type=LoaderType.CSV,
-        start_time=datetime(2024, 6, 1),
+        start_time=datetime(2025, 1, 1),
         resolution=24,
     )
     data: LendingHistory = loader.read(with_run=True)
@@ -22,7 +22,7 @@ def test_aave_v3_arbitrum():
     loader: AaveV3ArbitrumLoader = AaveV3ArbitrumLoader(
         asset_address="0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",  # WETH
         loader_type=LoaderType.CSV,
-        start_time=datetime(2024, 6, 1),
+        start_time=datetime(2025, 1, 1),
         resolution=24,
     )
     data: LendingHistory = loader.read(with_run=True)

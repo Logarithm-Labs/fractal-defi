@@ -59,7 +59,6 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
         else:
             self._read(self.pool)
         self._data['date'] = pd.to_datetime(self._data['date'])
-        
         return PoolHistory(
             tvls=self._data['tvl'].astype(float).values,
             volumes=self._data['volume'].astype(float).values,

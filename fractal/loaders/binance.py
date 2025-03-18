@@ -1,5 +1,4 @@
-from datetime import datetime, UTC
-from typing import List
+from datetime import UTC, datetime
 from time import time
 
 import pandas as pd
@@ -87,8 +86,7 @@ class BinancePriceLoader(Loader):
     def __init__(
             self, ticker: str, loader_type: LoaderType,
             inverse_price: bool = False, interval: str = '1h',
-            start_time: datetime = None, end_time: datetime = None
-        ):
+            start_time: datetime = None, end_time: datetime = None):
         """
         Binance Price Loader
         Load price data from Binance API for a given ticker.
@@ -138,7 +136,7 @@ class BinancePriceLoader(Loader):
             raise ValueError("Invalid interval format. Example valid formats: '15m', '1h', '1d'.")
         if unit not in interval_mapping:
             raise ValueError(f"Interval unit '{unit}' not supported. Supported units: {list(interval_mapping.keys())}.")
-        
+
         # Each candle’s duration in ms
         candle_duration_ms = amount * interval_mapping[unit]
         # Step covers 1000 candles (matching the 'limit=1000' in the API call)
@@ -215,8 +213,7 @@ class BinanceDayPriceLoader(BinancePriceLoader):
 
     def __init__(
             self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None
-        ):
+            start_time: datetime = None, end_time: datetime = None):
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1d',
             start_time=start_time, end_time=end_time
@@ -227,20 +224,18 @@ class BinanceHourPriceLoader(BinancePriceLoader):
 
     def __init__(
             self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None
-        ):
+            start_time: datetime = None, end_time: datetime = None):
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1h',
             start_time=start_time, end_time=end_time
         )
- 
+
 
 class BinanceMinutePriceLoader(BinancePriceLoader):
 
     def __init__(
             self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None
-        ):
+            start_time: datetime = None, end_time: datetime = None):
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1m',
             start_time=start_time, end_time=end_time

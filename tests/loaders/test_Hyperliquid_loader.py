@@ -1,14 +1,15 @@
 from datetime import datetime
 
-from fractal.loaders.hyperliquid import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
 from fractal.loaders import FundingHistory, PriceHistory
+from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
+                                         HyperLiquidPerpsPricesLoader)
 
 
 def test_hyperliquid_fundings_loader():
     loader: HyperliquidFundingRatesLoader = HyperliquidFundingRatesLoader(
         ticker="ETH",
-        start_time=datetime(2023, 1, 1),
-        end_time=datetime(2023, 6, 1),
+        start_time=datetime(2025, 1, 1),
+        end_time=datetime(2025, 6, 1),
     )
     data: FundingHistory = loader.read(with_run=True)
     assert len(data) > 0
@@ -23,3 +24,5 @@ def test_hyperliquid_klines_loader():
     data: PriceHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["price"].dtype == "float64"
+    read_data = loader.read()
+    assert len(read_data) > 0

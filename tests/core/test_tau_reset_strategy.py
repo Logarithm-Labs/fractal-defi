@@ -4,7 +4,7 @@ import pytest
 
 from fractal.core.base import Observation
 from fractal.core.entities import UniswapV3LPGlobalState
-from fractal.strategies import TauResetStrategy, TauResetParams
+from fractal.strategies import TauResetParams, TauResetStrategy
 
 
 @pytest.fixture
