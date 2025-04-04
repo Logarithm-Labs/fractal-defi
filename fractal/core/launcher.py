@@ -1,7 +1,8 @@
-from typing import List, Type, Optional
+from typing import List, Optional, Type
 
-from fractal.core.base.observations import ObservationsStorage, Observation
-from fractal.core.base.strategy import BaseStrategy, BaseStrategyParams, StrategyResult
+from fractal.core.base.observations import Observation, ObservationsStorage
+from fractal.core.base.strategy import (BaseStrategy, BaseStrategyParams,
+                                        StrategyResult)
 
 
 class Launcher:

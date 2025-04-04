@@ -1,10 +1,11 @@
+from dataclasses import dataclass
+from datetime import datetime
+
 import pytest
 
-from datetime import datetime
-from dataclasses import dataclass
-
 from fractal.core.base.entity import GlobalState
-from fractal.core.base.observations import Observation, SQLiteObservationsStorage
+from fractal.core.base.observations import (Observation,
+                                            SQLiteObservationsStorage)
 
 
 @dataclass

@@ -1,6 +1,6 @@
-from abc import abstractmethod, ABC
-from typing import Optional, Sequence
+from abc import ABC, abstractmethod
 from datetime import datetime
+from typing import Optional, Sequence
 
 from fractal.core.base.observations.observation import Observation
 

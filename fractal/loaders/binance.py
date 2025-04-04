@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.structs import FundingHistory, PriceHistory, KlinesHistory
+from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
 
 class BinanceFundingLoader(Loader):

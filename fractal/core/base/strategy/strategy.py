@@ -6,8 +6,8 @@ from typing import Dict, List, NamedTuple, Optional, Type
 
 from fractal.core.base.entity import (Action, BaseEntity, GlobalState,
                                       InternalState)
-from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
 from fractal.core.base.observations import Observation, ObservationsStorage
+from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
 from fractal.core.base.strategy.result import StrategyResult
 
 NamedEntity = NamedTuple('NamedEntity', [('entity_name', str), ('entity', BaseEntity)])

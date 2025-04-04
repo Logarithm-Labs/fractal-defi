@@ -1,12 +1,12 @@
-import sqlite3
 import pickle
-
-from uuid import uuid4
+import sqlite3
 from datetime import datetime
 from typing import Optional, Sequence
+from uuid import uuid4
 
 from fractal.core.base.observations.observation import Observation
-from fractal.core.base.observations.observations_storage import ObservationsStorage
+from fractal.core.base.observations.observations_storage import \
+    ObservationsStorage
 
 
 class SQLiteObservationsStorage(ObservationsStorage):
