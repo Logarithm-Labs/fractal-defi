@@ -5,7 +5,7 @@ import pandas as pd
 import requests
 
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.structs import FundingHistory, PriceHistory
+from fractal.loaders.structs import FundingHistory, PriceHistory, KlinesHistory
 
 
 class BinanceFundingLoader(Loader):
@@ -239,4 +239,20 @@ class BinanceMinutePriceLoader(BinancePriceLoader):
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1m',
             start_time=start_time, end_time=end_time
+        )
+
+
+class BinanceKlinesLoader(BinancePriceLoader):
+
+    def read(self, with_run: bool = False) -> KlinesHistory:
+        if with_run:
+            self.run()
+        else:
+            self._read(self.ticker)
+        return KlinesHistory(
+            open=self._data['open'].astype(float).values,
+            high=self._data['high'].astype(float).values,
+            low=self._data['low'].astype(float).values,
+            close=self._data['close'].astype(float).values,
+            time=pd.to_datetime(self._data['date']).values
         )

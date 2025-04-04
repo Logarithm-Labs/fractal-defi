@@ -1,10 +1,9 @@
 mlflow>=2.14.1
 pandas>=2.2.2
-numpy>=1.16.0,<2
+numpy>=1.16.0
 loguru>=0.7.2
 pytest>=8.2.2
 pylint>=3.2.5
 flake8>=7.1.0
 requests>=2.32.3
 scipy==1.14.0
-catboost==1.2.5

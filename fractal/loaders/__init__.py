@@ -7,8 +7,6 @@ from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
                                          HyperLiquidPerpsPricesLoader)
 from fractal.loaders.simulations import (ConstantFundingsLoader,
-                                         LPMLSimulatedStatesLoader,
-                                         LPSimulatedStates,
                                          MonteCarloHourPriceLoader)
 from fractal.loaders.structs import (FundingHistory, LendingHistory,
                                      PoolHistory, PriceHistory, RateHistory)
@@ -41,8 +39,6 @@ __all__ = [
     "UniswapV3EthereumPoolHourDataLoader",
     "StETHLoader",
     "ConstantFundingsLoader",
-    "LPMLSimulatedStatesLoader",
-    "LPSimulatedStates",
     "EthereumUniswapV2PoolDataLoader",
     "BaseGraphLoader",
     "GraphLoaderException",

@@ -50,3 +50,14 @@ class PoolHistory(pd.DataFrame):
             index=time,
             columns=['tvl', 'volume', 'fees', 'liquidity']
         )
+
+
+class KlinesHistory(pd.DataFrame):
+    """
+    OHLC Klines data structure.
+    """
+    def __init__(self, time: np.array,
+                 open: np.array, high: np.array,
+                 low: np.array, close: np.array):
+        super().__init__(data=np.array([open, high, low, close]).T,
+                         index=time, columns=['open', 'high', 'low', 'close'])
