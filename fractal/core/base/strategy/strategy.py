@@ -162,7 +162,7 @@ class BaseStrategy(ABC):
         self._debug("=" * 30)
         self._debug("Running step...")
         self._debug(f"Observation: {observation.timestamp}")
-        
+
         if self.observations_storage is not None:
             self.observations_storage.write(observation)
 

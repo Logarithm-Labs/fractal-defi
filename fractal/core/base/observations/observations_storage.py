@@ -13,7 +13,7 @@ class ObservationsStorage(ABC):
     @abstractmethod
     def write(self, observation: Observation):
         raise NotImplementedError
-    
+
     @abstractmethod
     def read(self, start_time: Optional[datetime] = None,
              end_time: Optional[datetime] = None) -> Sequence[Observation]:

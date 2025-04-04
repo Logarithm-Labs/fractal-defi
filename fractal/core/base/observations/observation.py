@@ -35,7 +35,7 @@ class Observation:
         return f"Observation(timestamp={self.timestamp}, states={self.states})"
 
     def __json__(self):
-        data =  {entity_name: state.__dict__ for entity_name, state in self.states.items()}
+        data = {entity_name: state.__dict__ for entity_name, state in self.states.items()}
         return json.dumps(data)
 
     def to_json(self) -> str:
@@ -43,6 +43,6 @@ class Observation:
 
     def __hash__(self):
         return hash(self.__json__())
-    
+
     def __eq__(self, other):
         return self.__json__() == other.__json__()
