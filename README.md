@@ -1,5 +1,5 @@
 # Fractal
-Fractal is an ultimate DeFi research library for strategy development and fractaling created by Logarithm Labs.
+Fractal is an ultimate DeFi research library for strategy development and testing created by Logarithm Labs.
 
 ## Docs
 - [Technical docs.](https://logarithm-labs.gitbook.io/fractal/)
