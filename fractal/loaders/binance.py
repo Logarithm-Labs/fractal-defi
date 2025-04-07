@@ -430,36 +430,3 @@ class BinanceKlinesLoader(BinancePriceLoader):
             close=self._data["close"].astype(float).values,
             time=pd.to_datetime(self._data["openTime"], utc=True),
         )
-
-
-class BinanceDayPriceLoader(BinancePriceLoader):
-
-    def __init__(
-            self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None):
-        super().__init__(
-            ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1d',
-            start_time=start_time, end_time=end_time
-        )
-
-
-class BinanceHourPriceLoader(BinancePriceLoader):
-
-    def __init__(
-            self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None):
-        super().__init__(
-            ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1h',
-            start_time=start_time, end_time=end_time
-        )
-
-
-class BinanceMinutePriceLoader(BinancePriceLoader):
-
-    def __init__(
-            self, ticker: str, loader_type: LoaderType, inverse_price: bool = False,
-            start_time: datetime = None, end_time: datetime = None):
-        super().__init__(
-            ticker=ticker, loader_type=loader_type, inverse_price=inverse_price, interval='1m',
-            start_time=start_time, end_time=end_time
-        )
