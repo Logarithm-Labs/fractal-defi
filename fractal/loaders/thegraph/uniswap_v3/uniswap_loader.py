@@ -28,7 +28,6 @@ class UniswapV3Loader(ArbitrumGraphLoader):
         Returns:
             Tuple[int, int]: Decimals of input tokens (token0, token1)
         """
-        pass
 
     def extract(self):
         pass

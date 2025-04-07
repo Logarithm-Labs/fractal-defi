@@ -9,9 +9,9 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import ParameterGrid
 
+from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy import (BaseStrategy, BaseStrategyParams,
-                                        Observation, StrategyMetrics,
-                                        StrategyResult)
+                                        StrategyMetrics, StrategyResult)
 from fractal.core.launcher import Launcher
 
 
@@ -52,6 +52,7 @@ class ExperimentConfig:
     """
     strategy_type: Type[BaseStrategy]
     params_grid: Iterable[BaseStrategyParams] | ParameterGrid
+    observations_storage_type: Optional[Type[ObservationsStorage]] = None
     backtest_observations: Optional[List[Observation]] = None
     backtest_trajectories: Optional[List[List[Observation]]] = None
     window_size: Optional[int] = None
@@ -139,7 +140,8 @@ class DefaultPipeline(Pipeline):
             params (BaseStrategyParams | Dict): Parameters for the strategy.
         """
         # set up the launcher
-        launcher = Launcher(strategy_type=self._config.strategy_type, params=params)
+        launcher = Launcher(strategy_type=self._config.strategy_type, params=params,
+                            observations_storage_type=self._config.observations_storage_type)
 
         # set run name
         run_name = None

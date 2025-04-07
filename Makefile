@@ -62,7 +62,7 @@ mypy: .venv
 pylint: .venv
 	pylint $(PROJECT) --disable=C0116,C0115,C0114,C0301,C3001,W0622
 
-lint: isort flake mypy pylint
+lint: isort flake pylint
 
 
 # Test

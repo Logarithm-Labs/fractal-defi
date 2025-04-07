@@ -174,3 +174,4 @@ catboost_info
 /mlartifact
 /fractal_data
 /.idea
+*.db

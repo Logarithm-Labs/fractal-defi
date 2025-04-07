@@ -20,8 +20,8 @@ class HolderStrategyParams(BaseStrategyParams):
 
 class HodlerStrategy(BaseStrategy):
 
-    def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None):
-        super().__init__(params=params, debug=debug)
+    def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None, *args, **kwargs):
+        super().__init__(params=params, debug=debug, *args, **kwargs)
 
     def set_up(self):
         # check that the entity 'exchange' is registered

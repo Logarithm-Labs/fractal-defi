@@ -1,7 +1,8 @@
-from typing import List, Type
+from typing import List, Optional, Type
 
+from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy import (BaseStrategy, BaseStrategyParams,
-                                        Observation, StrategyResult)
+                                        StrategyResult)
 
 
 class Launcher:
@@ -11,8 +12,10 @@ class Launcher:
     - Multiple trajectories
     - Scenario (multiple fractals in sliding window across the observations)
     """
-    def __init__(self, strategy_type: Type[BaseStrategy], params: BaseStrategyParams):
+    def __init__(self, strategy_type: Type[BaseStrategy], params: BaseStrategyParams,
+                 observations_storage_type: Optional[Type[ObservationsStorage]] = None):
         self._strategy_type: Type[BaseStrategy] = strategy_type
+        self._observations_storage_type: Type[ObservationsStorage] = observations_storage_type
         self._params: BaseStrategyParams = params
         self._last_created_instance: BaseStrategy | None = None
 
@@ -20,7 +23,13 @@ class Launcher:
         """
         Get the copy of the strategy to avoid storing outdated states.
         """
-        instance: BaseStrategy = self._strategy_type(params=self._params, debug=debug)
+        if self._observations_storage_type is None:
+            observations_storage_instance: ObservationsStorage = None
+        else:
+            observations_storage_instance: ObservationsStorage = self._observations_storage_type()
+
+        instance: BaseStrategy = self._strategy_type(params=self._params, debug=debug,
+                                                     observations_storage=observations_storage_instance)
         self._last_created_instance: BaseStrategy = instance
         return instance
 

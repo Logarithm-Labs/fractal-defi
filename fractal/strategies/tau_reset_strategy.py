@@ -36,10 +36,10 @@ class TauResetStrategy(BaseStrategy):
     token1_decimals: int = -1
     tick_spacing: int = -1
 
-    def __init__(self, params: TauResetParams, debug: bool = False, **kwargs):
+    def __init__(self, params: TauResetParams, debug: bool = False, *args, **kwargs):
         self._params: TauResetParams = None  # set for type hinting
         assert self.token0_decimals != -1 and self.token1_decimals != -1 and self.tick_spacing != -1
-        super().__init__(params=params, debug=debug, **kwargs)
+        super().__init__(params=params, debug=debug, *args, **kwargs)
         self.deposited_initial_funds = False
 
     def set_up(self):
