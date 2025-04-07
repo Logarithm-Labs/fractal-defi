@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -12,7 +12,7 @@ from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
 
 class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         """
         Args:
             api_key (str): The Graph API key
@@ -43,7 +43,7 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
         self._data = pd.DataFrame(response['poolDayDatas'])
 
     def transform(self):
-        self._data['date'] = self._data['date'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
+        self._data['date'] = self._data['date'].astype(int).apply(lambda x: datetime.fromtimestamp(x, UTC))
         self._data['date'] = self._data['date'].dt.date
         self._data['volume'] = self._data['volumeUSD'].astype(float)
         self._data['tvl'] = self._data['tvlUSD'].astype(float)
@@ -64,13 +64,13 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             volumes=self._data['volume'].astype(float).values,
             fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=self._data['date'].values,
+            time=pd.to_datetime(self._data['date'], utc=True)
         )
 
 
 class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         super().__init__(
             api_key=api_key,
             loader_type=loader_type,
@@ -97,8 +97,8 @@ class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
         self._data = pd.DataFrame(response['liquidityPoolDailySnapshots'])
 
     def transform(self):
-        self._data['date'] = pd.to_datetime(self._data['timestamp'].astype(int) * 1000)
-        self._data['date'] = self._data['date'].dt.date + timedelta(days=1)
+        self._data['date'] = pd.to_datetime(self._data['timestamp'].astype(int) * 1000, utc=True)
+        self._data['date'] = self._data['date'].dt.date
         self._data['volume'] = 0  # mocked
         self._data['fees'] = self._data['dailyTotalRevenueUSD'].astype(float)
         self._data['tvl'] = self._data['totalValueLockedUSD'].astype(float)
@@ -117,13 +117,13 @@ class UniswapV3ArbitrumPoolDayDataLoader(ArbitrumUniswapV3Loader):
             volumes=self._data['volume'].astype(float).values,
             fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=self._data['date'].values
+            time=pd.to_datetime(self._data['date'], utc=True),
         )
 
 
 class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
 
     def transform(self):
@@ -141,7 +141,7 @@ class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
 
 class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
 
     def transform(self):
@@ -159,7 +159,7 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
 class UniswapV3EthereumPoolMinuteDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
 
     def transform(self):

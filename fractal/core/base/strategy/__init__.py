@@ -1,4 +1,3 @@
-from fractal.core.base.strategy.observation import Observation
 from fractal.core.base.strategy.result import StrategyMetrics, StrategyResult
 from fractal.core.base.strategy.strategy import (ActionToTake, BaseStrategy,
                                                  BaseStrategyParams,
@@ -10,5 +9,4 @@ __all__ = [
     'NamedEntity', 'ActionToTake',
     'StrategyResult',
     'StrategyMetrics',
-    'Observation'
 ]

@@ -1,7 +1,7 @@
 import os
 
 from typing import List
-from datetime import datetime
+from datetime import datetime, UTC
 
 import pandas as pd
 
@@ -65,6 +65,8 @@ def build_observations(
             api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=True)
         binance_prices: PriceHistory = BinanceMinutePriceLoader(ticker, loader_type=LoaderType.CSV,
                                                                 start_time=start_time, end_time=end_time).read(with_run=True)
+    else:
+        raise ValueError("Fidelity must be either 'hour' or 'minute'.")
     return get_observations(pool_data, binance_prices, start_time, end_time)
 
 
@@ -89,8 +91,8 @@ if __name__ == '__main__':
     entities = strategy.get_all_available_entities().keys()
     observations: List[Observation] = build_observations(
         ticker=ticker, pool_address=pool_address, api_key=THE_GRAPH_API_KEY,
-        start_time=datetime(2025, 1, 11), end_time=datetime(2025, 2, 11),
-        fidelity='minute'
+        start_time=datetime(2025, 1, 11, tzinfo=UTC), end_time=datetime(2025, 2, 11, tzinfo=UTC),
+        fidelity='hour'
     )
     observation0 = observations[0]
     # check if the observation has the right entities

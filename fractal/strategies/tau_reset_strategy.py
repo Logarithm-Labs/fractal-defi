@@ -2,8 +2,7 @@ from dataclasses import dataclass
 from typing import List
 
 from fractal.core.base import (Action, ActionToTake, BaseStrategy,
-                               BaseStrategyParams)
-from fractal.core.base.strategy import NamedEntity
+                               BaseStrategyParams, NamedEntity)
 from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
 
 
@@ -36,10 +35,10 @@ class TauResetStrategy(BaseStrategy):
     token1_decimals: int = -1
     tick_spacing: int = -1
 
-    def __init__(self, params: TauResetParams, debug: bool = False, **kwargs):
+    def __init__(self, params: TauResetParams, debug: bool = False, *args, **kwargs):
         self._params: TauResetParams = None  # set for type hinting
         assert self.token0_decimals != -1 and self.token1_decimals != -1 and self.tick_spacing != -1
-        super().__init__(params=params, debug=debug, **kwargs)
+        super().__init__(params=params, debug=debug, *args, **kwargs)
         self.deposited_initial_funds = False
 
     def set_up(self):
@@ -69,12 +68,12 @@ class TauResetStrategy(BaseStrategy):
 
         # Check if we need to deposit funds into the LP before proceeding
         if not uniswap_entity.is_position and not self.deposited_initial_funds:
-            self.logger.debug("No active position. Depositing initial funds...")
+            self._debug("No active position. Depositing initial funds...")
             self.deposited_initial_funds = True
             return self._deposit_to_lp()
 
         if not uniswap_entity.is_position:
-            self.logger.debug("No active position. Run first rebalance")
+            self._debug("No active position. Run first rebalance")
             return self._rebalance()
 
         # Calculate the boundaries of the price range (bucket)
@@ -82,7 +81,7 @@ class TauResetStrategy(BaseStrategy):
 
         # If the price moves outside the range, reallocate liquidity
         if current_price < lower_bound or current_price > upper_bound:
-            self.logger.debug(f"Rebalance {current_price} moved outside range [{lower_bound}, {upper_bound}].")
+            self._debug(f"Rebalance {current_price} moved outside range [{lower_bound}, {upper_bound}].")
             return self._rebalance()
         return []
 
@@ -107,7 +106,7 @@ class TauResetStrategy(BaseStrategy):
             actions.append(
                 ActionToTake(entity_name='UNISWAP_V3', action=Action(action='close_position', args={}))
             )
-            self.logger.debug("Liquidity withdrawn from the current range.")
+            self._debug("Liquidity withdrawn from the current range.")
 
         # Step 2: Calculate new range boundaries
         tau = self._params.TAU
@@ -129,5 +128,5 @@ class TauResetStrategy(BaseStrategy):
                 }
             )
         ))
-        self.logger.debug(f"New position opened with range [{price_lower}, {price_upper}].")
+        self._debug(f"New position opened with range [{price_lower}, {price_upper}].")
         return actions

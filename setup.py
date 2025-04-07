@@ -8,7 +8,7 @@ def parse_requirements(filename):
 
 setup(
     name='fractal-defi',
-    version='1.2.0',
+    version='1.2.1',
     packages=find_packages(),
     author='Logarithm Labs',
     author_email='dev@logarithm.fi',

@@ -12,7 +12,7 @@ class EthereumUniswapV2Loader(ArbitrumGraphLoader):
 
     SUBGRAPH_ID = "EYCKATKGBKLWvSfwvBjzfCBmGwYNdVkduYXVivCsLRFu"
 
-    def __init__(self, api_key: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         """
         Args:
             api_key (str): The Graph API key

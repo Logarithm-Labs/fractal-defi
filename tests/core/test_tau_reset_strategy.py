@@ -23,6 +23,8 @@ def strategy():
         )
     )
 
+
+@pytest.mark.core
 def test_initial_deposit(strategy: TauResetStrategy):
     """
     Test that the strategy correctly deposits funds into the Uniswap LP when no position exists.
@@ -48,6 +50,8 @@ def test_initial_deposit(strategy: TauResetStrategy):
     assert uniswap_lp.internal_state.cash == 100_000  # Ensure the deposit was made
     assert uniswap_lp.is_position is False  # No position yet opened
 
+
+@pytest.mark.core
 def test_rebalance_on_price_outside_range(strategy: TauResetStrategy):
     """
     Test that the strategy rebalances when the price moves outside the [P - τ, P + τ] range.
@@ -81,6 +85,8 @@ def test_rebalance_on_price_outside_range(strategy: TauResetStrategy):
     assert uniswap_lp.internal_state.price_lower == 2787.502657974827  # New lower bound
     assert uniswap_lp.internal_state.price_upper == 3337.216548793694  # New upper bound
 
+
+@pytest.mark.core
 def test_rebalance_within_bounds(strategy: TauResetStrategy):
     """
     Test that the strategy does not rebalance when the price remains within [P - τ, P + τ].
@@ -112,6 +118,8 @@ def test_rebalance_within_bounds(strategy: TauResetStrategy):
     assert uniswap_lp.internal_state.price_lower == 2741.8058930899933  # Original lower bound
     assert uniswap_lp.internal_state.price_upper == 3282.5080807806826  # Original upper bound
 
+
+@pytest.mark.core
 def test_multiple_rebalances(strategy: TauResetStrategy):
     """
     Test multiple rebalances as the price fluctuates beyond the defined range.

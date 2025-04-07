@@ -1,7 +1,10 @@
+import pytest
+
 from fractal.loaders import (EthereumUniswapV2PoolDataLoader, LoaderType,
                              PoolHistory)
 
 
+@pytest.mark.integration
 def test_uniswap_v2_lp(THE_GRAPH_API_KEY: str):
     loader = EthereumUniswapV2PoolDataLoader(
         pool="0xa43fe16908251ee70ef74718545e4fe6c5ccec9f",

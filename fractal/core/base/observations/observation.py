@@ -1,3 +1,4 @@
+import json
 from datetime import datetime
 from typing import Dict
 
@@ -32,3 +33,16 @@ class Observation:
 
     def __repr__(self) -> str:
         return f"Observation(timestamp={self.timestamp}, states={self.states})"
+
+    def __json__(self):
+        data = {entity_name: state.__dict__ for entity_name, state in self.states.items()}
+        return json.dumps(data)
+
+    def to_json(self) -> str:
+        return self.__json__()
+
+    def __hash__(self):
+        return hash(self.__json__())
+
+    def __eq__(self, other):
+        return self.__json__() == other.__json__()
