@@ -4,7 +4,7 @@ warnings.filterwarnings('ignore')
 
 import numpy as np
 
-from datetime import datetime
+from datetime import datetime, UTC
 from sklearn.model_selection import ParameterGrid
 
 from fractal.core.pipeline import (
@@ -23,8 +23,8 @@ def build_grid():
 if __name__ == '__main__':
     ticker: str = 'ETHUSDT'
     pool_address: str = '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8'
-    start_time = datetime(2024, 7, 1)
-    end_time = datetime(2024, 9, 30)
+    start_time = datetime(2024, 7, 1, tzinfo=UTC)
+    end_time = datetime(2024, 9, 30, tzinfo=UTC)
     fidelity = 'minute'
     experiment_name = f'rtau_{fidelity}_{ticker}_{pool_address}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
     TauResetStrategy.token0_decimals = 6
