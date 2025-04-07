@@ -2,7 +2,7 @@ import os
 import warnings
 
 import numpy as np
-from datetime import datetime
+from datetime import datetime, UTC
 from sklearn.model_selection import ParameterGrid
 
 from fractal.core.pipeline import (
@@ -32,8 +32,8 @@ def build_grid():
 
 if __name__ == '__main__':
     ticker: str = 'BTC'
-    start_time = datetime(2022, 1, 1)
-    end_time = datetime(2025, 1, 1)
+    start_time = datetime(2022, 1, 1, tzinfo=UTC)
+    end_time = datetime(2025, 1, 1, tzinfo=UTC)
     fidelity = '1h'
     experiment_name = f'mb_binance_{fidelity}_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
 
