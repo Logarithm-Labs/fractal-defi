@@ -43,7 +43,7 @@ def build_grid() -> ParameterGrid:
 if __name__ == '__main__':
     # Define MLFlow and Experiment configurations
     mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:5000',
+        mlflow_uri='http://127.0.01:8080',
         experiment_name='binance_hodler_btc_0'
     )
     experiment_config: ExperimentConfig = ExperimentConfig(

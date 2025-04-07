@@ -1,13 +1,14 @@
 from datetime import datetime
 from typing import List
 
+import pytest
 from hodler import Hodler, HodlerGlobalState, HodlerParams, HodlerStrategy
 
 from fractal.core.base import NamedEntity, Observation
 
 
 class TestHodlerStrategy:
-
+    @pytest.mark.core
     def test_register_entity(self, hodler_strategy: HodlerStrategy):
         hodler_strategy.register_entity(NamedEntity(entity_name='stupid_hodler_2', entity=Hodler()))
         try:
@@ -17,6 +18,7 @@ class TestHodlerStrategy:
             assert True
         assert len(hodler_strategy._entities) == 2
 
+    @pytest.mark.core
     def test_estimate_predict(self, hodler_strategy: HodlerStrategy):
         actions = hodler_strategy.estimate_predict(
             Observation(timestamp=datetime(2020, 1, 2), states={
@@ -27,6 +29,7 @@ class TestHodlerStrategy:
         assert actions[0].action.action == 'buy'
         assert actions[0].action.args == {'amount': 500}
 
+    @pytest.mark.core
     def test_step(self, hodler_strategy: HodlerStrategy):
         hodler_strategy.step(
             Observation(timestamp=datetime(2020, 1, 2), states={
@@ -36,6 +39,7 @@ class TestHodlerStrategy:
         assert hodler_strategy.get_entity('stupid_hodler').global_state.price == 3001
         assert hodler_strategy.get_entity('stupid_hodler').balance == 500 * 3001
 
+    @pytest.mark.core
     def test_full_pipeline(self):
         hodler_strategy = HodlerStrategy(debug=True, params=HodlerParams())
         observations: List[Observation] = [

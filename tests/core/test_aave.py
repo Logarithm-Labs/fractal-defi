@@ -8,17 +8,23 @@ from fractal.core.entities.aave import (AaveEntity, AaveGlobalState,
 def aave_entity():
     return AaveEntity()
 
+
+@pytest.mark.core
 def test_action_redeem(aave_entity: AaveEntity):
     aave_entity.internal_state.borrowed = 1000
     aave_entity.action_redeem(500)
     assert aave_entity.internal_state.borrowed == 500
 
+
+@pytest.mark.core
 def test_action_redeem_exceeds_borrowed_amount(aave_entity: AaveEntity):
     aave_entity.internal_state.borrowed = 1000
     with pytest.raises(EntityException):
         aave_entity.action_redeem(1500)
     assert aave_entity.internal_state.borrowed == 1000
 
+
+@pytest.mark.core
 def test_action_borrow(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.global_state.product_price = 10
@@ -27,6 +33,8 @@ def test_action_borrow(aave_entity: AaveEntity):
     aave_entity.action_borrow(500)
     assert aave_entity.internal_state.borrowed == 500
 
+
+@pytest.mark.core
 def test_action_borrow_exceeds_max_ltv(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.global_state.product_price = 10
@@ -35,10 +43,14 @@ def test_action_borrow_exceeds_max_ltv(aave_entity: AaveEntity):
     with pytest.raises(EntityException):
         aave_entity.action_borrow(80.1)
 
+
+@pytest.mark.core
 def test_action_deposit(aave_entity: AaveEntity):
     aave_entity.action_deposit(1000)
     assert aave_entity.internal_state.collateral == 1000
 
+
+@pytest.mark.core
 def test_action_withdraw(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 500
@@ -48,6 +60,8 @@ def test_action_withdraw(aave_entity: AaveEntity):
     aave_entity.action_withdraw(500)
     assert aave_entity.internal_state.collateral == 500
 
+
+@pytest.mark.core
 def test_action_withdraw_exceeds_max_ltv(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 79.9
@@ -57,6 +71,8 @@ def test_action_withdraw_exceeds_max_ltv(aave_entity: AaveEntity):
     with pytest.raises(EntityException):
         aave_entity.action_withdraw(2)
 
+
+@pytest.mark.core
 def test_balance(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 50
@@ -64,6 +80,8 @@ def test_balance(aave_entity: AaveEntity):
     aave_entity.global_state.notional_price = 1
     assert aave_entity.balance == 500
 
+
+@pytest.mark.core
 def test_ltv(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 50
@@ -71,6 +89,8 @@ def test_ltv(aave_entity: AaveEntity):
     aave_entity.global_state.notional_price = 1
     assert aave_entity.ltv == 0.5
 
+
+@pytest.mark.core
 def test_check_liquidation(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 84
@@ -81,6 +101,8 @@ def test_check_liquidation(aave_entity: AaveEntity):
     assert aave_entity.internal_state.collateral == 0
     assert aave_entity.internal_state.borrowed == 0
 
+
+@pytest.mark.core
 def test_update_state(aave_entity: AaveEntity):
     state = AaveGlobalState(
         notional_price=1,
@@ -94,6 +116,8 @@ def test_update_state(aave_entity: AaveEntity):
     assert aave_entity.internal_state.collateral == 1000 * (1 + 0.01)
     assert aave_entity.internal_state.borrowed == 50 * (1 + 0.02)
 
+
+@pytest.mark.core
 def test_calculate_repay(aave_entity: AaveEntity):
     aave_entity.internal_state.collateral = 1000
     aave_entity.internal_state.borrowed = 50

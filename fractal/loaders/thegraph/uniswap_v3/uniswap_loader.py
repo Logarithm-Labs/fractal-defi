@@ -9,7 +9,7 @@ class UniswapV3Loader(ArbitrumGraphLoader):
     """
     Loader for Uniswap V3
     """
-    def __init__(self, api_key: str, subgraph_id: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, subgraph_id: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         """
         Args:
             api_key (str): The Graph API key
@@ -28,7 +28,6 @@ class UniswapV3Loader(ArbitrumGraphLoader):
         Returns:
             Tuple[int, int]: Decimals of input tokens (token0, token1)
         """
-        pass
 
     def extract(self):
         pass

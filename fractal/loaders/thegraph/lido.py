@@ -49,7 +49,7 @@ class StETHLoader(ArbitrumGraphLoader):
     def transform(self):
         self._data['blockTime'] = self._data['blockTime'].astype(int)
         self._data['apr'] = self._data['apr'].astype(float)
-        self._data["blockTime"] = pd.to_datetime(self._data["blockTime"], unit="s")
+        self._data["blockTime"] = pd.to_datetime(self._data["blockTime"], unit="s", utc=True)
         self._data = self._data.sort_values("blockTime")
         self._data = self._data.set_index("blockTime")
         self._data = self._data.resample("1h").mean().ffill()
@@ -66,6 +66,6 @@ class StETHLoader(ArbitrumGraphLoader):
         else:
             self._read("steth")
         return RateHistory(
-            time=self._data["time"].values,
+            time=pd.to_datetime(self._data["time"], utc=True),
             rates=self._data["rate"].values,
         )

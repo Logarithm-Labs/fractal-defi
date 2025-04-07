@@ -6,8 +6,8 @@ from typing import Dict, List, NamedTuple, Optional, Type
 
 from fractal.core.base.entity import (Action, BaseEntity, GlobalState,
                                       InternalState)
+from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
-from fractal.core.base.strategy.observation import Observation
 from fractal.core.base.strategy.result import StrategyResult
 
 NamedEntity = NamedTuple('NamedEntity', [('entity_name', str), ('entity', BaseEntity)])
@@ -40,7 +40,8 @@ class BaseStrategy(ABC):
         In child classes, if implemented, also should be called parent's set_up.
         `predict(*args, **kwargs)` -> List[Action]: Predict the next action to take.
     """
-    def __init__(self, *args, params: Optional[BaseStrategyParams | Dict] = None, debug: bool = False, **kwargs):
+    def __init__(self, *args, params: Optional[BaseStrategyParams | Dict] = None,
+                 debug: bool = False, observations_storage: Optional[ObservationsStorage] = None, **kwargs):
         """
         Initialize the strategy.
 
@@ -55,6 +56,7 @@ class BaseStrategy(ABC):
         self._logger: Optional[BaseLogger] = None
         if self.debug:
             self._logger: BaseLogger = self._create_logger()
+        self.observations_storage: Optional[ObservationsStorage] = observations_storage
 
     def _create_logger(self, base_artifacts_path: Optional[str] = None) -> BaseLogger:
         return DefaultLogger(base_artifacts_path=base_artifacts_path, class_name=self.__class__.__name__)
@@ -160,6 +162,9 @@ class BaseStrategy(ABC):
         self._debug("=" * 30)
         self._debug("Running step...")
         self._debug(f"Observation: {observation.timestamp}")
+
+        if self.observations_storage is not None:
+            self.observations_storage.write(observation)
 
         # validate observation
         self.__validate_observation(observation)

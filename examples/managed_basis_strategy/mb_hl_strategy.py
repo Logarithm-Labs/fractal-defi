@@ -1,5 +1,5 @@
 from typing import List
-from datetime import datetime
+from datetime import datetime, UTC
 from dataclasses import dataclass
 
 import pandas as pd
@@ -59,7 +59,7 @@ def build_observations(
     Build observations for the ManagedBasisStrategy from the given start and end time.
     """
     rate_data: RateHistory = HyperliquidFundingRatesLoader(
-        ticker, loader_type=LoaderType.CSV).read(with_run=True)
+        ticker, start_time=start_time, end_time=end_time).read(with_run=True)
     if fidelity == '1d':
         rate_data = rate_data.resample(fidelity).sum()
     # use binance perp price because hyperliquid has limitations for klines limit
@@ -71,14 +71,14 @@ def build_observations(
 
 if __name__ == '__main__':
     # Set up
-    ticker: str = 'POPCAT'
-    start_time = datetime(2024, 5, 1)
-    end_time = datetime(2025, 1, 1)
-    fidelity = '5m'
+    ticker: str = 'BTC'
+    start_time = datetime(2024, 1, 1, tzinfo=UTC)
+    end_time = datetime(2025, 1, 1, tzinfo=UTC)
+    fidelity = '1d'
     MIN_LVG = 1
-    TARGET_LVG = 3
-    MAX_LVG = 5
-    HyperliquidBasis.MAX_LEVERAGE = 5
+    TARGET_LVG = 4
+    MAX_LVG = 8
+    HyperliquidBasis.MAX_LEVERAGE = 45
 
     # Init the strategy
     params: HyperliquidBasisParams = HyperliquidBasisParams(
