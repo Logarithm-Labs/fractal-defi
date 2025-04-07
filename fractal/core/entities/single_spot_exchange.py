@@ -46,7 +46,7 @@ class SingleSpotExchange(BaseSpotEntity):
     def balance(self) -> float:
         """
         Returns the balance in notional.
-        balane = amount * close + cash
+        balance = amount * close + cash
         """
         return self._internal_state.amount * self._global_state.close + self._internal_state.cash
 
