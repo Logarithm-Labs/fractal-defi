@@ -56,7 +56,7 @@ class AgentTradingStrategy(BaseStrategy):
         if self._window_size == 0:
             exchange: SingleSpotExchange = self.get_entity('exchange')
             internal_state: SingleSpotExchangeInternalState = exchange.internal_state
-            gloabl_state: SingleSpotExchangeGlobalState = exchange.global_state
+            global_state: SingleSpotExchangeGlobalState = exchange.global_state
             res = Runner.run_sync(
                 self._agent,
                 (
