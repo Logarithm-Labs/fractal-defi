@@ -24,12 +24,12 @@ class Launcher:
         Get the copy of the strategy to avoid storing outdated states.
         """
         if self._observations_storage_type is None:
-            obseravtions_storage_instance: ObservationsStorage = None
+            observations_storage_instance: ObservationsStorage = None
         else:
-            obseravtions_storage_instance: ObservationsStorage = self._observations_storage_type()
+            observations_storage_instance: ObservationsStorage = self._observations_storage_type()
 
         instance: BaseStrategy = self._strategy_type(params=self._params, debug=debug,
-                                                     observations_storage=obseravtions_storage_instance)
+                                                     observations_storage=observations_storage_instance)
         self._last_created_instance: BaseStrategy = instance
         return instance
 
