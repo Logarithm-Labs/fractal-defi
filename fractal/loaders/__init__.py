@@ -2,13 +2,15 @@ from fractal.loaders.aave import AaveV2EthereumLoader, AaveV3ArbitrumLoader
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.binance import (BinanceDayPriceLoader,
                                      BinanceFundingLoader,
-                                     BinanceHourPriceLoader)
+                                     BinanceHourPriceLoader,
+                                     BinancePriceLoader,
+                                     BinanceKlinesLoader)
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
                                          HyperLiquidPerpsPricesLoader)
 from fractal.loaders.simulations import (ConstantFundingsLoader,
                                          MonteCarloHourPriceLoader)
-from fractal.loaders.structs import (FundingHistory, LendingHistory,
+from fractal.loaders.structs import (FundingHistory, LendingHistory, KlinesHistory,
                                      PoolHistory, PriceHistory, RateHistory)
 from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       EthereumUniswapV2PoolDataLoader,
@@ -49,4 +51,7 @@ __all__ = [
     "HyperLiquidPerpsPricesLoader",
     "HyperliquidFundingRatesLoader",
     "UniswapV3ArbitrumPricesLoader",
+    "BinanceKlinesLoader",
+    "BinancePriceLoader",
+    "KlinesHistory",
 ]

@@ -13,7 +13,7 @@ from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
 
 class UniswapV3ArbitrumPricesLoader(ArbitrumUniswapV3Loader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType, **kwargs) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV, **kwargs) -> None:
         """
         Args:
             api_key (str): The Graph API key
@@ -54,7 +54,7 @@ class UniswapV3ArbitrumPricesLoader(ArbitrumUniswapV3Loader):
         self._data = pd.concat(dfs)
 
     def transform(self):
-        self._data["time"] = pd.to_datetime(self._data["timestamp"].astype(int), unit="s")
+        self._data["time"] = pd.to_datetime(self._data["timestamp"].astype(int), unit="s", utc=True)
         self._data["tick"] = self._data["tick"].astype(int)
         self._data["price"] = self._data["tick"].apply(lambda x: 1.0001**x) * 10**self.decimals
         self._data = self._data[["time", "price"]]
@@ -75,14 +75,14 @@ class UniswapV3ArbitrumPricesLoader(ArbitrumUniswapV3Loader):
         else:
             self._load(self.pool)
         return PriceHistory(
-            time=self._data["time"].values,
+            time=pd.to_datetime(self._data["time"], utc=True),
             prices=self._data["price"].values,
         )
 
 
 class UniswapV3EthereumPricesLoader(EthereumUniswapV3Loader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType, **kwargs) -> None:
+    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV, **kwargs) -> None:
         """
         Args:
             api_key (str): The Graph API key
@@ -123,7 +123,7 @@ class UniswapV3EthereumPricesLoader(EthereumUniswapV3Loader):
         self._data = pd.concat(dfs)
 
     def transform(self):
-        self._data["time"] = pd.to_datetime(self._data["timestamp"].astype(int), unit="s")
+        self._data["time"] = pd.to_datetime(self._data["timestamp"].astype(int), unit="s", utc=True)
         self._data["tick"] = self._data["tick"].astype(int)
         self._data["price"] = self._data["tick"].apply(lambda x: 1.0001**x) * 10**self.decimals
         self._data = self._data[["time", "price"]]
@@ -144,6 +144,6 @@ class UniswapV3EthereumPricesLoader(EthereumUniswapV3Loader):
         else:
             self._load(self.pool)
         return PriceHistory(
-            time=self._data["time"].values,
+            time=pd.to_datetime(self._data["time"], utc=True),
             prices=self._data["price"].values,
         )

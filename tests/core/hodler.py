@@ -1,3 +1,5 @@
+import pytest
+
 from dataclasses import dataclass
 
 from fractal.core.base import (Action, ActionToTake, BaseEntity, BaseStrategy,

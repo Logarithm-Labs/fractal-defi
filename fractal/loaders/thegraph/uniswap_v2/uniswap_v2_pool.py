@@ -13,7 +13,8 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
     """
     Loader for Uniswap V2 PoolData
     """
-    def __init__(self, api_key: str, pool: str, fee_tier: float, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, pool: str, fee_tier: float,
+                 loader_type: LoaderType = LoaderType.CSV) -> None:
         """
         Args:
             api_key (str): The Graph API key
@@ -53,7 +54,7 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
         self._data = pd.concat(dfs)
 
     def _transform_batch(self, batch: pd.DataFrame) -> pd.DataFrame:
-        batch["time"] = pd.to_datetime(batch["hourStartUnix"].astype(int), unit="s")
+        batch["time"] = pd.to_datetime(batch["hourStartUnix"].astype(int), unit="s", utc=True)
         batch["volume"] = batch["hourlyVolumeUSD"].astype(float)
         batch["liquidity"] = batch["totalSupply"].astype(float)
         batch["tvl"] = batch["reserveUSD"].astype(float)
@@ -74,7 +75,7 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
         else:
             self._read(self.pool)
         return PoolHistory(
-            time=self._data["time"].values,
+            time=pd.to_datetime(self._data["time"], utc=True),
             tvls=self._data["tvl"].values,
             volumes=self._data["volume"].values,
             fees=self._data["fees"].values,

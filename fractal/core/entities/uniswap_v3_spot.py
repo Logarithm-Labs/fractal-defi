@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
-from fractal.core.base.entity import (EntityException, GlobalState,
-                                      InternalState)
+from fractal.core.base.entity import (
+    EntityException, GlobalState, InternalState)
 from fractal.core.entities.spot import BaseSpotEntity
 
 

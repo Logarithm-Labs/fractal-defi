@@ -14,7 +14,7 @@ class EthereumUniswapV3Loader(UniswapV3Loader):
 
     SUBGRAPH_ID = "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
 
-    def __init__(self, api_key: str, loader_type: LoaderType) -> None:
+    def __init__(self, api_key: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         """
         Args:
             api_key (str): The Graph API key

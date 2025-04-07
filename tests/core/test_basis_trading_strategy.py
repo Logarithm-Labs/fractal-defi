@@ -18,6 +18,8 @@ def strategy():
         )
     )
 
+
+@pytest.mark.core
 def test_run(strategy: GMXV2UniswapV3Basis):
     strategy.run(
         [
@@ -49,6 +51,8 @@ def test_run(strategy: GMXV2UniswapV3Basis):
     assert hedge.balance == (1e6 / 4) - spot.internal_state.amount * hedge.TRADING_FEE * 3000 - spot.internal_state.amount * (3100 - 3000)
     assert spot.balance == spot.internal_state.amount * 3100
 
+
+@pytest.mark.core
 def test_run_with_min_rebalance(strategy: GMXV2UniswapV3Basis):
     strategy.run(
         [
@@ -84,6 +88,8 @@ def test_run_with_min_rebalance(strategy: GMXV2UniswapV3Basis):
     assert np.abs(hedge.balance / 250000 - 1) < 5e-3
     assert np.abs(spot.balance / 750000 - 1) < 5e-3
 
+
+@pytest.mark.core
 def test_run_with_max_rebalance(strategy: GMXV2UniswapV3Basis):
     strategy.run(
         [

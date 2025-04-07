@@ -1,6 +1,9 @@
+import pytest
+
 from fractal.loaders import LoaderType, UniswapV3ArbitrumPricesLoader
 
 
+@pytest.mark.integration
 def test_uniswap_v3_arbitrum_prices_loader(THE_GRAPH_API_KEY: str):
     loader = UniswapV3ArbitrumPricesLoader(
         api_key=THE_GRAPH_API_KEY,

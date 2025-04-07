@@ -2,7 +2,7 @@ import time
 
 from typing import List
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, UTC
 
 from fractal.core.base import (
     BaseStrategy, Action, BaseStrategyParams,
@@ -62,7 +62,7 @@ class AgentTradingStrategy(BaseStrategy):
                 (
                     f"You have {internal_state.cash} in USD and you have {internal_state.amount} of tokens."
                     f"Make a prediction of actions to take."
-                    f"You can not buy more than you can afford = {internal_state.cash / gloabl_state.close} or sell more than you have {internal_state.amount}."
+                    f"You can not buy more than you can afford = {internal_state.cash / global_state.close} or sell more than you have {internal_state.amount}."
                 )
             )
             prediction: AgentAction = res.final_output
@@ -85,7 +85,7 @@ class AgentTradingStrategy(BaseStrategy):
 if __name__ == '__main__':
     # Load prices from Binance
     binance_klines = BinanceKlinesLoader('BTCUSDT', interval='1d',
-                                         start_time=datetime(2024, 1, 1), end_time=datetime(2025, 4, 1),
+                                         start_time=datetime(2024, 1, 1, tzinfo=UTC), end_time=datetime(2025, 4, 1, tzinfo=UTC),
                                          loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
