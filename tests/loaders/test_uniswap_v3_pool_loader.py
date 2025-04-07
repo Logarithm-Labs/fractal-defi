@@ -42,6 +42,7 @@ def test_uniswap_v3_loaders(THE_GRAPH_API_KEY: str):
         assert data["tvl"].iloc[-1] > 0
 
 
+
 @pytest.mark.integration
 @pytest.mark.slow
 def test_uniswap_v3_get_pool_decimals(THE_GRAPH_API_KEY: str):

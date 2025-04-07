@@ -76,7 +76,7 @@ class Loader(ABC):
         else:
             raise ValueError(f"Loader type {self.loader_type} not supported")
 
-    def _read(self, *args: str) -> None:
+    def _read(self, *args) -> None:
         """
         Read data from the specified file format based on LoaderType.
         """

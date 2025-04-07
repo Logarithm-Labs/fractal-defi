@@ -81,7 +81,7 @@ def test_leverage(hyperliquid_entity):
     hyperliquid_entity.action_open_position(0.5)
     assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE))
 
-
+    
 @pytest.mark.core
 def test_check_liquidation(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
@@ -91,7 +91,7 @@ def test_check_liquidation(hyperliquid_entity):
     # liquidation was triggered
     assert hyperliquid_entity.size == 0
 
-
+    
 @pytest.mark.core
 def test_leverage_change(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))

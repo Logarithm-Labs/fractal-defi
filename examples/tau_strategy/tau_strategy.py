@@ -67,7 +67,6 @@ def build_observations(
                                                                 start_time=start_time, end_time=end_time).read(with_run=True)
     else:
         raise ValueError("Fidelity must be either 'hour' or 'minute'.")
-
     return get_observations(pool_data, binance_prices, start_time, end_time)
 
 

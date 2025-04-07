@@ -1,3 +1,4 @@
+
 from datetime import UTC, datetime
 
 import pytest
@@ -53,11 +54,10 @@ def test_hyperliquid_perp_prices_loader():
     loader: HyperLiquidPerpsPricesLoader = HyperLiquidPerpsPricesLoader(
         ticker="ETH",
         interval="1d",
-    )
+
     data: PriceHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["price"].dtype == "float64"
-
     read_data = loader.read()
     assert len(read_data) > 0
     assert data["price"].dtype == "float64"
@@ -103,3 +103,5 @@ def test_hyperliquid_perp_klines_loader_with_time_ranges():
     t_last = data.iloc[-1].to_dict()['open_time']
     assert t0 >= start_time, "Start time is not respected"
     assert t_last <= end_time, "End time is not respected"
+    read_data = loader.read()
+    assert len(read_data) > 0
