@@ -1,10 +1,11 @@
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, UTC
 
 from fractal.loaders import FundingHistory, PriceHistory
 from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
-                                         HyperLiquidPerpsPricesLoader,
-                                         HyperliquidPerpsKlinesLoader)
+                                         HyperliquidPerpsKlinesLoader,
+                                         HyperLiquidPerpsPricesLoader)
 
 
 @pytest.mark.integration

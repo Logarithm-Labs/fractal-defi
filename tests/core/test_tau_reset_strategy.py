@@ -1,6 +1,6 @@
-import pytest
-
 from datetime import datetime
+
+import pytest
 
 from fractal.core.base import Observation
 from fractal.core.entities import UniswapV3LPGlobalState

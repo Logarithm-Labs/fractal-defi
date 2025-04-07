@@ -1,6 +1,6 @@
-import pytest
-
 from datetime import datetime
+
+import pytest
 
 from fractal.loaders import (AaveV2EthereumLoader, AaveV3ArbitrumLoader,
                              LendingHistory, LoaderType)

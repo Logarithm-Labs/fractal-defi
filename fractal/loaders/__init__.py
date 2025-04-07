@@ -3,15 +3,15 @@ from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.binance import (BinanceDayPriceLoader,
                                      BinanceFundingLoader,
                                      BinanceHourPriceLoader,
-                                     BinancePriceLoader,
-                                     BinanceKlinesLoader)
+                                     BinanceKlinesLoader, BinancePriceLoader)
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
                                          HyperLiquidPerpsPricesLoader)
 from fractal.loaders.simulations import (ConstantFundingsLoader,
                                          MonteCarloHourPriceLoader)
-from fractal.loaders.structs import (FundingHistory, LendingHistory, KlinesHistory,
-                                     PoolHistory, PriceHistory, RateHistory)
+from fractal.loaders.structs import (FundingHistory, KlinesHistory,
+                                     LendingHistory, PoolHistory, PriceHistory,
+                                     RateHistory)
 from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       EthereumUniswapV2PoolDataLoader,
                                       GraphLoaderException, StETHLoader,

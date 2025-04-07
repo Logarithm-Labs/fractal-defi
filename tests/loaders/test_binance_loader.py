@@ -1,14 +1,10 @@
-import pytest
-from datetime import datetime, UTC
+from datetime import UTC, datetime
 
-from fractal.loaders.structs import (
-    FundingHistory, PriceHistory, KlinesHistory
-)
-from fractal.loaders.binance import (
-    BinanceFundingLoader,
-    BinanceKlinesLoader,
-    BinanceDayPriceLoader,
-)
+import pytest
+
+from fractal.loaders.binance import (BinanceDayPriceLoader,
+                                     BinanceFundingLoader, BinanceKlinesLoader)
+from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
 # --- Funding Loader Tests ---
 

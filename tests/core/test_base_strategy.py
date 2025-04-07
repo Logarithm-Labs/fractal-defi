@@ -1,8 +1,7 @@
-import pytest
-
 from datetime import datetime
 from typing import List
 
+import pytest
 from hodler import Hodler, HodlerGlobalState, HodlerParams, HodlerStrategy
 
 from fractal.core.base import NamedEntity, Observation

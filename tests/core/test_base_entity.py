@@ -1,5 +1,4 @@
 import pytest
-
 from hodler import Hodler, HodlerGlobalState
 
 from fractal.core.base import Action

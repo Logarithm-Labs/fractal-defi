@@ -1,7 +1,7 @@
-import pytest
-
 from dataclasses import dataclass
 from datetime import datetime
+
+import pytest
 
 from fractal.core.base.entity import GlobalState
 from fractal.core.base.observations import (Observation,

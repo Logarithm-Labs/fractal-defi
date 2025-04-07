@@ -1,13 +1,12 @@
 import time
-from datetime import datetime, UTC
-from typing import Optional, List, Dict, Any
+from datetime import UTC, datetime
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
 
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.structs import FundingHistory, PriceHistory, KlinesHistory
-
+from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
 # Module-level constants for defaults
 DEFAULT_START_TIME = datetime(2025, 1, 1, tzinfo=UTC)

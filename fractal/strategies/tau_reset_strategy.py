@@ -1,10 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 
-from fractal.core.base import (
-    Action, ActionToTake, BaseStrategy, 
-    BaseStrategyParams, NamedEntity
-)
+from fractal.core.base import (Action, ActionToTake, BaseStrategy,
+                               BaseStrategyParams, NamedEntity)
 from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
 
 
