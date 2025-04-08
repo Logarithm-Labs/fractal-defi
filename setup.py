@@ -12,7 +12,7 @@ setup(
     packages=find_packages(),
     author='Logarithm Labs',
     author_email='dev@logarithm.fi',
-    description='An ultimate DeFi research library for strategy development and fractaling.',
+    description='Fractal is the ultimate DeFi research library for strategies development and backtesting created by Logarithm Labs.',
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/Fractal',
