@@ -1,5 +1,9 @@
-from fractal.loaders.aave import AaveV2EthereumLoader, AaveV3ArbitrumLoader
 from fractal.loaders.base_loader import Loader, LoaderType
+from fractal.loaders.structs import (FundingHistory, KlinesHistory,
+                                     LendingHistory, PoolHistory, PriceHistory,
+                                     RateHistory)
+
+from fractal.loaders.aave import AaveV2EthereumLoader, AaveV3ArbitrumLoader
 from fractal.loaders.binance import (BinanceDayPriceLoader,
                                      BinanceFundingLoader,
                                      BinanceHourPriceLoader,
@@ -9,9 +13,6 @@ from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
                                          HyperLiquidPerpsPricesLoader)
 from fractal.loaders.simulations import (ConstantFundingsLoader,
                                          MonteCarloHourPriceLoader)
-from fractal.loaders.structs import (FundingHistory, KlinesHistory,
-                                     LendingHistory, PoolHistory, PriceHistory,
-                                     RateHistory)
 from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       EthereumUniswapV2PoolDataLoader,
                                       GraphLoaderException, StETHLoader,
@@ -21,6 +22,7 @@ from fractal.loaders.thegraph import (ArbitrumGraphLoader, BaseGraphLoader,
                                       UniswapV3EthereumPoolDayDataLoader,
                                       UniswapV3EthereumPoolHourDataLoader)
 
+
 __all__ = [
     "Loader",
     "LoaderType",
@@ -28,6 +30,8 @@ __all__ = [
     "PoolHistory",
     "PriceHistory",
     "RateHistory",
+    "LendingHistory",
+    "KlinesHistory",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",
     "BinanceDayPriceLoader",
@@ -45,7 +49,6 @@ __all__ = [
     "BaseGraphLoader",
     "GraphLoaderException",
     "ArbitrumGraphLoader",
-    "LendingHistory",
     "UniswapV3ArbitrumPricesLoader"
     "HyperliquidFundingRatesLoader",
     "HyperLiquidPerpsPricesLoader",
@@ -53,5 +56,4 @@ __all__ = [
     "UniswapV3ArbitrumPricesLoader",
     "BinanceKlinesLoader",
     "BinancePriceLoader",
-    "KlinesHistory",
 ]

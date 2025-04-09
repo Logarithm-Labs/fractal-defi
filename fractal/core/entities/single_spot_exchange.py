@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from fractal.core.base import GlobalState, InternalState
-from fractal.core.entities import BaseSpotEntity
+from fractal.core.base.entity import GlobalState, InternalState
+from fractal.core.entities.spot import BaseSpotEntity
 
 
 @dataclass
