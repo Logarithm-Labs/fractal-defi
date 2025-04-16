@@ -199,7 +199,6 @@ class BinancePriceLoader(Loader):
         Returns:
             List[Any]: A list of candlestick records.
         """
-        print(self.end_time)
         if self.end_time is None:
             end_time_ms = int(time() * 1000)
         else:
@@ -329,7 +328,6 @@ class BinanceSpotPriceLoader(BinancePriceLoader):
             end_time,
         )
         self._url = "https://api.binance.com/api/v3/klines"
-        print(self._url)
 
 class BinanceDayPriceLoader(BinancePriceLoader):
     """
