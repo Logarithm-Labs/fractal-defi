@@ -72,7 +72,7 @@ for i in tqdm(range(len(futures_spot_tickers))):
 
     # скачиваем funding rate
     binance_funding_rate_loader = BinanceFundingLoader(
-    ticker="BTCUSDT",
+    ticker=ticker,
     start_time=current - td,
     end_time=current,
     loader_type=LoaderType.CSV)
