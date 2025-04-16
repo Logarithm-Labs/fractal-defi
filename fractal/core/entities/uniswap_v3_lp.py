@@ -48,6 +48,7 @@ class UniswapV3LPInternalState:
     price_upper: float = 0.0
     liquidity: float = 0.0
     cash: float = 0.0
+    earned_fees: float = 0.0
 
 
 @dataclass
@@ -165,6 +166,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             self._internal_state.token0_amount = self._internal_state.liquidity * (pu**0.5 - pl**0.5)
             self._internal_state.token1_amount = 0
         self._internal_state.cash += self.calculate_fees()
+        self._internal_state.earned_fees += self.calculate_fees()
 
     @property
     def balance(self) -> float:

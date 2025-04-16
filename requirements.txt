@@ -7,3 +7,9 @@ pylint>=3.2.5
 flake8>=7.1.0
 requests>=2.32.3
 scipy==1.14.0
+gymnasium==1.1.1
+stable_baselines3==2.6.0
+python-dotenv==1.1.0
+clearml==1.18.0
+jupyter==1.1.1
+tensorboard==2.19.0
