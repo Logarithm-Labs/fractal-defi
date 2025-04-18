@@ -65,7 +65,12 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             volumes=self._data['volume'].astype(float).values,
             fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date'], utc=True)
+            time=pd.to_datetime(self._data['date'], utc=True),
+            prices=self._data['token0_price'].astype(float).values,
+            open=self._data['open'].astype(float).values,
+            high=self._data['high'].astype(float).values,
+            low=self._data['low'].astype(float).values,
+            close=self._data['close'].astype(float).values
         )
 
 
@@ -167,7 +172,12 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
                 volumeUSD
                 tvlUSD
                 feesUSD
-                liquidity
+                liquidity,
+                token0Price,
+                open,
+                high,
+                low,
+                close
                 }
             }
             """ % (self.pool.lower(), current_loaded_time)
@@ -191,6 +201,11 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
         self._data['tvl'] = self._data['tvlUSD'].astype(float)
         self._data['fees'] = self._data['feesUSD'].astype(float)
         self._data['liquidity'] = self._data['liquidity'].astype(float)
+        self._data['token0_price'] = self._data['token0Price'].astype(float)
+        self._data['open'] = self._data['open'].astype(float)
+        self._data['high'] = self._data['high'].astype(float)
+        self._data['low'] = self._data['low'].astype(float)
+        self._data['close'] = self._data['close'].astype(float)
 
 
 

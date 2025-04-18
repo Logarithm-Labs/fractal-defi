@@ -19,12 +19,18 @@ class UniswapV3LPGlobalState:
         fees (float): The trading fees.
         liquidity (float): The pool liquidity.
         price (float): The pool price [token1 / token0].
+        centralized_price (float): The pool price [token1 / token0] from binance.
     """
     tvl: float = 0.0
     volume: float = 0.0
     fees: float = 0.0
     liquidity: float = 0.0
-    price: float = 0.0
+    price: float = 0.0 # decentralized price
+    centralized_price: float = 0.0 # centralized price
+    open_price: float = 0.0 # price at the moment of opening the position
+    close_price: float = 0.0 # price at the moment of closing the position
+    high_price: float = 0.0 # highest price
+    low_price: float = 0.0 # lowest price
 
 
 @dataclass
@@ -43,6 +49,8 @@ class UniswapV3LPInternalState:
     """
     token0_amount: float = 0.0
     token1_amount: float = 0.0
+    token0_amount_init: float = 0.0
+    token1_amount_init: float = 0.0
     price_init: float = 0.0
     price_lower: float = 0.0
     price_upper: float = 0.0
@@ -62,7 +70,7 @@ class UniswapV3LPConfig:
         token1_decimals (int): The token1 decimals.
         trading_fee (float): The trading fee while opening/closing a position.
     """
-    fees_rate: float = 0.005
+    fees_rate: float = 0.05
     token0_decimals: int = 18
     token1_decimals: int = 18
     trading_fee: float = 0.003
@@ -255,6 +263,8 @@ class UniswapV3LPEntity(BasePoolEntity):
         if liquidity <= 0:
             raise EntityException("liquidity must be positive")
 
+        self._internal_state.token0_amount_init = token0_amount
+        self._internal_state.token1_amount_init = token1_amount
         self._internal_state.token0_amount = token0_amount
         self._internal_state.token1_amount = token1_amount
         self._internal_state.price_init = price_current
