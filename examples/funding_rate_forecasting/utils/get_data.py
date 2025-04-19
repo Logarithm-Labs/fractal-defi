@@ -3,7 +3,11 @@ import requests
 from tqdm import tqdm
 
 from fractal.loaders.base_loader import LoaderType
-from fractal.loaders.binance import BinanceFundingLoader, BinancePriceLoader
+from fractal.loaders.binance import (
+    BinanceFundingLoader,
+    BinancePriceLoader,
+    BinanceSpotPriceLoader,
+)
 
 
 def get_futures_trading_tickers() -> list[dict]:
