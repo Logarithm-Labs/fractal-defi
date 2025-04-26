@@ -47,10 +47,12 @@ class UniswapV3LPInternalState:
         liquidity (float): The position liquidity.
         cash (float): The cash balance.
     """
-    token0_amount: float = 0.0
-    token1_amount: float = 0.0
-    token0_amount_init: float = 0.0
-    token1_amount_init: float = 0.0
+    token0_amount_hold: float = 0.0
+    token1_amount_hold: float = 0.0
+    token0_amount_position: float = 0.0
+    token1_amount_position: float = 0.0
+    token0_amount_position_init: float = 0.0
+    token1_amount_position_init: float = 0.0
     price_init: float = 0.0
     price_lower: float = 0.0
     price_upper: float = 0.0
@@ -70,10 +72,10 @@ class UniswapV3LPConfig:
         token1_decimals (int): The token1 decimals.
         trading_fee (float): The trading fee while opening/closing a position.
     """
-    fees_rate: float = 0.05
+    fees_rate: float = 5.0 # 5%
     token0_decimals: int = 18
     token1_decimals: int = 18
-    trading_fee: float = 0.003
+    trading_fee: float = 0.0025 # 0.25% swap fee. TODO: add gas
 
 
 class UniswapV3LPEntity(BasePoolEntity):
@@ -128,10 +130,9 @@ class UniswapV3LPEntity(BasePoolEntity):
         if amount_in_notional > self._internal_state.cash:
             raise EntityException("Insufficient funds to open position.")
         self._internal_state.cash -= amount_in_notional
-        amount_in_position = amount_in_notional
         self.is_position = True
         self.calculate_position_from_notional(
-            deposit_amount_in_notional=amount_in_position,
+            deposit_amount_in_notional=amount_in_notional,
             price_current=self._global_state.price,
             price_upper=price_upper,
             price_lower=price_lower,
@@ -143,9 +144,14 @@ class UniswapV3LPEntity(BasePoolEntity):
         """
         if not self.is_position:
             raise EntityException("No position to close.")
-        cash = self.balance * (1 - self.trading_fee)
+        cash = self.balance
         self.is_position = False
-        self._internal_state = UniswapV3LPInternalState(cash=cash)
+        # Keep the current token amounts in the internal state
+        self._internal_state = UniswapV3LPInternalState(
+            token0_amount_hold=self._internal_state.token0_amount_position + self._internal_state.earned_fees,
+            token1_amount_hold=self._internal_state.token1_amount_position,
+            cash=cash,
+        )
 
     def update_state(self, state: UniswapV3LPGlobalState) -> None:
         """
@@ -165,14 +171,14 @@ class UniswapV3LPEntity(BasePoolEntity):
         pl = self._internal_state.price_lower
         pu = self._internal_state.price_upper
         if p <= pl:
-            self._internal_state.token0_amount = 0
-            self._internal_state.token1_amount = self._internal_state.liquidity * (1 / (pl**0.5) - 1 / (pu**0.5))
+            self._internal_state.token0_amount_position = 0
+            self._internal_state.token1_amount_position = self._internal_state.liquidity * (1 / (pl**0.5) - 1 / (pu**0.5))
         elif pl < p < pu:
-            self._internal_state.token0_amount = self._internal_state.liquidity * (p**0.5 - pl**0.5)
-            self._internal_state.token1_amount = self._internal_state.liquidity * (1 / (p**0.5) - 1 / (pu**0.5))
+            self._internal_state.token0_amount_position = self._internal_state.liquidity * (p**0.5 - pl**0.5)
+            self._internal_state.token1_amount_position = self._internal_state.liquidity * (1 / (p**0.5) - 1 / (pu**0.5))
         else:
-            self._internal_state.token0_amount = self._internal_state.liquidity * (pu**0.5 - pl**0.5)
-            self._internal_state.token1_amount = 0
+            self._internal_state.token0_amount_position = self._internal_state.liquidity * (pu**0.5 - pl**0.5)
+            self._internal_state.token1_amount_position = 0
         self._internal_state.cash += self.calculate_fees()
         self._internal_state.earned_fees += self.calculate_fees()
 
@@ -187,8 +193,8 @@ class UniswapV3LPEntity(BasePoolEntity):
         if not self.is_position:
             return self._internal_state.cash
         return (
-            self._internal_state.token0_amount
-            + self._internal_state.token1_amount * self._global_state.price
+            self._internal_state.token0_amount_position
+            + self._internal_state.token1_amount_position * self._global_state.price
             + self._internal_state.cash
         )
 
@@ -252,8 +258,16 @@ class UniswapV3LPEntity(BasePoolEntity):
             raise EntityException("price_lower must be positive")
 
         # provide liquidity by the token1 amount
-        token1_amount = deposit_amount * (1 - self.trading_fee)
-        liquidity = deposit_amount / (1 / (price_current**0.5) - 1 / (price_upper**0.5))
+        token1_amount = deposit_amount
+
+        # apply trading fee to the token1 amount. 
+        # only for difference because we can already have some token1 and token2
+        # so we can just swap the difference
+        token1_diff = abs(token1_amount - self._internal_state.token1_amount_hold)
+        swap_commission = token1_diff * self.trading_fee / 2.0
+        token1_amount -= swap_commission
+        # calculate liquidity
+        liquidity = token1_amount / (1 / (price_current**0.5) - 1 / (price_upper**0.5))
         token0_amount = liquidity * (price_current**0.5 - price_lower**0.5)
 
         if token0_amount <= 0:
@@ -263,10 +277,12 @@ class UniswapV3LPEntity(BasePoolEntity):
         if liquidity <= 0:
             raise EntityException("liquidity must be positive")
 
-        self._internal_state.token0_amount_init = token0_amount
-        self._internal_state.token1_amount_init = token1_amount
-        self._internal_state.token0_amount = token0_amount
-        self._internal_state.token1_amount = token1_amount
+        self._internal_state.token0_amount_hold = 0
+        self._internal_state.token1_amount_hold = 0
+        self._internal_state.token0_amount_position_init = token0_amount
+        self._internal_state.token1_amount_position_init = token1_amount
+        self._internal_state.token0_amount_position = token0_amount
+        self._internal_state.token1_amount_position = token1_amount
         self._internal_state.price_init = price_current
         self._internal_state.price_lower = price_lower
         self._internal_state.price_upper = price_upper
@@ -325,11 +341,20 @@ class UniswapV3LPEntity(BasePoolEntity):
             P=(1 / p),
             lower_price=(1 / pu),
             upper_price=(1 / pl),
-            amount0=self._internal_state.token0_amount,
-            amount1=self._internal_state.token1_amount,
+            amount0=self._internal_state.token0_amount_position,
+            amount1=self._internal_state.token1_amount_position,
             token0_decimal=self.token0_decimals,
             token1_decimal=self.token1_decimals,
         )
+        # delta_liquidity = get_liquidity_delta(
+        #     P=p,
+        #     lower_price=pl,
+        #     upper_price=pu,
+        #     amount0=self._internal_state.token0_amount_position,
+        #     amount1=self._internal_state.token1_amount_position,
+        #     token0_decimal=self.token0_decimals,
+        #     token1_decimal=self.token1_decimals,
+        # )
 
         # if price is out of range then fees are 0
         if p <= pl or p >= pu:
@@ -341,6 +366,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             fees=self._global_state.fees,
         )
         return min(fees, self._global_state.fees)
+        # return fees
 
     def price_to_tick(self, price: float) -> float:
         return np.floor(np.log(price) / np.log(1.0001))

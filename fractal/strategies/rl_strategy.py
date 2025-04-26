@@ -14,6 +14,8 @@ from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
 from fractal.core.base.observations import Observation
 from fractal.core.base.strategy.result import StrategyResult
 from copy import deepcopy
+from fractal.rl_models.cppo import CVaRPPO
+from fractal.rl_models.cpo import CPO
 
 
 class UniswapV3Env(gym.Env):
@@ -25,9 +27,9 @@ class UniswapV3Env(gym.Env):
             uniswap_entity: UniswapV3LPEntity,
             initial_balance: float,
             observations: Optional[List[Observation]] = None,
-            tick_spacing: int = 1,
-            max_ticks: int = 5,  # Maximum number of ticks to deviate
-            max_timesteps: int = 1000,
+            tick_spacing: int = 60,
+            max_ticks: int = 10,  # Maximum number of ticks to deviate
+            max_timesteps: int = 24 * 7,
     ):
         super().__init__()
         self.uniswap_entity = uniswap_entity
@@ -40,19 +42,22 @@ class UniswapV3Env(gym.Env):
         # Define action space
         # First dimension: number of ticks below current price (0 to max_ticks)
         # Second dimension: number of ticks above current price (0 to max_ticks)
-        self.action_space = gym.spaces.Box(low=np.array([0, 0]), high=np.array([max_ticks, max_ticks]), shape=(2,))
+        # self.action_space = gym.spaces.Box(low=-1, high=1, shape=(1,))
+        # self.action_space = gym.spaces.MultiDiscrete([max_ticks, max_ticks])
+        self.action_space = gym.spaces.Discrete(max_ticks)
         
         # Define observation space
         self.observation_space = gym.spaces.Box(
             low=-np.inf,
             high=np.inf,
-            shape=(22,),
+            shape=(33,),
+            # shape=(8,),
             dtype=np.float32
         )
 
         self.action_history = {}
         self.logger = configure_logger(
-            verbose=1,
+            verbose=0,
             tensorboard_log="./model_logs/",
             tb_log_name="run",
         )
@@ -63,6 +68,7 @@ class UniswapV3Env(gym.Env):
         self.close_price_history = []
         self.alpha = 0.05  # Smoothing factor for EWMA volatility
         self.max_timesteps = max_timesteps
+        self.episode_number = 0
 
 
     def _calculate_ewma_volatility(self, prices: List[float]) -> float:
@@ -81,7 +87,7 @@ class UniswapV3Env(gym.Env):
 
     def _calculate_moving_averages(self, prices: List[float]) -> Tuple[float, float]:
         """Calculate 24 and 168 window moving averages."""
-        if len(prices) < 168:
+        if len(prices) < 24:
             return 0.0, 0.0
         try:
             ma24 = np.mean(prices[-24:])
@@ -90,7 +96,7 @@ class UniswapV3Env(gym.Env):
         except (ZeroDivisionError, ValueError):
             return 0.0, 0.0
 
-    def _calculate_bollinger_bands(self, prices: List[float], window: int = 20) -> Tuple[float, float, float]:
+    def _calculate_bollinger_bands(self, prices: List[float], window: int = 12) -> Tuple[float, float, float]:
         """Calculate Bollinger Bands."""
         if len(prices) < window:
             return 0.0, 0.0, 0.0
@@ -103,7 +109,7 @@ class UniswapV3Env(gym.Env):
         except (ZeroDivisionError, ValueError):
             return 0.0, 0.0, 0.0
 
-    def _calculate_adxr(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 14) -> float:
+    def _calculate_adxr(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 12) -> float:
         """Calculate Average Directional Movement Index Rating."""
         if len(high_history) or len(low_history) or len(close_history) < window * 2:
             return 0.0
@@ -165,7 +171,7 @@ class UniswapV3Env(gym.Env):
         except (ZeroDivisionError, ValueError):
             return 0.0
 
-    def _calculate_dx(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 14) -> float:
+    def _calculate_dx(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 12) -> float:
         """Calculate Directional Movement Index."""
         if len(high_history) or len(low_history) or len(close_history) < window * 2:
             return 0.0
@@ -207,6 +213,368 @@ class UniswapV3Env(gym.Env):
         except (ZeroDivisionError, ValueError):
             return 0.0
 
+    def _calculate_dema(self, prices: List[float], window: int = 12) -> float:
+        """Calculate Double Exponential Moving Average."""
+        if len(prices) < window:
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            ema1 = np.zeros_like(prices_array)
+            ema2 = np.zeros_like(prices_array)
+            alpha = 2 / (window + 1)
+            
+            # Calculate first EMA
+            ema1[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                ema1[i] = alpha * prices_array[i] + (1 - alpha) * ema1[i-1]
+            
+            # Calculate second EMA
+            ema2[0] = ema1[0]
+            for i in range(1, len(ema1)):
+                ema2[i] = alpha * ema1[i] + (1 - alpha) * ema2[i-1]
+            
+            # Calculate DEMA
+            dema = 2 * ema1[-1] - ema2[-1]
+            return dema
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_parabolic_sar(self, high_history: List[float], low_history: List[float], acceleration: float = 0.02, max_acceleration: float = 0.2) -> float:
+        """Calculate Parabolic SAR."""
+        if len(high_history) < 2:
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            
+            # Initialize
+            trend = 1  # 1 for uptrend, -1 for downtrend
+            sar = low[0]
+            extreme_point = high[0]
+            current_acceleration = acceleration
+            
+            # Calculate SAR for the last point
+            for i in range(1, len(high)):
+                if trend == 1:
+                    if low[i] < sar:
+                        trend = -1
+                        sar = extreme_point
+                        extreme_point = low[i]
+                        current_acceleration = acceleration
+                    else:
+                        if high[i] > extreme_point:
+                            extreme_point = high[i]
+                            current_acceleration = min(current_acceleration + acceleration, max_acceleration)
+                        sar = sar + current_acceleration * (extreme_point - sar)
+                else:
+                    if high[i] > sar:
+                        trend = 1
+                        sar = extreme_point
+                        extreme_point = high[i]
+                        current_acceleration = acceleration
+                    else:
+                        if low[i] < extreme_point:
+                            extreme_point = low[i]
+                            current_acceleration = min(current_acceleration + acceleration, max_acceleration)
+                        sar = sar + current_acceleration * (extreme_point - sar)
+            
+            return sar
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_apo(self, prices: List[float], fast_period: int = 12, slow_period: int = 26) -> float:
+        """Calculate Absolute Price Oscillator."""
+        if len(prices) < max(fast_period, slow_period):
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            fast_alpha = 2 / (fast_period + 1)
+            slow_alpha = 2 / (slow_period + 1)
+            
+            # Calculate EMAs
+            fast_ema = np.zeros_like(prices_array)
+            slow_ema = np.zeros_like(prices_array)
+            
+            fast_ema[0] = prices_array[0]
+            slow_ema[0] = prices_array[0]
+            
+            for i in range(1, len(prices_array)):
+                fast_ema[i] = fast_alpha * prices_array[i] + (1 - fast_alpha) * fast_ema[i-1]
+                slow_ema[i] = slow_alpha * prices_array[i] + (1 - slow_alpha) * slow_ema[i-1]
+            
+            return fast_ema[-1] - slow_ema[-1]
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_aroon_oscillator(self, high_history: List[float], low_history: List[float], period: int = 14) -> float:
+        """Calculate Aroon Oscillator."""
+        if len(high_history) < period or len(low_history) < period:
+            return 0.0
+        try:
+            # Get last 'period' values
+            high = np.array(high_history[-period:])
+            low = np.array(low_history[-period:])
+            
+            # Find the number of periods since the highest high and lowest low
+            high_days = period - np.argmax(high) - 1
+            low_days = period - np.argmin(low) - 1
+            
+            # Calculate Aroon Up and Down
+            aroon_up = (period - high_days) / period * 100
+            aroon_down = (period - low_days) / period * 100
+            
+            # Calculate Aroon Oscillator
+            return aroon_up - aroon_down
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_cci(self, high_history: List[float], low_history: List[float], close_history: List[float], period: int = 20) -> float:
+        """Calculate Commodity Channel Index."""
+        if len(high_history) < period or len(low_history) < period or len(close_history) < period:
+            return 0.0
+        try:
+            # Get last 'period' values
+            high = np.array(high_history[-period:])
+            low = np.array(low_history[-period:])
+            close = np.array(close_history[-period:])
+            
+            # Calculate typical price
+            tp = (high + low + close) / 3
+            
+            # Calculate SMA of typical price
+            sma_tp = np.mean(tp)
+            
+            # Calculate Mean Deviation
+            mean_deviation = np.mean(np.abs(tp - sma_tp))
+            
+            if mean_deviation == 0:
+                return 0.0
+            
+            # Calculate CCI
+            cci = (tp[-1] - sma_tp) / (0.015 * mean_deviation)
+            
+            return cci
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_cmo(self, prices: List[float], period: int = 14) -> float:
+        """Calculate Chande Momentum Oscillator."""
+        if len(prices) < period + 1:
+            return 0.0
+        try:
+            # Calculate price changes
+            changes = np.diff(prices[-period-1:])
+            
+            # Separate positive and negative changes
+            positive_sum = np.sum([change for change in changes if change > 0])
+            negative_sum = abs(np.sum([change for change in changes if change < 0]))
+            
+            if positive_sum + negative_sum == 0:
+                return 0.0
+            
+            # Calculate CMO
+            cmo = 100 * (positive_sum - negative_sum) / (positive_sum + negative_sum)
+            
+            return cmo
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_momentum(self, prices: List[float], period: int = 10) -> float:
+        """Calculate Momentum."""
+        if len(prices) <= period:
+            return 0.0
+        try:
+            return prices[-1] - prices[-period-1]
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_trix(self, prices: List[float], period: int = 15) -> float:
+        """Calculate TRIX indicator."""
+        if len(prices) < period * 3:
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            alpha = 2 / (period + 1)
+            
+            # Calculate triple EMA
+            ema1 = np.zeros_like(prices_array)
+            ema2 = np.zeros_like(prices_array)
+            ema3 = np.zeros_like(prices_array)
+            
+            # First EMA
+            ema1[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                ema1[i] = alpha * prices_array[i] + (1 - alpha) * ema1[i-1]
+            
+            # Second EMA
+            ema2[0] = ema1[0]
+            for i in range(1, len(ema1)):
+                ema2[i] = alpha * ema1[i] + (1 - alpha) * ema2[i-1]
+            
+            # Third EMA
+            ema3[0] = ema2[0]
+            for i in range(1, len(ema2)):
+                ema3[i] = alpha * ema2[i] + (1 - alpha) * ema3[i-1]
+            
+            # Calculate TRIX
+            if ema3[-2] == 0:
+                return 0.0
+            trix = (ema3[-1] - ema3[-2]) / ema3[-2] * 100
+            
+            return trix
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_ultimate_oscillator(self, high_history: List[float], low_history: List[float], close_history: List[float],
+                                    period1: int = 7, period2: int = 14, period3: int = 28) -> float:
+        """Calculate Ultimate Oscillator."""
+        if len(high_history) < max(period1, period2, period3):
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            close = np.array(close_history)
+            
+            # Calculate buying pressure (BP) and true range (TR)
+            bp = close - np.minimum(low, np.roll(close, 1))
+            tr = np.maximum(high, np.roll(close, 1)) - np.minimum(low, np.roll(close, 1))
+            
+            # Calculate averages for different periods
+            avg1 = np.sum(bp[-period1:]) / np.sum(tr[-period1:])
+            avg2 = np.sum(bp[-period2:]) / np.sum(tr[-period2:])
+            avg3 = np.sum(bp[-period3:]) / np.sum(tr[-period3:])
+            
+            # Calculate Ultimate Oscillator
+            uo = 100 * (4 * avg1 + 2 * avg2 + avg3) / 7
+            
+            return uo
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_stochastic_momentum(self, high_history: List[float], low_history: List[float], close_history: List[float],
+                                     k_period: int = 14, d_period: int = 3) -> Tuple[float, float, float]:
+        """Calculate Stochastic Momentum Indicator."""
+        if len(high_history) < k_period or len(low_history) < k_period or len(close_history) < k_period:
+            return 0.0, 0.0, 0.0
+        try:
+            # Get relevant price ranges
+            high = np.array(high_history[-k_period:])
+            low = np.array(low_history[-k_period:])
+            close = np.array(close_history[-k_period:])
+            
+            # Calculate %K
+            lowest_low = np.min(low)
+            highest_high = np.max(high)
+            
+            if highest_high - lowest_low == 0:
+                return 0.0, 0.0, 0.0
+            
+            k = 100 * (close[-1] - lowest_low) / (highest_high - lowest_low)
+            
+            # Calculate %D (3-period SMA of %K)
+            if len(close_history) < k_period + d_period:
+                return k, 0.0, 0.0
+            
+            d = np.mean([k for _ in range(d_period)])
+            
+            # Calculate Slow Stochastic
+            slow_d = np.mean([d for _ in range(d_period)])
+            
+            return k, d, slow_d
+        except (ZeroDivisionError, ValueError):
+            return 0.0, 0.0, 0.0
+
+    def _calculate_natr(self, high_history: List[float], low_history: List[float], close_history: List[float], period: int = 14) -> float:
+        """Calculate Normalized Average True Range."""
+        if len(high_history) < period or len(low_history) < period or len(close_history) < period:
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            close = np.array(close_history)
+            
+            # Calculate True Range
+            tr = np.zeros(len(high))
+            for i in range(1, len(high)):
+                tr[i] = max(
+                    high[i] - low[i],
+                    abs(high[i] - close[i-1]),
+                    abs(low[i] - close[i-1])
+                )
+            
+            # Calculate ATR
+            atr = np.mean(tr[-period:])
+            
+            # Normalize ATR
+            if close[-1] == 0:
+                return 0.0
+            
+            natr = 100 * atr / close[-1]
+            
+            return natr
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_true_range(self, high_history: List[float], low_history: List[float], close_history: List[float]) -> float:
+        """Calculate True Range."""
+        if len(high_history) < 2 or len(low_history) < 2 or len(close_history) < 2:
+            return 0.0
+        try:
+            high = high_history[-1]
+            low = low_history[-1]
+            prev_close = close_history[-2]
+            
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            
+            return tr
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_hilbert_transform(self, prices: List[float], period: int = 14) -> Tuple[float, float]:
+        """Calculate Hilbert Transform - Dominant Cycle Period and Phase."""
+        if len(prices) < period * 2:
+            return 0.0, 0.0
+        try:
+            prices_array = np.array(prices[-period*2:])
+            
+            # Smooth prices
+            alpha = 0.0962
+            smooth = np.zeros_like(prices_array)
+            smooth[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                smooth[i] = (1 - alpha) * smooth[i-1] + alpha * prices_array[i]
+            
+            # Calculate quadrature
+            quad = np.zeros_like(smooth)
+            for i in range(period, len(smooth)):
+                quad[i] = 1.25 * (smooth[i-7] - smooth[i-5]) - 0.25 * (smooth[i-3] - smooth[i-1])
+            
+            # Calculate dominant cycle period using autocorrelation
+            corr = np.correlate(smooth, smooth, mode='full')
+            corr = corr[len(corr)//2:]
+            peaks = np.where((corr[1:-1] > corr[:-2]) & (corr[1:-1] > corr[2:]))[0] + 1
+            if len(peaks) > 0:
+                dominant_cycle = peaks[0]
+            else:
+                dominant_cycle = period
+            
+            # Calculate dominant cycle phase
+            if np.sum(quad[-period:] ** 2) == 0:
+                phase = 0.0
+            else:
+                phase = np.arctan2(
+                    np.sum(quad[-period:] * smooth[-period:]),
+                    np.sum(quad[-period:] ** 2)
+                ) * 180 / np.pi
+            
+            return float(dominant_cycle), float(phase)
+        except (ZeroDivisionError, ValueError):
+            return 0.0, 0.0
+
     def _get_observation(self):
         """Get current market state as observation."""
         global_state = self.uniswap_entity._global_state
@@ -223,58 +591,112 @@ class UniswapV3Env(gym.Env):
             self.low_price_history = self.low_price_history[-168:]
             self.close_price_history = self.close_price_history[-168:]
 
+        # Calculate price ratios
+        open_price = global_state.open_price
+        if open_price == 0:
+            high_to_open = 1.0
+            low_to_open = 1.0
+            close_to_open = 1.0
+        else:
+            high_to_open = global_state.high_price / open_price
+            low_to_open = global_state.low_price / open_price
+            close_to_open = global_state.close_price / open_price
+
         # Calculate technical indicators
+        dema = self._calculate_dema(self.price_history)
+        dema_ratio = dema / open_price if open_price != 0 else 1.0
+        
+        psar = self._calculate_parabolic_sar(self.high_price_history, self.low_price_history)
+        psar_ratio = psar / open_price if open_price != 0 else 1.0
+        
+        apo = self._calculate_apo(self.price_history)
+        aroon = self._calculate_aroon_oscillator(self.high_price_history, self.low_price_history)
+        bop = self._calculate_bop(self.price_history, global_state)
+        cci = self._calculate_cci(self.high_price_history, self.low_price_history, self.close_price_history)
+        cmo = self._calculate_cmo(self.price_history)
+        dx = self._calculate_dx(self.high_price_history, self.low_price_history, self.close_price_history)
+        momentum = self._calculate_momentum(self.price_history)
+        trix = self._calculate_trix(self.price_history)
+        ultimate = self._calculate_ultimate_oscillator(self.high_price_history, self.low_price_history, self.close_price_history)
+
         ewma_volatility = self._calculate_ewma_volatility(self.price_history)
         ma24, ma168 = self._calculate_moving_averages(self.price_history)
         bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(self.price_history)
         adxr = self._calculate_adxr(self.high_price_history, self.low_price_history, self.close_price_history)
-        bop = self._calculate_bop(self.price_history, global_state)
-        dx = self._calculate_dx(self.high_price_history, self.low_price_history, self.close_price_history)
+        
+        # Calculate Stochastic indicators
+        k, d, slow_d = self._calculate_stochastic_momentum(
+            self.high_price_history, 
+            self.low_price_history, 
+            self.close_price_history
+        )
+        
+        # Calculate ranges
+        natr = self._calculate_natr(self.high_price_history, self.low_price_history, self.close_price_history)
+        true_range = self._calculate_true_range(self.high_price_history, self.low_price_history, self.close_price_history)
+        
+        # Calculate Hilbert Transform indicators
+        dominant_cycle, dominant_phase = self._calculate_hilbert_transform(self.price_history)
+
+        impermanent_loss = 0.0
+        if self.uniswap_entity.is_position:
+            impermanent_loss = abs(
+                (
+                    self.uniswap_entity._internal_state.token0_amount_position_init + 
+                    self.uniswap_entity._internal_state.token1_amount_position_init * self.uniswap_entity._global_state.price
+                ) - (
+                    self.uniswap_entity._internal_state.token0_amount_position + 
+                    self.uniswap_entity._internal_state.token1_amount_position * self.uniswap_entity._global_state.price
+                )
+            )
 
         current_observation = np.array([
+            self.uniswap_entity.balance,  # balance
+            # global_state.price,  # hourly price
+            # global_state.centralized_price,  # centralized price
+            # internal_state.price_init,  # initial price
+            # internal_state.price_lower,  # lower price
+            # internal_state.price_upper,  # upper price
+            self.uniswap_entity.is_position,
+            # global_state.open_price,  # hourly open price
             global_state.price,
             global_state.centralized_price,
-            global_state.open_price,
-            global_state.close_price,
-            global_state.high_price,
-            global_state.low_price,
-            internal_state.liquidity,
-            internal_state.token0_amount,
-            internal_state.token1_amount,
-            internal_state.price_init,
-            internal_state.price_lower,
-            internal_state.price_upper,
-            internal_state.earned_fees,
-            ewma_volatility,
-            ma24,
-            ma168,
-            bb_upper,
-            bb_middle,
-            bb_lower,
-            adxr,
-            bop,
-            dx
+            high_to_open,  # hourly highest price/hourly open price
+            low_to_open,  # hourly lowest price/hourly open price
+            close_to_open,  # hourly close price/hourly open price
+            global_state.volume,  # hourly trading volume in USD
+            dema_ratio,  # Double Exponential Moving Average/hourly open price
+            psar_ratio,  # Parabolic SAR/hourly open price
+            dx,  # Average Directional Movement Index
+            apo,  # Absolute Price Oscillator
+            aroon,  # Aroon Oscillator
+            bop,  # Balance Of Power
+            cci,  # Commodity Channel Index (2 features)
+            cmo,  # Chande Momentum Oscillator
+            momentum,  # Momentum
+            trix,  # TRIX
+            ultimate,  # Ultimate Oscillator
+            k,  # Stochastic Momentum Indicator (3 features)
+            d,
+            slow_d,
+            natr,  # Normalized Average True Range
+            true_range,  # True Range
+            dominant_cycle,  # Hilbert Transform - Dominant Cycle Period
+            dominant_phase,  # Hilbert Transform - Dominant Cycle Phase
+            ewma_volatility,  # Exponential Weighted Moving Average Volatility
+            ma24, ma168,  # Moving Averages
+            bb_upper, # Bollinger Bands
+            bb_middle, 
+            bb_lower,  
+            adxr,  # Average Directional Index            
+            # impermanent_loss,
         ], dtype=np.float32)
-
         # Handle NaN and infinite values
         current_observation = np.nan_to_num(current_observation, copy=True, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # self.observation_history.append(current_observation)
-
-        # # Get last 3 observations plus current
-        # if len(self.observation_history) >= 4:
-        #     last_observations = self.observation_history[-4:]
-        # else:
-        #     # Pad with zeros if we don't have enough history
-        #     padding = [np.zeros_like(current_observation)] * (4 - len(self.observation_history))
-        #     last_observations = padding + self.observation_history
-
-        # # Concatenate the observations
-        # observation = np.concatenate(last_observations)
-    
         return current_observation
 
-    def _calculate_reward(self, rebalance, fees_earned_prev):
+    def _calculate_reward(self, rebalance, fees_earned_prev, done):
         """
         Calculate reward based on a combination of impermanent loss and earned fees.
         The reward is calculated as: fees_earned - absolute_impermanent_loss - rebalancing_penalty
@@ -301,34 +723,56 @@ class UniswapV3Env(gym.Env):
         rebalancing_penalty = 0.0
         earned_fees = 0.0
         instantaneous_lvr = 0.0
+        holding_penalty = 0.0
         if self.uniswap_entity.is_position:
-            earned_fees = max(0, self.uniswap_entity._internal_state.earned_fees - fees_earned_prev)
+            # earned_fees = max(0, self.uniswap_entity._internal_state.earned_fees - fees_earned_prev)
+            earned_fees = self.uniswap_entity._internal_state.earned_fees
             impermanent_loss = abs(
                 (
-                    self.uniswap_entity._internal_state.token0_amount_init + 
-                    self.uniswap_entity._internal_state.token1_amount_init * self.uniswap_entity._global_state.price
+                    self.uniswap_entity._internal_state.token0_amount_position_init + 
+                    self.uniswap_entity._internal_state.token1_amount_position_init * self.uniswap_entity._global_state.price
                 ) - (
-                    self.uniswap_entity._internal_state.token0_amount + 
-                    self.uniswap_entity._internal_state.token1_amount * self.uniswap_entity._global_state.price
+                    self.uniswap_entity._internal_state.token0_amount_position + 
+                    self.uniswap_entity._internal_state.token1_amount_position * self.uniswap_entity._global_state.price
                 )
             )
 
             ewma_volatility = self._calculate_ewma_volatility(self.price_history)   
             liquidity = self.uniswap_entity._internal_state.liquidity
-            sqrt_price = self.uniswap_entity._global_state.price ** (1/2)
+            sqrt_price = self.uniswap_entity._global_state.price ** 0.5
             instantaneous_lvr = liquidity * ewma_volatility**2 * sqrt_price / 4
+            # instantaneous_lvr = liquidity / (2 * self.uniswap_entity._global_state.price ** 1.5)
 
-            if rebalance:
-                rebalancing_penalty = self.uniswap_entity.balance * self.uniswap_entity.trading_fee
+            if rebalance or done:
+                rebalancing_penalty = self.initial_balance - self.uniswap_entity.balance
+                rebalancing_penalty = (
+                    self.uniswap_entity._internal_state.token1_amount_position * 
+                    self.uniswap_entity._global_state.price * 
+                    self.uniswap_entity.trading_fee
+                )
+                rebalancing_penalty = 10
+        else:
+            holding_penalty = 0.1
 
 
-        self.logger.record(key="train/impermanent_loss", value=impermanent_loss)
-        self.logger.record(key="train/rebalancing_penalty", value=rebalancing_penalty)
-        self.logger.record(key="train/earned_fees", value=earned_fees)
-        self.logger.record(key="train/instantaneous_lvr", value=instantaneous_lvr)
+        self.logger.record_mean(key="train/impermanent_loss", value=impermanent_loss)
+        self.logger.record_mean(key="train/rebalancing_penalty", value=rebalancing_penalty)
+        self.logger.record_mean(key="train/earned_fees", value=earned_fees)
+        self.logger.record_mean(key="train/instantaneous_lvr", value=instantaneous_lvr)
+        self.logger.record(key="train/earned_fees_abs", value=earned_fees)
 
+        # instantaneous_lvr = 0.0
+        # impermanent_loss = 0.0
+        # rebalancing_penalty = 0.0
         # Calculate total reward
-        reward = 2 * earned_fees - instantaneous_lvr - 2 * rebalancing_penalty
+        # reward = earned_fees - instantaneous_lvr - rebalancing_penalty - impermanent_loss
+        # reward = earned_fees / self.initial_balance - rebalancing_penalty / self.initial_balance + self.uniswap_entity.balance / self.initial_balance
+        # reward = self.uniswap_entity.balance / self.initial_balance * 100
+        reward = earned_fees - instantaneous_lvr
+
+        self.logger.record_mean(key="train/balance_ratio_mean", value=self.uniswap_entity.balance / self.initial_balance / self.max_timesteps)
+        self.logger.record(key="train/balance_ratio", value=self.uniswap_entity.balance / self.initial_balance)
+        # reward = self.uniswap_entity.balance - self.initial_balance
         
         return reward
 
@@ -342,16 +786,19 @@ class UniswapV3Env(gym.Env):
 
     def step(self, action):
         """Execute one step in the environment."""
-
         fees_earned_prev = self.uniswap_entity._internal_state.earned_fees
 
         # Get current price and tick
         current_price = self.uniswap_entity._global_state.price
         current_tick = self._get_tick_from_price(current_price)
+
+        # action = list(map(round, (action + 1) * self.max_ticks / 2))
+        # assert isinstance(action[0], int) and isinstance(action[1], int)
         
         # Calculate new tick bounds
-        lower_tick = current_tick - round(action[0]) * self.tick_spacing - self.tick_spacing
-        upper_tick = current_tick + round(action[1]) * self.tick_spacing + self.tick_spacing
+        lower_tick = current_tick - action * self.tick_spacing
+        upper_tick = current_tick + action * self.tick_spacing
+
         
         # Convert ticks to prices
         price_lower = self._get_price_from_tick(lower_tick)
@@ -359,7 +806,7 @@ class UniswapV3Env(gym.Env):
 
         rebalance = True
 
-        if round(action[0]) == 0 and round(action[1]) == 0:
+        if action == 0:
             rebalance = False
 
         if rebalance:
@@ -372,6 +819,12 @@ class UniswapV3Env(gym.Env):
                 price_lower=price_lower,
                 price_upper=price_upper
             )
+        else:
+            lower_bound = self.uniswap_entity._internal_state.price_lower
+            upper_bound = self.uniswap_entity._internal_state.price_upper
+            if current_price < lower_bound or current_price > upper_bound:
+                if self.uniswap_entity.is_position:
+                    self.uniswap_entity.action_close_position()
 
         # Get current observation and update entity state
         current_observation = self.observations[self.current_observation_idx]
@@ -381,23 +834,30 @@ class UniswapV3Env(gym.Env):
         # Get new state
         observation = self._get_observation()
 
-        # Calculate reward before taking action
-        reward = self._calculate_reward(rebalance, fees_earned_prev)
-        
         # Move to next observation
         self.current_observation_idx += 1
-        done = self.current_observation_idx - self.start_observation_idx >= self.max_timesteps
+        truncated = self.current_observation_idx - self.start_observation_idx >= self.max_timesteps
+
+        # Calculate reward before taking action
+        reward = self._calculate_reward(rebalance, fees_earned_prev, truncated)
         
-        return observation, reward, done, False, {}
+        return observation, reward, False, truncated, {}
 
     def reset(self, seed=None, options=None):
         """Reset the environment to initial state."""
         super().reset(seed=seed)
 
+        # if self.episode_number % 100 == 0:
+        #     self.max_timesteps *= 2 
+        #     self.max_timesteps = min(self.max_timesteps, len(self.observations) - 1)
+        #     print(f"Episode {self.episode_number} - Max timesteps: {self.max_timesteps}")
+
+        self.episode_number += 1
         self.start_observation_idx = np.random.randint(0, len(self.observations) - self.max_timesteps - 1)
         self.current_observation_idx = self.start_observation_idx
 
-        # self.initial_balance = np.random.uniform(10 ** 5, 10 ** 6)
+        self.initial_balance = np.random.uniform(9 * 10**5, 12 * 10**5)
+        # self.initial_balance = 10_000
 
         if self.uniswap_entity.is_position:
             self.uniswap_entity.action_close_position()
@@ -436,6 +896,26 @@ class RLStrategyParams(BaseStrategyParams):
     GAMMA: float = 0.99
     GAE_LAMBDA: float = 0.95
     CLIP_RANGE: float = 0.2
+    SEED: int = 42
+    FEES_RATE: float = 5.0
+    ALPHA: float = 0.9
+    BETA: float = 2800.0
+    NU_LR: float = 1e-2
+    LAM_LR: float = 1e-2
+    NU_START: float = 0.0
+    LAM_START: float = 0.5
+    NU_DELAY: float = 0.8
+    LAM_LOW_BOUND: float = 0.001
+    DELAY: float = 1.0
+    CVAR_CLIP_RATIO: float = 0.05
+    MAX_CONSTRAINT_VALUE: float = 1000
+    MAX_BACKTRACK_STEPS: int = 10
+    BACKTRACK_COEFF: float = 0.8
+    DAMPING_COEFF: float = 0.1
+    CONSTRAINT_LR: float = 1e-2
+    MAX_IMPERMANENT_LOSS: float = 500
+    IMPERMANENT_LOSS_QUANTILE: float = 0.8
+    
 
 
 class RLStrategy(BaseStrategy):
@@ -460,7 +940,9 @@ class RLStrategy(BaseStrategy):
         self.high_price_history = []
         self.low_price_history = []
         self.close_price_history = []
+        self.action_history = []
         self.alpha = 0.05  # Smoothing factor for EWMA volatility
+        self.max_ticks = 10
 
 
     def set_up(self):
@@ -472,7 +954,8 @@ class RLStrategy(BaseStrategy):
             entity=UniswapV3LPEntity(
                 UniswapV3LPConfig(
                     token0_decimals=self.token0_decimals,
-                    token1_decimals=self.token1_decimals
+                    token1_decimals=self.token1_decimals,
+                    fees_rate=self._params.FEES_RATE,
                 )
             )
         ))
@@ -494,7 +977,7 @@ class RLStrategy(BaseStrategy):
 
     def _calculate_moving_averages(self, prices: List[float]) -> Tuple[float, float]:
         """Calculate 24 and 168 window moving averages."""
-        if len(prices) < 168:
+        if len(prices) < 24:
             return 0.0, 0.0
         try:
             ma24 = np.mean(prices[-24:])
@@ -503,7 +986,7 @@ class RLStrategy(BaseStrategy):
         except (ZeroDivisionError, ValueError):
             return 0.0, 0.0
 
-    def _calculate_bollinger_bands(self, prices: List[float], window: int = 20) -> Tuple[float, float, float]:
+    def _calculate_bollinger_bands(self, prices: List[float], window: int = 12) -> Tuple[float, float, float]:
         """Calculate Bollinger Bands."""
         if len(prices) < window:
             return 0.0, 0.0, 0.0
@@ -516,7 +999,7 @@ class RLStrategy(BaseStrategy):
         except (ZeroDivisionError, ValueError):
             return 0.0, 0.0, 0.0
 
-    def _calculate_adxr(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 14) -> float:
+    def _calculate_adxr(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 12) -> float:
         """Calculate Average Directional Movement Index Rating."""
         if len(high_history) or len(low_history) or len(close_history) < window * 2:
             return 0.0
@@ -578,7 +1061,7 @@ class RLStrategy(BaseStrategy):
         except (ZeroDivisionError, ValueError):
             return 0.0
 
-    def _calculate_dx(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 14) -> float:
+    def _calculate_dx(self, high_history: List[float], low_history: List[float], close_history: List[float], window: int = 12) -> float:
         """Calculate Directional Movement Index."""
         if len(high_history) or len(low_history) or len(close_history) < window * 2:
             return 0.0
@@ -620,6 +1103,368 @@ class RLStrategy(BaseStrategy):
         except (ZeroDivisionError, ValueError):
             return 0.0
 
+    def _calculate_dema(self, prices: List[float], window: int = 12) -> float:
+        """Calculate Double Exponential Moving Average."""
+        if len(prices) < window:
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            ema1 = np.zeros_like(prices_array)
+            ema2 = np.zeros_like(prices_array)
+            alpha = 2 / (window + 1)
+            
+            # Calculate first EMA
+            ema1[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                ema1[i] = alpha * prices_array[i] + (1 - alpha) * ema1[i-1]
+            
+            # Calculate second EMA
+            ema2[0] = ema1[0]
+            for i in range(1, len(ema1)):
+                ema2[i] = alpha * ema1[i] + (1 - alpha) * ema2[i-1]
+            
+            # Calculate DEMA
+            dema = 2 * ema1[-1] - ema2[-1]
+            return dema
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_parabolic_sar(self, high_history: List[float], low_history: List[float], acceleration: float = 0.02, max_acceleration: float = 0.2) -> float:
+        """Calculate Parabolic SAR."""
+        if len(high_history) < 2:
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            
+            # Initialize
+            trend = 1  # 1 for uptrend, -1 for downtrend
+            sar = low[0]
+            extreme_point = high[0]
+            current_acceleration = acceleration
+            
+            # Calculate SAR for the last point
+            for i in range(1, len(high)):
+                if trend == 1:
+                    if low[i] < sar:
+                        trend = -1
+                        sar = extreme_point
+                        extreme_point = low[i]
+                        current_acceleration = acceleration
+                    else:
+                        if high[i] > extreme_point:
+                            extreme_point = high[i]
+                            current_acceleration = min(current_acceleration + acceleration, max_acceleration)
+                        sar = sar + current_acceleration * (extreme_point - sar)
+                else:
+                    if high[i] > sar:
+                        trend = 1
+                        sar = extreme_point
+                        extreme_point = high[i]
+                        current_acceleration = acceleration
+                    else:
+                        if low[i] < extreme_point:
+                            extreme_point = low[i]
+                            current_acceleration = min(current_acceleration + acceleration, max_acceleration)
+                        sar = sar + current_acceleration * (extreme_point - sar)
+            
+            return sar
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_apo(self, prices: List[float], fast_period: int = 12, slow_period: int = 26) -> float:
+        """Calculate Absolute Price Oscillator."""
+        if len(prices) < max(fast_period, slow_period):
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            fast_alpha = 2 / (fast_period + 1)
+            slow_alpha = 2 / (slow_period + 1)
+            
+            # Calculate EMAs
+            fast_ema = np.zeros_like(prices_array)
+            slow_ema = np.zeros_like(prices_array)
+            
+            fast_ema[0] = prices_array[0]
+            slow_ema[0] = prices_array[0]
+            
+            for i in range(1, len(prices_array)):
+                fast_ema[i] = fast_alpha * prices_array[i] + (1 - fast_alpha) * fast_ema[i-1]
+                slow_ema[i] = slow_alpha * prices_array[i] + (1 - slow_alpha) * slow_ema[i-1]
+            
+            return fast_ema[-1] - slow_ema[-1]
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_aroon_oscillator(self, high_history: List[float], low_history: List[float], period: int = 14) -> float:
+        """Calculate Aroon Oscillator."""
+        if len(high_history) < period or len(low_history) < period:
+            return 0.0
+        try:
+            # Get last 'period' values
+            high = np.array(high_history[-period:])
+            low = np.array(low_history[-period:])
+            
+            # Find the number of periods since the highest high and lowest low
+            high_days = period - np.argmax(high) - 1
+            low_days = period - np.argmin(low) - 1
+            
+            # Calculate Aroon Up and Down
+            aroon_up = (period - high_days) / period * 100
+            aroon_down = (period - low_days) / period * 100
+            
+            # Calculate Aroon Oscillator
+            return aroon_up - aroon_down
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_cci(self, high_history: List[float], low_history: List[float], close_history: List[float], period: int = 20) -> float:
+        """Calculate Commodity Channel Index."""
+        if len(high_history) < period or len(low_history) < period or len(close_history) < period:
+            return 0.0
+        try:
+            # Get last 'period' values
+            high = np.array(high_history[-period:])
+            low = np.array(low_history[-period:])
+            close = np.array(close_history[-period:])
+            
+            # Calculate typical price
+            tp = (high + low + close) / 3
+            
+            # Calculate SMA of typical price
+            sma_tp = np.mean(tp)
+            
+            # Calculate Mean Deviation
+            mean_deviation = np.mean(np.abs(tp - sma_tp))
+            
+            if mean_deviation == 0:
+                return 0.0
+            
+            # Calculate CCI
+            cci = (tp[-1] - sma_tp) / (0.015 * mean_deviation)
+            
+            return cci
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_cmo(self, prices: List[float], period: int = 14) -> float:
+        """Calculate Chande Momentum Oscillator."""
+        if len(prices) < period + 1:
+            return 0.0
+        try:
+            # Calculate price changes
+            changes = np.diff(prices[-period-1:])
+            
+            # Separate positive and negative changes
+            positive_sum = np.sum([change for change in changes if change > 0])
+            negative_sum = abs(np.sum([change for change in changes if change < 0]))
+            
+            if positive_sum + negative_sum == 0:
+                return 0.0
+            
+            # Calculate CMO
+            cmo = 100 * (positive_sum - negative_sum) / (positive_sum + negative_sum)
+            
+            return cmo
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_momentum(self, prices: List[float], period: int = 10) -> float:
+        """Calculate Momentum."""
+        if len(prices) <= period:
+            return 0.0
+        try:
+            return prices[-1] - prices[-period-1]
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_trix(self, prices: List[float], period: int = 15) -> float:
+        """Calculate TRIX indicator."""
+        if len(prices) < period * 3:
+            return 0.0
+        try:
+            prices_array = np.array(prices)
+            alpha = 2 / (period + 1)
+            
+            # Calculate triple EMA
+            ema1 = np.zeros_like(prices_array)
+            ema2 = np.zeros_like(prices_array)
+            ema3 = np.zeros_like(prices_array)
+            
+            # First EMA
+            ema1[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                ema1[i] = alpha * prices_array[i] + (1 - alpha) * ema1[i-1]
+            
+            # Second EMA
+            ema2[0] = ema1[0]
+            for i in range(1, len(ema1)):
+                ema2[i] = alpha * ema1[i] + (1 - alpha) * ema2[i-1]
+            
+            # Third EMA
+            ema3[0] = ema2[0]
+            for i in range(1, len(ema2)):
+                ema3[i] = alpha * ema2[i] + (1 - alpha) * ema3[i-1]
+            
+            # Calculate TRIX
+            if ema3[-2] == 0:
+                return 0.0
+            trix = (ema3[-1] - ema3[-2]) / ema3[-2] * 100
+            
+            return trix
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_ultimate_oscillator(self, high_history: List[float], low_history: List[float], close_history: List[float],
+                                    period1: int = 7, period2: int = 14, period3: int = 28) -> float:
+        """Calculate Ultimate Oscillator."""
+        if len(high_history) < max(period1, period2, period3):
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            close = np.array(close_history)
+            
+            # Calculate buying pressure (BP) and true range (TR)
+            bp = close - np.minimum(low, np.roll(close, 1))
+            tr = np.maximum(high, np.roll(close, 1)) - np.minimum(low, np.roll(close, 1))
+            
+            # Calculate averages for different periods
+            avg1 = np.sum(bp[-period1:]) / np.sum(tr[-period1:])
+            avg2 = np.sum(bp[-period2:]) / np.sum(tr[-period2:])
+            avg3 = np.sum(bp[-period3:]) / np.sum(tr[-period3:])
+            
+            # Calculate Ultimate Oscillator
+            uo = 100 * (4 * avg1 + 2 * avg2 + avg3) / 7
+            
+            return uo
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_stochastic_momentum(self, high_history: List[float], low_history: List[float], close_history: List[float],
+                                     k_period: int = 14, d_period: int = 3) -> Tuple[float, float, float]:
+        """Calculate Stochastic Momentum Indicator."""
+        if len(high_history) < k_period or len(low_history) < k_period or len(close_history) < k_period:
+            return 0.0, 0.0, 0.0
+        try:
+            # Get relevant price ranges
+            high = np.array(high_history[-k_period:])
+            low = np.array(low_history[-k_period:])
+            close = np.array(close_history[-k_period:])
+            
+            # Calculate %K
+            lowest_low = np.min(low)
+            highest_high = np.max(high)
+            
+            if highest_high - lowest_low == 0:
+                return 0.0, 0.0, 0.0
+            
+            k = 100 * (close[-1] - lowest_low) / (highest_high - lowest_low)
+            
+            # Calculate %D (3-period SMA of %K)
+            if len(close_history) < k_period + d_period:
+                return k, 0.0, 0.0
+            
+            d = np.mean([k for _ in range(d_period)])
+            
+            # Calculate Slow Stochastic
+            slow_d = np.mean([d for _ in range(d_period)])
+            
+            return k, d, slow_d
+        except (ZeroDivisionError, ValueError):
+            return 0.0, 0.0, 0.0
+
+    def _calculate_natr(self, high_history: List[float], low_history: List[float], close_history: List[float], period: int = 14) -> float:
+        """Calculate Normalized Average True Range."""
+        if len(high_history) < period or len(low_history) < period or len(close_history) < period:
+            return 0.0
+        try:
+            high = np.array(high_history)
+            low = np.array(low_history)
+            close = np.array(close_history)
+            
+            # Calculate True Range
+            tr = np.zeros(len(high))
+            for i in range(1, len(high)):
+                tr[i] = max(
+                    high[i] - low[i],
+                    abs(high[i] - close[i-1]),
+                    abs(low[i] - close[i-1])
+                )
+            
+            # Calculate ATR
+            atr = np.mean(tr[-period:])
+            
+            # Normalize ATR
+            if close[-1] == 0:
+                return 0.0
+            
+            natr = 100 * atr / close[-1]
+            
+            return natr
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_true_range(self, high_history: List[float], low_history: List[float], close_history: List[float]) -> float:
+        """Calculate True Range."""
+        if len(high_history) < 2 or len(low_history) < 2 or len(close_history) < 2:
+            return 0.0
+        try:
+            high = high_history[-1]
+            low = low_history[-1]
+            prev_close = close_history[-2]
+            
+            tr = max(
+                high - low,
+                abs(high - prev_close),
+                abs(low - prev_close)
+            )
+            
+            return tr
+        except (ZeroDivisionError, ValueError):
+            return 0.0
+
+    def _calculate_hilbert_transform(self, prices: List[float], period: int = 14) -> Tuple[float, float]:
+        """Calculate Hilbert Transform - Dominant Cycle Period and Phase."""
+        if len(prices) < period * 2:
+            return 0.0, 0.0
+        try:
+            prices_array = np.array(prices[-period*2:])
+            
+            # Smooth prices
+            alpha = 0.0962
+            smooth = np.zeros_like(prices_array)
+            smooth[0] = prices_array[0]
+            for i in range(1, len(prices_array)):
+                smooth[i] = (1 - alpha) * smooth[i-1] + alpha * prices_array[i]
+            
+            # Calculate quadrature
+            quad = np.zeros_like(smooth)
+            for i in range(period, len(smooth)):
+                quad[i] = 1.25 * (smooth[i-7] - smooth[i-5]) - 0.25 * (smooth[i-3] - smooth[i-1])
+            
+            # Calculate dominant cycle period using autocorrelation
+            corr = np.correlate(smooth, smooth, mode='full')
+            corr = corr[len(corr)//2:]
+            peaks = np.where((corr[1:-1] > corr[:-2]) & (corr[1:-1] > corr[2:]))[0] + 1
+            if len(peaks) > 0:
+                dominant_cycle = peaks[0]
+            else:
+                dominant_cycle = period
+            
+            # Calculate dominant cycle phase
+            if np.sum(quad[-period:] ** 2) == 0:
+                phase = 0.0
+            else:
+                phase = np.arctan2(
+                    np.sum(quad[-period:] * smooth[-period:]),
+                    np.sum(quad[-period:] ** 2)
+                ) * 180 / np.pi
+            
+            return float(dominant_cycle), float(phase)
+        except (ZeroDivisionError, ValueError):
+            return 0.0, 0.0
+
     def _get_observation(self):
         """Get current market state as observation."""
         uniswap_entity = self.get_entity('UNISWAP_V3')
@@ -637,56 +1482,111 @@ class RLStrategy(BaseStrategy):
             self.low_price_history = self.low_price_history[-168:]
             self.close_price_history = self.close_price_history[-168:]
 
+        # Calculate price ratios
+        open_price = global_state.open_price
+        if open_price == 0:
+            high_to_open = 1.0
+            low_to_open = 1.0
+            close_to_open = 1.0
+        else:
+            high_to_open = global_state.high_price / open_price
+            low_to_open = global_state.low_price / open_price
+            close_to_open = global_state.close_price / open_price
+
         # Calculate technical indicators
+        dema = self._calculate_dema(self.price_history)
+        dema_ratio = dema / open_price if open_price != 0 else 1.0
+        
+        psar = self._calculate_parabolic_sar(self.high_price_history, self.low_price_history)
+        psar_ratio = psar / open_price if open_price != 0 else 1.0
+        
+        apo = self._calculate_apo(self.price_history)
+        aroon = self._calculate_aroon_oscillator(self.high_price_history, self.low_price_history)
+        bop = self._calculate_bop(self.price_history, global_state)
+        cci = self._calculate_cci(self.high_price_history, self.low_price_history, self.close_price_history)
+        cmo = self._calculate_cmo(self.price_history)
+        dx = self._calculate_dx(self.high_price_history, self.low_price_history, self.close_price_history)
+        momentum = self._calculate_momentum(self.price_history)
+        trix = self._calculate_trix(self.price_history)
+        ultimate = self._calculate_ultimate_oscillator(self.high_price_history, self.low_price_history, self.close_price_history)
+
         ewma_volatility = self._calculate_ewma_volatility(self.price_history)
         ma24, ma168 = self._calculate_moving_averages(self.price_history)
         bb_upper, bb_middle, bb_lower = self._calculate_bollinger_bands(self.price_history)
         adxr = self._calculate_adxr(self.high_price_history, self.low_price_history, self.close_price_history)
-        bop = self._calculate_bop(self.price_history, global_state)
-        dx = self._calculate_dx(self.high_price_history, self.low_price_history, self.close_price_history)
+        
+        # Calculate Stochastic indicators
+        k, d, slow_d = self._calculate_stochastic_momentum(
+            self.high_price_history, 
+            self.low_price_history, 
+            self.close_price_history
+        )
+        
+        # Calculate ranges
+        natr = self._calculate_natr(self.high_price_history, self.low_price_history, self.close_price_history)
+        true_range = self._calculate_true_range(self.high_price_history, self.low_price_history, self.close_price_history)
 
+
+        impermanent_loss = 0.0
+        if uniswap_entity.is_position:
+            impermanent_loss = abs(
+                (
+                    uniswap_entity._internal_state.token0_amount_position_init + 
+                    uniswap_entity._internal_state.token1_amount_position_init * uniswap_entity._global_state.price
+                ) - (
+                    uniswap_entity._internal_state.token0_amount_position + 
+                    uniswap_entity._internal_state.token1_amount_position * uniswap_entity._global_state.price
+                )
+            )
+        
+        # Calculate Hilbert Transform indicators
+        dominant_cycle, dominant_phase = self._calculate_hilbert_transform(self.price_history)
         current_observation = np.array([
+            uniswap_entity.balance,  # balance
+            # global_state.price,  # hourly price
+            # global_state.centralized_price,  # centralized price
+            # internal_state.price_init,  # initial price
+            # internal_state.price_lower,  # lower price
+            # internal_state.price_upper,  # upper price
+            uniswap_entity.is_position,
+            # global_state.open_price,  # hourly open price
             global_state.price,
             global_state.centralized_price,
-            global_state.open_price,
-            global_state.close_price,
-            global_state.high_price,
-            global_state.low_price,
-            internal_state.liquidity,
-            internal_state.token0_amount,
-            internal_state.token1_amount,
-            internal_state.price_init,
-            internal_state.price_lower,
-            internal_state.price_upper,
-            internal_state.earned_fees,
-            ewma_volatility,
-            ma24,
-            ma168,
-            bb_upper,
-            bb_middle,
-            bb_lower,
-            adxr,
-            bop,
-            dx
+            high_to_open,  # hourly highest price/hourly open price
+            low_to_open,  # hourly lowest price/hourly open price
+            close_to_open,  # hourly close price/hourly open price
+            global_state.volume,  # hourly trading volume in USD
+            dema_ratio,  # Double Exponential Moving Average/hourly open price
+            psar_ratio,  # Parabolic SAR/hourly open price
+            dx,  # Average Directional Movement Index
+            apo,  # Absolute Price Oscillator
+            aroon,  # Aroon Oscillator
+            bop,  # Balance Of Power
+            cci,  # Commodity Channel Index (2 features)
+            cmo,  # Chande Momentum Oscillator
+            momentum,  # Momentum
+            trix,  # TRIX
+            ultimate,  # Ultimate Oscillator
+            k,  # Stochastic Momentum Indicator (3 features)
+            d,
+            slow_d,
+            natr,  # Normalized Average True Range
+            true_range,  # True Range
+            dominant_cycle,  # Hilbert Transform - Dominant Cycle Period
+            dominant_phase,  # Hilbert Transform - Dominant Cycle Phase
+            ewma_volatility,  # Exponential Weighted Moving Average Volatility
+            ma24, ma168,  # Moving Averages
+            bb_upper, # Bollinger Bands
+            bb_middle, 
+            bb_lower,  
+            adxr,  # Average Directional Index    
+            # impermanent_loss,        
         ], dtype=np.float32)
-
         # Handle NaN and infinite values
         current_observation = np.nan_to_num(current_observation, copy=True, nan=0.0, posinf=0.0, neginf=0.0)
 
-        # self.observation_history.append(current_observation)
-
-        # # Get last 3 observations plus current
-        # if len(self.observation_history) >= 4:
-        #     last_observations = self.observation_history[-4:]
-        # else:
-        #     # Pad with zeros if we don't have enough history
-        #     padding = [np.zeros_like(current_observation)] * (4 - len(self.observation_history))
-        #     last_observations = padding + self.observation_history
-
-        # # Concatenate the observations
-        # observation = np.concatenate(last_observations)
-    
         return current_observation
+
 
     def train(self, observations: List[Observation], total_timesteps: int = 100000):
         """
@@ -702,9 +1602,39 @@ class RLStrategy(BaseStrategy):
         check_env(train_env)  # Verify the environment follows the Gym interface
         
         # Create a new model for training
-        # train_model = PPO(
+        train_model = PPO(
+            "MlpPolicy",
+            train_env,
+            learning_rate=self._params.LEARNING_RATE,
+            n_steps=self._params.N_STEPS,
+            batch_size=self._params.BATCH_SIZE,
+            n_epochs=self._params.N_EPOCHS,
+            gamma=self._params.GAMMA,
+            gae_lambda=self._params.GAE_LAMBDA,
+            clip_range=self._params.CLIP_RANGE,
+            verbose=0,
+            tensorboard_log="./model_logs/",
+            seed=self._params.SEED,
+            policy_kwargs={
+                'net_arch': [256, 256]
+            }
+        )
+        
+        # train_model = DDPG(
         #     "MlpPolicy",
         #     train_env,
+        #     verbose=0,
+        #     tensorboard_log="./model_logs/",
+        #     learning_rate=self._params.LEARNING_RATE,
+        #     batch_size=self._params.BATCH_SIZE,
+        #     action_noise=OrnsteinUhlenbeckActionNoise(mean=np.zeros(2), sigma=0.5 * np.ones(2)),
+        # )
+
+        # train_model =  CVaRPPO(
+        #     "MlpPolicy",
+        #     train_env,
+        #     verbose=0,
+        #     tensorboard_log="./model_logs/",
         #     learning_rate=self._params.LEARNING_RATE,
         #     n_steps=self._params.N_STEPS,
         #     batch_size=self._params.BATCH_SIZE,
@@ -712,17 +1642,39 @@ class RLStrategy(BaseStrategy):
         #     gamma=self._params.GAMMA,
         #     gae_lambda=self._params.GAE_LAMBDA,
         #     clip_range=self._params.CLIP_RANGE,
-        #     verbose=1,
-        #     tensorboard_log="./model_logs/"
+        #     alpha=self._params.ALPHA,
+        #     beta=self._params.BETA,
+        #     nu_lr=self._params.NU_LR,
+        #     lam_lr=self._params.LAM_LR,
+        #     nu_start=self._params.NU_START,
+        #     lam_start=self._params.LAM_START,
+        #     nu_delay=self._params.NU_DELAY,
+        #     lam_low_bound=self._params.LAM_LOW_BOUND,
+        #     delay=self._params.DELAY,
+        #     cvar_clip_ratio=self._params.CVAR_CLIP_RATIO,
+        #     policy_kwargs={
+        #         'net_arch': [256, 256]
+        #     }
         # )
-        train_model = DDPG(
+        train_model = CPO(
             "MlpPolicy",
             train_env,
-            verbose=1,
+            verbose=0,
             tensorboard_log="./model_logs/",
             learning_rate=self._params.LEARNING_RATE,
+            n_steps=self._params.N_STEPS,
             batch_size=self._params.BATCH_SIZE,
-            action_noise=OrnsteinUhlenbeckActionNoise(mean=np.zeros(2), sigma=0.1 * np.ones(2))
+            n_epochs=self._params.N_EPOCHS,
+            gamma=self._params.GAMMA,
+            gae_lambda=self._params.GAE_LAMBDA,
+            clip_range=self._params.CLIP_RANGE,
+            max_constraint_value=self._params.MAX_CONSTRAINT_VALUE,
+            max_backtrack_steps=self._params.MAX_BACKTRACK_STEPS,
+            backtrack_coeff=self._params.BACKTRACK_COEFF,
+            damping_coeff=self._params.DAMPING_COEFF,
+            constraint_lr=self._params.CONSTRAINT_LR,
+            max_impermanent_loss=self._params.MAX_IMPERMANENT_LOSS,
+            impermanent_loss_quantile=self._params.IMPERMANENT_LOSS_QUANTILE,
         )
         train_model.set_logger(train_env.logger)
         
@@ -753,14 +1705,14 @@ class RLStrategy(BaseStrategy):
 
         # Get action from PPO model
         action, _ = self.model.predict(observation, deterministic=True)
-
+        self.action_history.append(action)
 
         current_price = global_state.price
         current_tick = self._get_tick_from_price(current_price)
         
         # Calculate new tick bounds
-        lower_tick = current_tick - round(action[0]) * self.tick_spacing - self.tick_spacing
-        upper_tick = current_tick + round(action[1]) * self.tick_spacing + self.tick_spacing
+        lower_tick = current_tick - action * self.tick_spacing
+        upper_tick = current_tick + action * self.tick_spacing
         
         # Convert ticks to prices
         price_lower = self._get_price_from_tick(lower_tick)
@@ -770,7 +1722,7 @@ class RLStrategy(BaseStrategy):
         # if price_lower == uniswap_entity._internal_state.price_lower and price_upper == uniswap_entity._internal_state.price_upper:
         #     rebalance = False
 
-        if round(action[0]) == 0 and round(action[1]) == 0:
+        if action == 0:
             rebalance = False
 
         if rebalance:
@@ -798,6 +1750,17 @@ class RLStrategy(BaseStrategy):
                 )
             )
             self._debug(f"Opening new position with range [{price_lower:.2f}, {price_upper:.2f}]")  
+        else:
+            lower_bound = uniswap_entity._internal_state.price_lower
+            upper_bound = uniswap_entity._internal_state.price_upper
+            if current_price < lower_bound or current_price > upper_bound:
+                if uniswap_entity.is_position:
+                    actions.append(
+                        ActionToTake(
+                            entity_name='UNISWAP_V3',
+                            action=Action(action='close_position', args={})
+                        )
+                    )
 
         return actions
 
