@@ -45,7 +45,7 @@ def extract_time_series_features(funding_rate_series: pd.Series) -> dict:
     # 8. Return to the mean (mean reversal): autocorr 1 step ahead
     features["mean_reversion_strength"] = -acf_values[
         1
-    ]  # сильная отриц. автокорреляция → возврат
+    ]  # strong negativity. autocorrelation → return
 
     return features
 
