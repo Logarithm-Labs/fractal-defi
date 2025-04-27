@@ -7,4 +7,7 @@ pylint>=3.2.5
 flake8>=7.1.0
 requests>=2.32.3
 scipy==1.14.0
-hdbscan==0.8.40
+black==25.1.0
+statsmodels==0.14.4
+catboost==1.2.8
+tqdm==4.67.1

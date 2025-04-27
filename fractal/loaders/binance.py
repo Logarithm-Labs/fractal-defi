@@ -97,7 +97,7 @@ class BinanceFundingLoader(Loader):
                     "ticker": item["symbol"],
                 })
 
-            if len(response) < 1000:
+            if len(response) < 1:
                 break
 
             new_end_time = min(item["fundingTime"] for item in response) - 1
@@ -204,6 +204,7 @@ class BinancePriceLoader(Loader):
         else:
             end_time_ms = int(self.end_time.timestamp() * 1000)
 
+
         start_time_obj = self.start_time
 
         interval_mapping = {
@@ -225,6 +226,7 @@ class BinancePriceLoader(Loader):
             )
 
         candle_duration_ms = amount * interval_mapping[unit]
+
         step_ms = 1000 * candle_duration_ms
 
         klines = []
@@ -237,10 +239,14 @@ class BinancePriceLoader(Loader):
                 f"&endTime={end_time_ms}"
                 f"&startTime={start_ms}"
             )
-            response = requests.get(url, timeout=10).json()
+            try:
+                response = requests.get(url, timeout=10).json()
+            except requests.exceptions.RequestException as e:
+                raise SystemExit(e)
+            
             if not response:
                 break
-
+            
             for item in response:
                 item_open_time = int(item[0])
                 if start_time_obj is not None and item_open_time < int(start_time_obj.timestamp() * 1000):
@@ -254,14 +260,13 @@ class BinancePriceLoader(Loader):
                     "volume": float(item[5]),
                 })
 
-            if len(response) < 1000 or (
+            if len(response) < 1 or (
                 start_time_obj is not None
                 and int(response[0][0]) < int(start_time_obj.timestamp() * 1000)
             ):
                 break
 
             end_time_ms = int(response[0][0]) - 1000
-
         return klines
 
     def extract(self) -> None:
@@ -304,6 +309,25 @@ class BinancePriceLoader(Loader):
             time=pd.to_datetime(self._data["openTime"], utc=True),
         )
 
+class BinanceSpotPriceLoader(BinancePriceLoader):
+    def __init__(
+            self,
+            ticker: str,
+            loader_type: LoaderType = LoaderType.CSV,
+            inverse_price: bool = False,
+            interval: str = "1d",
+            start_time: Optional[datetime] = None,
+            end_time: Optional[datetime] = None,
+            ):
+        super().__init__(
+            ticker,
+            loader_type,
+            inverse_price,
+            interval,
+            start_time,
+            end_time,
+        )
+        self._url = "https://api.binance.com/api/v3/klines"
 
 class BinanceDayPriceLoader(BinancePriceLoader):
     """
