@@ -7,3 +7,4 @@ pylint>=3.2.5
 flake8>=7.1.0
 requests>=2.32.3
 scipy==1.14.0
+hdbscan==0.8.40
