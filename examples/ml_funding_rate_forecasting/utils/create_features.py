@@ -51,23 +51,28 @@ def extract_time_series_features(funding_rate_series: pd.Series) -> dict:
 
 
 def extract_features(df: pd.DataFrame, current_idx: int) -> pd.Series:
-    t = int(df.loc[current_idx, 'hour_index'] * 8 + int(df.loc[current_idx, 'open_time'][14:16]))
-    window = df.iloc[current_idx:current_idx+t]
+    t = int(
+        df.loc[current_idx, "hour_index"] * 8
+        + int(df.loc[current_idx, "open_time"][14:16])
+    )
+    window = df.iloc[current_idx : current_idx + t]
 
     features = {
-        'log_return': np.log(window['close_spot'].iloc[-1] / window['close_spot'].iloc[0]),
-        'volatility': window['close_spot'].pct_change().std(),
-        'avg_volume_futr': window['volume_futr'].mean(),
-        'avg_volume_spot': window['volume_spot'].mean(),
-        'basis_mean': (window['close_futr'] - window['close_spot']).mean(),
-        'basis_std': (window['close_futr'] - window['close_spot']).std(),
+        "log_return": np.log(
+            window["close_spot"].iloc[-1] / window["close_spot"].iloc[0]
+        ),
+        "volatility": window["close_spot"].pct_change().std(),
+        "avg_volume_futr": window["volume_futr"].mean(),
+        "avg_volume_spot": window["volume_spot"].mean(),
+        "basis_mean": (window["close_futr"] - window["close_spot"]).mean(),
+        "basis_std": (window["close_futr"] - window["close_spot"]).std(),
     }
 
     return pd.Series(features)
 
 
-def rsi(data: pd.DataFrame, period: int=14) -> pd.Series:
-    delta = data['close_futr'].diff(1)
+def rsi(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    delta = data["close_futr"].diff(1)
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
     avg_gain = gain.rolling(window=period).mean()
@@ -77,9 +82,9 @@ def rsi(data: pd.DataFrame, period: int=14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def mfi(data: pd.DataFrame, period: int=14) -> pd.Series:
-    typical_price = (data['high_futr'] + data['low_futr'] + data['close_futr']) / 3
-    money_flow = typical_price * data['volume_futr']
+def mfi(data: pd.DataFrame, period: int = 14) -> pd.Series:
+    typical_price = (data["high_futr"] + data["low_futr"] + data["close_futr"]) / 3
+    money_flow = typical_price * data["volume_futr"]
     positive_flow = money_flow.where(typical_price.diff() > 0, 0)
     negative_flow = money_flow.where(typical_price.diff() < 0, 0)
     pos_flow_sum = positive_flow.rolling(window=period).sum()
@@ -88,9 +93,9 @@ def mfi(data: pd.DataFrame, period: int=14) -> pd.Series:
     return mfi
 
 
-def ema(data: pd.DataFrame, period: int=14) -> pd.Series:
+def ema(data: pd.DataFrame, period: int = 14) -> pd.Series:
     alpha = 2 / (period + 1)
-    ema_values = [data['close_futr'][0]]
-    for price in data['close_futr'][1:]:
+    ema_values = [data["close_futr"][0]]
+    for price in data["close_futr"][1:]:
         ema_values.append((price * alpha) + (ema_values[-1] * (1 - alpha)))
     return pd.Series(ema_values, index=data.index)

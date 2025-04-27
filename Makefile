@@ -11,7 +11,7 @@ export PATH := $(BIN):$(PATH)
 PROJECT := fractal
 TESTS := tests
 
-PROJECT_EXAMPLE := examples/funding_rate_forecasting
+PROJECT_EXAMPLE := examples/ml_funding_rate_forecasting
 
 
 # Clean
