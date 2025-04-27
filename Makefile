@@ -1,4 +1,4 @@
-VENV := .venv
+VENV := venv
 
 ifeq ($(OS),Windows_NT)
    BIN=$(VENV)/Scripts
@@ -10,8 +10,6 @@ export PATH := $(BIN):$(PATH)
 
 PROJECT := fractal
 TESTS := tests
-
-PROJECT_EXAMPLE := examples/ml_funding_rate_forecasting
 
 
 # Clean
@@ -49,16 +47,6 @@ isort_fix: .venv
 	isort $(PROJECT) $(TESTS)
 
 format: isort_fix
-
-
-# Format examples
-isort_fix_ex: .venv
-	isort $(PROJECT_EXAMPLE)
-
-black_fix_ex: .venv
-	black $(PROJECT_EXAMPLE)
-
-format_example: isort_fix_ex black_fix_ex
 
 
 # Lint

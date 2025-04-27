@@ -279,7 +279,7 @@ class BinancePriceLoader(Loader):
         """
         Transform the raw candlestick data.
         """
-        # self._data = self._data.sort_values("openTime")
+        self._data = self._data.sort_values("openTime")
         self._data["close"] = self._data["close"].astype(float)
         if self.inverse_price:
             self._data["close"] = 1 / self._data["close"]
