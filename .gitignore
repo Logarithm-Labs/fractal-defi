@@ -175,3 +175,6 @@ catboost_info
 /fractal_data
 /.idea
 *.db
+
+
+repomix-output.xml
