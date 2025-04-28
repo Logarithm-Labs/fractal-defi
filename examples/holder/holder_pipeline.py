@@ -2,7 +2,8 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from typing import List
-
+import os
+from dotenv import load_dotenv
 import numpy as np
 
 from sklearn.model_selection import ParameterGrid
@@ -15,6 +16,7 @@ from fractal.core.pipeline import (
 from binance_entity import BinanceGlobalState
 from holder_strategy import BinanceHodlerStrategy
 
+load_dotenv()
 
 # Load prices from Binance and build observations
 def build_observations() -> List[Observation]:
@@ -43,8 +45,10 @@ def build_grid() -> ParameterGrid:
 if __name__ == '__main__':
     # Define MLFlow and Experiment configurations
     mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:8080',
-        experiment_name='binance_hodler_btc_0'
+        mlflow_uri='https://mlflow.devcryptoservices.xyz/',
+        experiment_name='binance_hodler_btc_0',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
     )
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=BinanceHodlerStrategy,

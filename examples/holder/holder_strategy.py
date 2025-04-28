@@ -1,14 +1,20 @@
 from typing import List
 from dataclasses import dataclass
+import os
+from dotenv import load_dotenv
+import mlflow
+from io import StringIO
 
 from fractal.core.base import (
     BaseStrategy, Action, BaseStrategyParams,
     ActionToTake, NamedEntity, Observation)
 from fractal.core.entities import BaseSpotEntity
 from fractal.loaders import BinanceDayPriceLoader, LoaderType
+from fractal.core.pipeline import MLFlowConfig
 
 from binance_entity import BinanceSpot, BinanceGlobalState
 
+load_dotenv()
 
 @dataclass
 class HolderStrategyParams(BaseStrategyParams):
@@ -20,8 +26,16 @@ class HolderStrategyParams(BaseStrategyParams):
 
 class HodlerStrategy(BaseStrategy):
 
-    def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None, *args, **kwargs):
+    def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None, 
+                 mlflow_config: MLFlowConfig | None = None, *args, **kwargs):
         super().__init__(params=params, debug=debug, *args, **kwargs)
+        self.mlflow_config = mlflow_config
+        if self.mlflow_config:
+            mlflow.set_tracking_uri(self.mlflow_config.mlflow_uri)
+            if self.mlflow_config.aws_access_key_id and self.mlflow_config.aws_secret_access_key:
+                os.environ['AWS_ACCESS_KEY_ID'] = self.mlflow_config.aws_access_key_id
+                os.environ['AWS_SECRET_ACCESS_KEY'] = self.mlflow_config.aws_secret_access_key
+            mlflow.set_experiment(self.mlflow_config.experiment_name)
 
     def set_up(self):
         # check that the entity 'exchange' is registered
@@ -60,6 +74,37 @@ class HodlerStrategy(BaseStrategy):
         exchange: BaseSpotEntity = self.get_entity('exchange')
         action: Action = Action(action='deposit', args={'amount_in_notional': self._params.INITIAL_BALANCE})
         exchange.execute(action)
+        
+    def log_to_mlflow(self, result):
+        """Сохраняет результаты стратегии в MLflow"""
+        if not self.mlflow_config:
+            return
+            
+        run_name = f"strategy_run_{self._params.BUY_PRICE}_{self._params.SELL_PRICE}_{self._params.TRADE_SHARE}"
+        with mlflow.start_run(run_name=run_name):
+            # Логирование параметров
+            params_dict = {k: v for k, v in self._params.__dict__.items() if not k.startswith('_')}
+            mlflow.log_params(params_dict)
+            
+            # Логирование результатов
+            result_df = result.to_dataframe()
+            metrics = result.get_default_metrics()
+            
+            # Сохранение CSV с результатами
+            csv_buffer = StringIO()
+            result_df.to_csv(csv_buffer, index=False)
+            mlflow.log_text(csv_buffer.getvalue(), "strategy_result.csv")
+            
+            # Логирование метрик - преобразуем объект StrategyMetrics в словарь
+            metrics_dict = metrics.__dict__ if hasattr(metrics, '__dict__') else {}
+            mlflow.log_metrics(metrics_dict)
+            
+            print(result.logger.logs_path)
+            try:
+                if hasattr(result, 'logger') and hasattr(result.logger, 'logs_path'):
+                    mlflow.log_artifact(result.logger.logs_path)
+            except Exception as e:
+                print(f"Не удалось сохранить логи: {e}")
 
 
 class BinanceHodlerStrategy(HodlerStrategy):
@@ -78,12 +123,23 @@ if __name__ == '__main__':
         for timestamp, price in zip(binance_prices.index, binance_prices['price'])
     ]
 
+    # Настройка MLflow
+    mlflow_config = MLFlowConfig(
+        mlflow_uri='https://mlflow.devcryptoservices.xyz/',
+        experiment_name='binance_hodler_btc_0',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    )
+
     # Run the strategy
     params: HolderStrategyParams = HolderStrategyParams(
         BUY_PRICE=50_000, SELL_PRICE=60_000,
         TRADE_SHARE=0.01, INITIAL_BALANCE=100_000
     )
-    strategy = BinanceHodlerStrategy(debug=True, params=params)
+    strategy = BinanceHodlerStrategy(debug=True, params=params, mlflow_config=mlflow_config)
     result = strategy.run(observations)
-    print(result.get_default_metrics())  # show metrics
+
     result.to_dataframe().to_csv('resutl.csv')  # save results of strategy states
+    
+    # Сохранение результатов в MLflow
+    strategy.log_to_mlflow(result)

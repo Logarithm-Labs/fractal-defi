@@ -2,12 +2,15 @@ from typing import List
 from dataclasses import dataclass
 from collections import deque
 from typing import Optional
+import os
+from dotenv import load_dotenv
 
 import pandas as pd
+import numpy as np
+from sklearn.model_selection import ParameterGrid
 
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.hyperliquid import HyperliquidPerpsKlinesLoader
-from fractal.loaders.structs import PriceHistory, RateHistory
 from fractal.core.base import (
     BaseStrategy, Action, BaseStrategyParams,
     ActionToTake, NamedEntity, Observation)
@@ -15,6 +18,11 @@ from fractal.core.entities.single_spot_exchange import (
     SingleSpotExchangeGlobalState, 
     SingleSpotExchange
 )
+from fractal.core.pipeline import (
+    DefaultPipeline, MLFlowConfig, ExperimentConfig
+)
+
+load_dotenv()
 
 class SMA:
     def __init__(self, period: int):
@@ -49,9 +57,6 @@ class MACrossoverStrategyParams(BaseStrategyParams):
 
 
 class MACrossoverStrategy(BaseStrategy):
-
-    def __init__(self, debug: bool = False, params: MACrossoverStrategyParams | None = None):
-        super().__init__(params=params, debug=debug)
 
     def set_up(self):
         if 'exchange' not in self.get_all_available_entities():
@@ -107,13 +112,16 @@ class MACrossoverStrategy(BaseStrategy):
         exchange.execute(action)
 
 
-if __name__ == '__main__':
+# Загрузка данных и создание списка наблюдений
+def build_observations() -> List[Observation]:
+    # Загрузка цен
     hyperliquid_prices = HyperliquidPerpsKlinesLoader(
         ticker='BTC',
         interval='1h',
         loader_type=LoaderType.CSV
     ).read(with_run=True)
 
+    # Создание списка наблюдений
     observations: List[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': SingleSpotExchangeGlobalState(
             open=open_price,
@@ -129,19 +137,43 @@ if __name__ == '__main__':
             hyperliquid_prices.close
         )
     ]
+    return observations
 
-    # Create parameters
-    params: MACrossoverStrategyParams = MACrossoverStrategyParams(
-        SHORT_MA_PERIOD=9, LONG_MA_PERIOD=21,
-        INITIAL_BALANCE=100_000,
-        TRADE_SHARE=0.3
+
+# Создание сетки параметров для перебора
+def build_grid() -> ParameterGrid:
+    grid = ParameterGrid({
+        'SHORT_MA_PERIOD': [9, 12, 15],        # Короткие периоды MA
+        'LONG_MA_PERIOD': [21, 30, 45],        # Длинные периоды MA
+        'TRADE_SHARE': [0.1, 0.3, 0.5],        # Доля торговли
+        'INITIAL_BALANCE': [100_000]           # Начальный баланс
+    })
+    return grid
+
+
+if __name__ == '__main__':
+    # Настройка MLflow
+    mlflow_config = MLFlowConfig(
+        mlflow_uri='https://mlflow.devcryptoservices.xyz/',
+        experiment_name='hyperliquid_ma_strategy_btc_0',
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
     )
-
-    # Initialize strategy
-    strategy = MACrossoverStrategy(debug=True, params=params)
     
-    # Run the strategy
-    result = strategy.run(observations)
-
-    print(result.get_default_metrics())  # show metrics
-    result.to_dataframe().to_csv('result.csv')  # save results of strategy states
+    # Настройка эксперимента
+    experiment_config = ExperimentConfig(
+        strategy_type=MACrossoverStrategy,
+        backtest_observations=build_observations(),
+        window_size=720,  # 30 дней при часовых данных
+        params_grid=build_grid(),
+        debug=True,
+    )
+    
+    # Создание и запуск пайплайна
+    pipeline = DefaultPipeline(
+        experiment_config=experiment_config,
+        mlflow_config=mlflow_config
+    )
+    
+    # Запуск всех комбинаций параметров
+    pipeline.run()
