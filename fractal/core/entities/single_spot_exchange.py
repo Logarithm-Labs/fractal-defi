@@ -14,6 +14,7 @@ class SingleSpotExchangeGlobalState(GlobalState):
     high: float = 0.0
     low: float = 0.0
     close: float = 0.0
+    volume: float = 0.0
 
 
 @dataclass
