@@ -163,17 +163,6 @@ class BaseStrategy(ABC):
         self._debug("Running step...")
         self._debug(f"Observation: {observation.timestamp}")
 
-        # if self.observations_storage is not None:
-        #     self.observations_storage.write(observation)
-
-        # # validate observation
-        # self.__validate_observation(observation)
-
-        # # update states of the entities
-        # for entity_name, state in observation.states.items():
-        #     entity = self.get_entity(entity_name)
-        #     entity.update_state(state)
-
         # predict the next action to take
         actions: List[ActionToTake] = self.predict()
         self._debug(f"Actions to take: {actions}")
@@ -231,7 +220,7 @@ class BaseStrategy(ABC):
             global_states.append({entity_name: entity.global_state
                                   for entity_name, entity in self._entities.items()})
             self.step(observation)
-            
+
         return StrategyResult(
             timestamps=timestamps,
             internal_states=internal_states,

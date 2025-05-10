@@ -175,6 +175,5 @@ catboost_info
 /fractal_data
 /.idea
 *.db
-notebooks/*logs*
-notebooks/runs
-notebooks/fractal_data
+examples/*logs*
+examples/fractal_data

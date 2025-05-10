@@ -66,7 +66,7 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
             time=pd.to_datetime(self._data['date'], utc=True),
-            prices=self._data['token0_price'].astype(float).values,
+            price=self._data['token0_price'].astype(float).values,
             open=self._data['open'].astype(float).values,
             high=self._data['high'].astype(float).values,
             low=self._data['low'].astype(float).values,
@@ -147,18 +147,23 @@ class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
 
 class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType, start_time: Optional[datetime] = None, end_time: Optional[datetime] = None) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        pool: str,
+        loader_type: LoaderType,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> None:
         super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
         self.start_time = start_time
         self.end_time = end_time
 
     def extract(self):
-
         current_loaded_time = self.start_time.timestamp() if self.start_time else 0
         end_time = self.end_time.timestamp() if self.end_time else datetime.now().timestamp()
 
         batches = []
-
         while current_loaded_time < end_time:
             query = """
             {
@@ -188,15 +193,12 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
                 break
 
             current_loaded_time = batch['periodStartUnix'].astype(int).max()
-            unix_epochs_numeric = pd.to_numeric(pd.Series(current_loaded_time), errors='coerce')
-            print(f"current_loaded_time: {pd.to_datetime(unix_epochs_numeric, unit='s').max()}")
             batches.append(batch)
 
         self._data = pd.concat(batches)
 
     def transform(self):
         self._data['date'] = self._data['periodStartUnix'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
-        # self._data['date'] = self._data['date'].dt.date
         self._data['volume'] = self._data['volumeUSD'].astype(float)
         self._data['tvl'] = self._data['tvlUSD'].astype(float)
         self._data['fees'] = self._data['feesUSD'].astype(float)
@@ -206,7 +208,6 @@ class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
         self._data['high'] = self._data['high'].astype(float)
         self._data['low'] = self._data['low'].astype(float)
         self._data['close'] = self._data['close'].astype(float)
-
 
 
 class UniswapV3EthereumPoolMinuteDataLoader(UniswapV3EthereumPoolDayDataLoader):

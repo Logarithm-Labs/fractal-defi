@@ -50,16 +50,16 @@ class PoolHistory(pd.DataFrame):
         fees: np.array,
         liquidity: np.array,
         time: np.array,
-        prices: Optional[np.array] = None,
+        price: Optional[np.array] = None,
         open: Optional[np.array] = None,
         high: Optional[np.array] = None,
         low: Optional[np.array] = None,
         close: Optional[np.array] = None,
     ):
         super().__init__(
-            data=np.array([tvls, volumes, fees, liquidity, prices, open, high, low, close]).T,
+            data=np.array([tvls, volumes, fees, liquidity, price, open, high, low, close]).T,
             index=time,
-            columns=['tvl', 'volume', 'fees', 'liquidity', 'token0_price', 'open', 'high', 'low', 'close']
+            columns=['tvl', 'volume', 'fees', 'liquidity', 'price', 'open', 'high', 'low', 'close']
         )
 
 

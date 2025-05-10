@@ -1,20 +1,20 @@
+from typing import Any, Dict, Optional, Type, Union
+
+import gymnasium as gym
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 from stable_baselines3 import PPO
 from stable_baselines3.common.policies import ActorCriticPolicy
-from stable_baselines3.common.type_aliases import GymEnv, MaybeCallback, Schedule
-from stable_baselines3.common.utils import explained_variance, get_schedule_fn
-from stable_baselines3.common.vec_env import VecEnv
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
-import gymnasium as gym
+from stable_baselines3.common.type_aliases import GymEnv, Schedule
+from stable_baselines3.common.utils import explained_variance
 
 
 class CVaRPPO(PPO):
     """
     Proximal Policy Optimization algorithm with CVaR (Conditional Value at Risk) optimization.
     """
+
     def __init__(
         self,
         policy: Union[str, Type[ActorCriticPolicy]],
@@ -77,7 +77,7 @@ class CVaRPPO(PPO):
             device=device,
             _init_setup_model=_init_setup_model,
         )
-        
+
         # CVaR specific parameters
         self.alpha = alpha
         self.beta = beta
@@ -87,11 +87,11 @@ class CVaRPPO(PPO):
         self.lam_low_bound = lam_low_bound
         self.delay = delay
         self.cvar_clip_ratio = cvar_clip_ratio
-        
+
         # Initialize CVaR parameters as tensors with gradients
         self.nu = torch.tensor(nu_start, requires_grad=True, device=self.device)
         self.cvarlam = torch.tensor(lam_start, requires_grad=True, device=self.device)
-        
+
         # Initialize optimizers for CVaR parameters
         self.nu_optimizer = torch.optim.Adam([self.nu], lr=nu_lr)
         self.lam_optimizer = torch.optim.Adam([self.cvarlam], lr=lam_lr)
@@ -104,7 +104,7 @@ class CVaRPPO(PPO):
         self.policy.set_training_mode(True)
         # Update optimizer learning rate
         self._update_learning_rate(self.policy.optimizer)
-        
+
         # Compute current clip range
         clip_range = self.clip_range(self._current_progress_remaining)
         # Optional: clip range for the value function
@@ -115,7 +115,6 @@ class CVaRPPO(PPO):
         pg_losses, value_losses = [], []
         clip_fractions = []
 
-        continue_training = True
         # train for n_epochs epochs
         for epoch in range(self.n_epochs):
             approx_kl_divs = []
@@ -130,25 +129,33 @@ class CVaRPPO(PPO):
                 if self.use_sde:
                     self.policy.reset_noise(self.batch_size)
 
-                values, log_prob, entropy = self.policy.evaluate_actions(rollout_data.observations, actions)
+                values, log_prob, entropy = self.policy.evaluate_actions(
+                    rollout_data.observations, actions
+                )
                 values = values.flatten()
                 # Normalize advantage
                 advantages = rollout_data.advantages
                 # Normalization does not make sense if mini batchsize == 1, see GH issue #325
                 if self.normalize_advantage and len(advantages) > 1:
-                    advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+                    advantages = (advantages - advantages.mean()) / (
+                        advantages.std() + 1e-8
+                    )
 
                 # ratio between old and new policy, should be one at the first iteration
                 ratio = torch.exp(log_prob - rollout_data.old_log_prob)
 
                 # clipped surrogate loss
                 policy_loss_1 = advantages * ratio
-                policy_loss_2 = advantages * torch.clamp(ratio, 1 - clip_range, 1 + clip_range)
+                policy_loss_2 = advantages * torch.clamp(
+                    ratio, 1 - clip_range, 1 + clip_range
+                )
                 policy_loss = -torch.min(policy_loss_1, policy_loss_2).mean()
 
                 # Logging
                 pg_losses.append(policy_loss.item())
-                clip_fraction = torch.mean((torch.abs(ratio - 1) > clip_range).float()).item()
+                clip_fraction = torch.mean(
+                    (torch.abs(ratio - 1) > clip_range).float()
+                ).item()
                 clip_fractions.append(clip_fraction)
 
                 if self.clip_range_vf is None:
@@ -173,7 +180,11 @@ class CVaRPPO(PPO):
 
                 entropy_losses.append(entropy_loss.item())
 
-                loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss
+                loss = (
+                    policy_loss
+                    + self.ent_coef * entropy_loss
+                    + self.vf_coef * value_loss
+                )
 
                 # Calculate CVaR loss
                 cvar_loss = self._compute_cvar_loss(rollout_data, values)
@@ -183,17 +194,30 @@ class CVaRPPO(PPO):
                 self.policy.optimizer.zero_grad()
                 loss.backward()
                 # Clip grad norm
-                torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.max_grad_norm)
+                torch.nn.utils.clip_grad_norm_(
+                    self.policy.parameters(), self.max_grad_norm
+                )
                 self.policy.optimizer.step()
-                approx_kl_divs.append(torch.mean(rollout_data.old_log_prob - log_prob).detach().cpu().numpy())
+                approx_kl_divs.append(
+                    torch.mean(rollout_data.old_log_prob - log_prob)
+                    .detach()
+                    .cpu()
+                    .numpy()
+                )
 
-            if self.target_kl is not None and np.mean(approx_kl_divs) > 1.5 * self.target_kl:
-                print(f"Early stopping at step {epoch} due to reaching max kl: {np.mean(approx_kl_divs):.2f}")
-                continue_training = False
+            if (
+                self.target_kl is not None
+                and np.mean(approx_kl_divs) > 1.5 * self.target_kl
+            ):
+                print(
+                    f"Early stopping at step {epoch} due to reaching max kl: {np.mean(approx_kl_divs):.2f}"
+                )
                 break
 
         self._n_updates += self.n_epochs
-        explained_var = explained_variance(self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten())
+        explained_var = explained_variance(
+            self.rollout_buffer.values.flatten(), self.rollout_buffer.returns.flatten()
+        )
 
         # Logs
         self.logger.record("train/entropy_loss", np.mean(entropy_losses))
@@ -204,7 +228,9 @@ class CVaRPPO(PPO):
         self.logger.record("train/loss", loss.item())
         self.logger.record("train/explained_variance", explained_var)
         if hasattr(self.policy, "log_std"):
-            self.logger.record("train/std", torch.exp(self.policy.log_std).mean().item())
+            self.logger.record(
+                "train/std", torch.exp(self.policy.log_std).mean().item()
+            )
 
         self.logger.record("train/n_updates", self._n_updates, exclude="tensorboard")
         self.logger.record("train/cvar_nu", self.nu.item())
@@ -218,41 +244,46 @@ class CVaRPPO(PPO):
         # Calculate CVaR components
         returns = rollout_data.returns
         advantages = rollout_data.advantages
-        
+
         # Update nu (VaR estimate)
         nu_loss = torch.mean(torch.relu(returns - self.nu)) - (1 - self.alpha) * self.nu
         self.nu_optimizer.zero_grad()
         nu_loss.backward()
         self.nu_optimizer.step()
-        
+
         # Update lambda (CVaR multiplier)
         lam_loss = self.beta * self.cvarlam - torch.mean(torch.relu(returns - self.nu))
         self.lam_optimizer.zero_grad()
         lam_loss.backward()
         self.lam_optimizer.step()
-        
+
         # Clip lambda to ensure it stays positive
         with torch.no_grad():
             self.cvarlam.data = torch.clamp(self.cvarlam, min=self.lam_low_bound)
-        
+
         # Calculate CVaR advantage
         cvar_advantage = torch.where(
             returns < self.nu,
             self.delay * self.cvarlam / (1 - self.alpha) * (self.nu - returns),
-            torch.zeros_like(returns)
+            torch.zeros_like(returns),
         )
-        
+
         # Clip CVaR advantage
-        cvar_advantage = torch.clamp(cvar_advantage, -self.cvar_clip_ratio * torch.abs(values), 
-                                   self.cvar_clip_ratio * torch.abs(values))
-        
+        cvar_advantage = torch.clamp(
+            cvar_advantage,
+            -self.cvar_clip_ratio * torch.abs(values),
+            self.cvar_clip_ratio * torch.abs(values),
+        )
+
         # Combine with original advantage
         total_advantage = advantages + cvar_advantage
-        
+
         # Calculate CVaR policy loss
         ratio = torch.exp(rollout_data.old_log_prob - rollout_data.old_log_prob)
         policy_loss_1 = total_advantage * ratio
-        policy_loss_2 = total_advantage * torch.clamp(ratio, 1 - clip_range, 1 + clip_range)
+        policy_loss_2 = total_advantage * torch.clamp(
+            ratio, 1 - clip_range, 1 + clip_range
+        )
         cvar_policy_loss = -torch.min(policy_loss_1, policy_loss_2).mean()
-        
-        return cvar_policy_loss 
+
+        return cvar_policy_loss
