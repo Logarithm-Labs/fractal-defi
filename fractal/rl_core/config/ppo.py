@@ -8,8 +8,8 @@ class PPOConfig(BaseModelConfig):
     """Configuration for PPO model."""
 
     n_steps: int = 2048
-    n_epochs: int = 10
-    gamma: float = 0.99
+    n_epochs: int = 200
+    gamma: float = 0.95
     gae_lambda: float = 0.95
     clip_range: float = 0.2
 

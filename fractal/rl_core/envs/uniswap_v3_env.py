@@ -7,6 +7,8 @@ from stable_baselines3.common.utils import configure_logger
 
 from fractal.core.base.observations import Observation
 from fractal.core.entities import UniswapV3LPEntity
+from fractal.rl_core.features.uniswap_feature_extractor import \
+    UniswapFeatureExtractor
 
 
 class UniswapV3Env(gym.Env):
@@ -61,7 +63,7 @@ class UniswapV3Env(gym.Env):
             "earned_fees": 1.0,  # positive
             "instantaneous_lvr": -1.0,  # negative
             "impermanent_loss": 0.0,  # negative
-            "rebalancing_penalty": 0.0,  # negative
+            "rebalancing_penalty": -0.5,  # negative
             "holding_penalty": 0.0,  # negative
         }
         if reward_weights is not None:
@@ -70,37 +72,12 @@ class UniswapV3Env(gym.Env):
         # Define action space
         self.action_space = gym.spaces.Discrete(max_ticks)
 
-        # Define observation space for raw observations
-        self.observation_space = gym.spaces.Dict(
-            {
-                "balance": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "is_position": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "centralized_price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "high_price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "low_price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "open_price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "close_price": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-                "volume": gym.spaces.Box(
-                    low=-np.inf, high=np.inf, shape=(1,), dtype=np.float32
-                ),
-            }
+        # Initialize feature extractor
+        self.feature_extractor = UniswapFeatureExtractor()
+
+        # Define observation space for processed features
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(29,), dtype=np.float32
         )
 
         self.action_history = {}
@@ -126,41 +103,38 @@ class UniswapV3Env(gym.Env):
         """
         if len(prices) < 2:
             return 0.0
-        try:
-            returns = np.diff(np.log(prices))
-            ewma = np.zeros_like(returns)
-            ewma[0] = returns[0] ** 2
-            for i in range(1, len(returns)):
-                ewma[i] = self.alpha * returns[i] ** 2 + (1 - self.alpha) * ewma[i - 1]
-            return np.sqrt(ewma[-1])
-        except (ZeroDivisionError, ValueError):
-            return 0.0
 
-    def _get_observation(self) -> Dict[str, np.ndarray]:
+        returns = np.diff(np.log(prices))
+        ewma = np.zeros_like(returns)
+        ewma[0] = returns[0] ** 2
+        for i in range(1, len(returns)):
+            ewma[i] = self.alpha * returns[i] ** 2 + (1 - self.alpha) * ewma[i - 1]
+        return np.sqrt(ewma[-1])
+
+    def _get_observation(self) -> np.ndarray:
         """
         Get current market state as observation.
 
         Returns:
-            Dict[str, np.ndarray]: Dictionary containing current market state observations
+            np.ndarray: Processed features from the feature extractor
         """
         global_state = self.uniswap_entity._global_state
         self.price_history.append(global_state.price)
 
-        return {
-            "balance": np.array([self.uniswap_entity.balance], dtype=np.float32),
-            "is_position": np.array(
-                [self.uniswap_entity.is_position], dtype=np.float32
-            ),
-            "price": np.array([global_state.price], dtype=np.float32),
-            "centralized_price": np.array(
-                [global_state.centralized_price], dtype=np.float32
-            ),
-            "high_price": np.array([global_state.high_price], dtype=np.float32),
-            "low_price": np.array([global_state.low_price], dtype=np.float32),
-            "open_price": np.array([global_state.open_price], dtype=np.float32),
-            "close_price": np.array([global_state.close_price], dtype=np.float32),
-            "volume": np.array([global_state.volume], dtype=np.float32),
+        raw_observation = {
+            "balance": float(self.uniswap_entity.balance),
+            "is_position": float(self.uniswap_entity.is_position),
+            "price": float(global_state.price),
+            "centralized_price": float(global_state.centralized_price),
+            "high_price": float(global_state.high_price),
+            "low_price": float(global_state.low_price),
+            "open_price": float(global_state.open_price),
+            "close_price": float(global_state.close_price),
+            "volume": float(global_state.volume),
         }
+
+        # Process raw observation through feature extractor
+        return self.feature_extractor.forward(raw_observation)
 
     def _calculate_impermanent_loss(self) -> float:
         """
@@ -251,7 +225,7 @@ class UniswapV3Env(gym.Env):
         Returns:
             float: The calculated reward
         """
-        earned_fees = self.uniswap_entity._internal_state.earned_fees - fees_earned_prev
+        earned_fees = self.uniswap_entity._internal_state.position_fees
         impermanent_loss = self._calculate_impermanent_loss()
         instantaneous_lvr = self._calculate_instantaneous_lvr()
         rebalancing_penalty = self._calculate_rebalancing_penalty(rebalance, truncated)
@@ -302,7 +276,7 @@ class UniswapV3Env(gym.Env):
         """
         return int(np.log(price) / np.log(1.0001))
 
-    def step(self, action: int) -> Tuple[Dict[str, np.ndarray], float, bool, bool, Dict[str, Any]]:
+    def step(self, action: int) -> Tuple[np.ndarray, float, bool, bool, Dict[str, Any]]:
         """
         Execute one step in the environment.
 
@@ -374,7 +348,7 @@ class UniswapV3Env(gym.Env):
 
     def reset(
         self, seed: Optional[int] = None, options: Optional[Dict[str, Any]] = None
-    ) -> Tuple[Dict[str, np.ndarray], Dict[str, Any]]:
+    ) -> Tuple[np.ndarray, Dict[str, Any]]:
         """
         Reset the environment to initial state.
 

@@ -172,8 +172,8 @@ catboost_info
 *loader
 /mlruns
 /mlartifact
-/fractal_data
+*fractal_data
 /.idea
 *.db
-examples/*logs*
-examples/fractal_data
+*runs
+*model_logs

@@ -15,6 +15,8 @@ from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
 from fractal.rl_core.config import (BaseModelConfig, CPOConfig, CVaRPPOConfig,
                                     DDPGConfig, PPOConfig)
 from fractal.rl_core.envs.uniswap_v3_env import UniswapV3Env
+from fractal.rl_core.features.uniswap_feature_extractor import \
+    UniswapFeatureExtractor
 from fractal.rl_core.models.cpo import CPO
 from fractal.rl_core.models.cppo import CVaRPPO
 
@@ -60,6 +62,7 @@ class RLStrategy(BaseStrategy):
         self.deposited_initial_funds = False
         self.env = None
         self.model = None
+        self.feature_extractor = UniswapFeatureExtractor()
 
     def set_up(self):
         """
@@ -76,22 +79,25 @@ class RLStrategy(BaseStrategy):
         ))
         assert isinstance(self.get_entity('UNISWAP_V3'), UniswapV3LPEntity)
 
-    def _get_observation(self):
+    def _get_observation(self) -> np.ndarray:
         """Get current market state as observation."""
         uniswap_entity = self.get_entity('UNISWAP_V3')
         global_state = uniswap_entity._global_state
 
-        return {
-            'balance': np.array([uniswap_entity.balance], dtype=np.float32),
-            'is_position': np.array([uniswap_entity.is_position], dtype=np.float32),
-            'price': np.array([global_state.price], dtype=np.float32),
-            'centralized_price': np.array([global_state.centralized_price], dtype=np.float32),
-            'high_price': np.array([global_state.high_price], dtype=np.float32),
-            'low_price': np.array([global_state.low_price], dtype=np.float32),
-            'open_price': np.array([global_state.open_price], dtype=np.float32),
-            'close_price': np.array([global_state.close_price], dtype=np.float32),
-            'volume': np.array([global_state.volume], dtype=np.float32),
+        raw_observation = {
+            'balance': float(uniswap_entity.balance),
+            'is_position': float(uniswap_entity.is_position),
+            'price': float(global_state.price),
+            'centralized_price': float(global_state.centralized_price),
+            'high_price': float(global_state.high_price),
+            'low_price': float(global_state.low_price),
+            'open_price': float(global_state.open_price),
+            'close_price': float(global_state.close_price),
+            'volume': float(global_state.volume),
         }
+
+        # Process raw observation through feature extractor
+        return self.feature_extractor.forward(raw_observation)
 
     def train(self, observations: List[Observation], total_timesteps: int = 100000):
         """
@@ -114,7 +120,7 @@ class RLStrategy(BaseStrategy):
         # Create model using config
         model_kwargs = self._params.MODEL_CONFIG.to_model_kwargs()
         model_kwargs['env'] = train_env
-        train_model = self._params.MODEL_CLASS("MultiInputPolicy", **model_kwargs)
+        train_model = self._params.MODEL_CLASS("MlpPolicy", **model_kwargs)
 
         # Set logger
         train_model.set_logger(train_env.logger)

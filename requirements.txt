@@ -13,3 +13,4 @@ python-dotenv==1.1.0
 clearml==1.18.0
 jupyter==1.1.1
 tensorboard==2.19.0
+torch==2.6.0
