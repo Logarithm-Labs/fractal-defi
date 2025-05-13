@@ -15,10 +15,10 @@ warnings.filterwarnings('ignore')
 
 def build_grid():
     raw_grid = ParameterGrid({
-        'MIN_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'TARGET_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'MAX_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'EXECUTION_COST': [0.002],
+        'MIN_LEVERAGE': np.arange(1, 6, 0.5).tolist(),
+        'TARGET_LEVERAGE': np.arange(1, 6, 0.5).tolist(),
+        'MAX_LEVERAGE': np.arange(1, 6, 0.5).tolist(),
+        'EXECUTION_COST': [0.005],
         'INITIAL_BALANCE': [1_000_000]
     })
 
@@ -31,11 +31,12 @@ def build_grid():
 
 
 if __name__ == '__main__':
-    ticker: str = 'BTC'
+    ticker: str = 'LINK'
     start_time = datetime(2022, 1, 1, tzinfo=UTC)
     end_time = datetime(2025, 1, 1, tzinfo=UTC)
     fidelity = '1h'
     experiment_name = f'mb_binance_{fidelity}_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
+    HyperliquidBasis.MAX_LEVERAGE = 25
 
     # Define MLFlow and Experiment configurations
     mlflow_uri = os.getenv('MLFLOW_URI')
@@ -55,7 +56,7 @@ if __name__ == '__main__':
         aws_secret_access_key=aws_secret,
     )
 
-    observations = build_observations(ticker, start_time, end_time, fidelity=fidelity)
+    observations = build_observations(ticker, start_time, end_time, fidelity=fidelity, use_binance_data=True)
     assert len(observations) > 0
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=HyperliquidBasis,

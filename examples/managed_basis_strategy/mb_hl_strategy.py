@@ -6,7 +6,7 @@ import pandas as pd
 
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.hyperliquid import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
-from fractal.loaders.binance import BinancePriceLoader
+from fractal.loaders.binance import BinanceFundingLoader, BinancePriceLoader
 from fractal.loaders.structs import PriceHistory, RateHistory
 
 from fractal.core.base import Observation
@@ -54,31 +54,43 @@ def get_observations(
 
 def build_observations(
         ticker: str, start_time: datetime = None, end_time: datetime = None, fidelity: str = '1h',
+        use_binance_data: bool = False,
     ) -> List[Observation]:
     """
     Build observations for the ManagedBasisStrategy from the given start and end time.
     """
-    rate_data: RateHistory = HyperliquidFundingRatesLoader(
-        ticker, start_time=start_time, end_time=end_time).read(with_run=True)
+    if use_binance_data:
+        prices: PriceHistory = BinancePriceLoader(
+            ticker+'USDT', interval=fidelity, loader_type=LoaderType.CSV,
+            start_time=start_time, end_time=end_time).read(with_run=True)
+        rate_data: RateHistory = BinanceFundingLoader(
+            ticker=ticker+'USDT', start_time=start_time, end_time=end_time).read(with_run=True)
+    else:
+        # use binance data for larger timestampe (HL provides only 5k klines)
+        # prices: PriceHistory = BinancePriceLoader(
+        #     ticker+'USDT', interval=fidelity, loader_type=LoaderType.CSV,
+        #     start_time=start_time, end_time=end_time).read(with_run=True)
+        prices: PriceHistory = HyperLiquidPerpsPricesLoader(
+            ticker=ticker, interval=fidelity, start_time=start_time, end_time=end_time).read(with_run=True)
+        rate_data: RateHistory = HyperliquidFundingRatesLoader(
+            ticker=ticker, start_time=start_time, end_time=end_time).read(with_run=True)
+
     if fidelity == '1d':
         rate_data = rate_data.resample(fidelity).sum()
-    # use binance perp price because hyperliquid has limitations for klines limit
-    prices: PriceHistory = BinancePriceLoader(
-        ticker+'USDT', interval=fidelity, loader_type=LoaderType.CSV,
-        start_time=start_time, end_time=end_time).read(with_run=True)
+
     return get_observations(rate_data, prices, start_time, end_time)
 
 
 if __name__ == '__main__':
     # Set up
-    ticker: str = 'BTC'
+    ticker: str = 'LINK'
     start_time = datetime(2024, 1, 1, tzinfo=UTC)
-    end_time = datetime(2025, 1, 1, tzinfo=UTC)
-    fidelity = '1d'
+    end_time = datetime(2025, 5, 1, tzinfo=UTC)
+    fidelity = '1h'
     MIN_LVG = 1
-    TARGET_LVG = 4
-    MAX_LVG = 8
-    HyperliquidBasis.MAX_LEVERAGE = 45
+    TARGET_LVG = 3
+    MAX_LVG = 5
+    HyperliquidBasis.MAX_LEVERAGE = 10
 
     # Init the strategy
     params: HyperliquidBasisParams = HyperliquidBasisParams(
