@@ -158,7 +158,6 @@ def test_funding_hypeusdt_bounds():
     _assert_time_bounds(df, "fundingTime", start, end)
 
 
-
 @pytest.mark.slow
 @pytest.mark.integration
 def test_klines_btcusdt_1h_bounds_2020_2025():

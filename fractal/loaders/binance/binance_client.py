@@ -5,7 +5,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util import Retry
 
-FUTUTRE_SECTION = 'futures'
+FUTURES_SECTION = 'futures'
 SPOT_SECTION = 'spot'
 
 @dataclass
@@ -38,7 +38,7 @@ class BinanceHttp:
         self.session.mount("https://", adapter)
 
     def get(self, section: str, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        if section.lower() == FUTUTRE_SECTION:
+        if section.lower() == FUTURES_SECTION:
             base_url: str = self.cfg.futures_base_url
         else:
             raise ValueError(f"Unknown section {section} for Binance API")

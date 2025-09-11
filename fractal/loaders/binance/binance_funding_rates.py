@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.binance.binance_client import FUTUTRE_SECTION, BinanceHttp
+from fractal.loaders.binance.binance_client import FUTURES_SECTION, BinanceHttp
 from fractal.loaders.structs import FundingHistory
 
 
@@ -47,7 +47,7 @@ class BinanceFundingLoader(Loader):
             "startTime": start_ms,
             "endTime": end_ms,
         }
-        data = self.http.get(FUTUTRE_SECTION, self._FUNDING_ENDPOINT, params)
+        data = self.http.get(FUTURES_SECTION, self._FUNDING_ENDPOINT, params)
         if not isinstance(data, list):
             raise ValueError(f"Unexpected response for funding rates: {data}")
         return data
@@ -80,7 +80,7 @@ class BinanceFundingLoader(Loader):
                 "startTime": query_start,
                 "endTime": end_ms,
             }
-            data = self.http.get(FUTUTRE_SECTION, self._FUNDING_ENDPOINT, params)
+            data = self.http.get(FUTURES_SECTION, self._FUNDING_ENDPOINT, params)
             if not data:
                 break
 
