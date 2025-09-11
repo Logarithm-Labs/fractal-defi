@@ -1,12 +1,32 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
+import pandas as pd
 import pytest
 
 from fractal.loaders.binance import (BinanceDayPriceLoader,
-                                     BinanceFundingLoader, BinanceKlinesLoader)
+                                     BinanceFundingLoader,
+                                     BinanceHourPriceLoader,
+                                     BinanceKlinesLoader, BinancePriceLoader)
 from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
-# --- Funding Loader Tests ---
+
+def _assert_time_bounds(df: pd.DataFrame, time_col: str, start: datetime, end: datetime):
+    assert not df.empty, "DataFrame is empty — expected data in the requested range"
+    # Ensure timezone-aware timestamps
+    assert pd.api.types.is_datetime64tz_dtype(df[time_col].dtype)
+
+    tmin = df[time_col].min()
+    tmax = df[time_col].max()
+    assert tmin >= start, (
+        f"Earliest {time_col} {tmin} is before requested start {start}"
+    )
+    assert tmax <= end, (
+        f"Latest {time_col} {tmax} is after requested end {end}"
+    )
+
+    # Sorted and monotonic increasing
+    assert df[time_col].is_monotonic_increasing, f"{time_col} should be sorted ascending"
+
 
 @pytest.mark.integration
 @pytest.mark.slow
@@ -46,7 +66,6 @@ def test_binance_funding_loader_with_time_ranges():
     assert t_last <= end_time, "End time is not respected"
 
 
-# --- Price Loader Tests ---
 @pytest.mark.integration
 @pytest.mark.slow
 def test_binance_price_loader():
@@ -65,7 +84,6 @@ def test_binance_price_loader():
     assert data.index.dtype == "datetime64[ns, UTC]"
 
 
-# --- Klines Loader Tests ---
 @pytest.mark.integration
 @pytest.mark.slow
 def test_binance_klines_loader():
@@ -101,3 +119,92 @@ def test_binance_klines_loader_with_time_ranges():
 
     assert t0 >= start_time, "Start time is not respected"
     assert t_last <= end_time, "End time is not respected"
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_funding_btcusdt_bounds_2020_2025():
+    start = datetime(2020, 1, 1, tzinfo=UTC)
+    end = datetime(2025, 1, 1, tzinfo=UTC)
+
+    ldr = BinanceFundingLoader("BTCUSDT", start_time=start, end_time=end)
+    ldr.extract()
+    ldr.transform()
+
+    df = ldr._data
+    _assert_time_bounds(df, "fundingTime", start, end)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_funding_taousdt_bounds_2020_2025():
+    start = datetime(2020, 3, 14, tzinfo=UTC)
+    end = datetime(2025, 1, 1, tzinfo=UTC)
+
+    ldr = BinanceFundingLoader("TAOUSDT", start_time=start, end_time=end)
+    ldr.extract()
+    ldr.transform()
+
+    df = ldr._data
+    _assert_time_bounds(df, "fundingTime", start, end)
+
+
+@pytest.mark.integration
+def test_funding_hypeusdt_bounds():
+    start = datetime(2025, 1, 1, tzinfo=UTC)
+    end = datetime(2025, 8, 1, tzinfo=UTC)
+    df = BinanceFundingLoader("HYPEUSDT", start_time=start, end_time=end).read(with_run=True)
+    df = df.reset_index()
+    _assert_time_bounds(df, "fundingTime", start, end)
+
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_klines_btcusdt_1h_bounds_2020_2025():
+    start = datetime(2020, 1, 1, tzinfo=UTC)
+    end = datetime(2025, 1, 1, tzinfo=UTC)
+
+    ldr = BinanceHourPriceLoader("BTCUSDT", start_time=start, end_time=end)
+    ldr.extract()
+    ldr.transform()
+
+    df = ldr._data
+    _assert_time_bounds(df, "openTime", start, end)
+
+
+@pytest.mark.slow
+@pytest.mark.integration
+def test_klines_ethusdt_1h_bounds_2020_2025():
+    start = datetime(2020, 1, 1, tzinfo=UTC)
+    end = datetime(2025, 1, 1, tzinfo=UTC)
+
+    ldr = BinanceHourPriceLoader("ETHUSDT", start_time=start, end_time=end)
+    ldr.extract()
+    ldr.transform()
+
+    df = ldr._data
+    _assert_time_bounds(df, "openTime", start, end)
+
+
+@pytest.mark.integration
+def test_invalid_interval_raises_valueerror():
+    with pytest.raises(ValueError):
+        BinancePriceLoader("BTCUSDT", interval="15x")  # invalid unit
+    with pytest.raises(ValueError):
+        BinancePriceLoader("BTCUSDT", interval="x1h")   # invalid format
+
+
+@pytest.mark.integration
+def test_klines_empty_range_returns_empty_df():
+    """If start_time > end_time, loader should return an empty, well-formed DataFrame."""
+    start = datetime(2024, 1, 1, tzinfo=UTC)
+    end = datetime(2024, 1, 1, tzinfo=UTC)
+
+    ldr = BinanceHourPriceLoader("BTCUSDT", start_time=start, end_time=end)
+    ldr.extract(); ldr.transform()
+
+    df = ldr._data
+    assert len(df) <= 1
+    # Columns present and in expected order
+    assert list(df.columns) == ["openTime", "open", "high", "low", "close", "volume"]
