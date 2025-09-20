@@ -66,14 +66,9 @@ class BinanceFundingLoader(Loader):
         start_ms = self._to_ms(start_time or self.start_time)
         end_ms = self._to_ms(end_time or self.end_time) or int(time() * 1000)
 
-        # Each funding period is 8 hours. One request can return up to 1000 entries.
-        period_ms = 8 * 60 * 60 * 1000
-        step_ms = period_ms * self._MAX_LIMIT  # cover 1000 periods per request (~333 days)
-
+        query_start = start_ms
         all_rows: List[Dict[str, Any]] = []
         while True:
-            query_start = max(start_ms or 0, end_ms - step_ms + 1)
-
             params = {
                 "symbol": symbol,
                 "limit": self._MAX_LIMIT,
@@ -97,28 +92,16 @@ class BinanceFundingLoader(Loader):
                 )
 
             # Move the window backward; stop if we've crossed the start boundary
-            min_time = min(r["fundingTime"] for r in all_rows)
-            min_time_ms = int(min_time.timestamp() * 1000)
-            if start_ms is not None and min_time_ms <= start_ms:
+            max_time_ms = max(r["fundingTime"] for r in data)
+            if start_ms is not None and max_time_ms <= start_ms:
                 break
-            end_ms = min_time_ms - 1
+            query_start = max_time_ms + 1
 
             # If the server returned less than the limit, we likely reached the beginning
-            if len(data) < self._MAX_LIMIT:
+            if len(data) < 1:
                 break
 
-        # Sort & dedupe (just in case)
-        all_rows.sort(key=lambda r: r["fundingTime"])  # ascending
-        # Drop duplicates by timestamp
-        seen: set[int] = set()
-        unique_rows: List[Dict[str, Any]] = []
-        for r in all_rows:
-            ts = int(r["fundingTime"].timestamp())
-            if ts not in seen:
-                unique_rows.append(r)
-                seen.add(ts)
-
-        return unique_rows
+        return all_rows
 
     # Pipeline methods
     def extract(self) -> None:
@@ -132,6 +115,7 @@ class BinanceFundingLoader(Loader):
         self._data["fundingTime"] = pd.to_datetime(self._data["fundingTime"], utc=True).dt.floor("s")
         self._data["fundingRate"] = pd.to_numeric(self._data["fundingRate"], errors="coerce").fillna(0.0)
         self._data = self._data.sort_values("fundingTime").reset_index(drop=True)
+        self._data = self._data.drop_duplicates(subset=["fundingTime"])
 
     def load(self) -> None:
         self._load(self.ticker)

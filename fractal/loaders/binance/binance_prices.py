@@ -81,6 +81,8 @@ class BinancePriceLoader(Loader):
         while True:
             # Clamp request window to [cursor, end_ms]
             window_end = min(end_ms, cursor + step_ms - 1)
+            if window_end <= cursor:
+                break
             params = {
                 "symbol": self.ticker,
                 "interval": self.interval,
@@ -89,8 +91,9 @@ class BinancePriceLoader(Loader):
                 "endTime": window_end,
             }
             data = self.http.get(FUTURES_SECTION, self._KLINES_ENDPOINT, params)
-            if not data:
-                break
+            if data is None or len(data) == 0:
+                cursor += step_ms
+                continue
 
             parsed = self._parse_klines(data)
             rows.extend(parsed)
@@ -101,12 +104,8 @@ class BinancePriceLoader(Loader):
 
             if next_cursor > end_ms:
                 break
-
-            # If server returned fewer than limit, we hit the end of this window; shift cursor
-            if len(data) < self._MAX_LIMIT:
-                cursor = next_cursor
-            else:
-                cursor = next_cursor
+            
+            cursor = next_cursor
 
             # Safety: if cursor does not move, avoid infinite loop
             if cursor <= start_ms:
