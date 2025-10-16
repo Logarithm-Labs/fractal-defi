@@ -31,8 +31,8 @@ def test_action_open_position(uniswap_lp_entity):
     uniswap_lp_entity.action_open_position(500, 0.9, 1.1)
     assert uniswap_lp_entity.is_position == True
     assert uniswap_lp_entity._internal_state.cash == 500
-    assert uniswap_lp_entity._internal_state.token0_amount > 0
-    assert uniswap_lp_entity._internal_state.token1_amount > 0
+    assert uniswap_lp_entity._internal_state.token0_amount_position > 0
+    assert uniswap_lp_entity._internal_state.token1_amount_position > 0
     assert uniswap_lp_entity.balance == 999.2866307383232
 
 
@@ -44,7 +44,7 @@ def test_action_close_position(uniswap_lp_entity):
     assert uniswap_lp_entity.balance == 999.2866307383232
     uniswap_lp_entity.action_close_position()
     assert uniswap_lp_entity.is_position == False
-    assert uniswap_lp_entity._internal_state.cash == 996.2887708461083
+    assert uniswap_lp_entity._internal_state.cash == 999.2866307383232
 
 
 @pytest.mark.core
@@ -69,15 +69,15 @@ def test_get_desired_token0_amount(uniswap_lp_entity):
 @pytest.mark.core
 def test_calculate_position(uniswap_lp_entity):
     uniswap_lp_entity.calculate_position(500, 1.0, 0.9, 1.1)
-    assert uniswap_lp_entity._internal_state.token0_amount > 0
-    assert uniswap_lp_entity._internal_state.token1_amount > 0
+    assert uniswap_lp_entity._internal_state.token0_amount_position > 0
+    assert uniswap_lp_entity._internal_state.token1_amount_position > 0
 
 
 @pytest.mark.core
 def test_calculate_position_from_notional(uniswap_lp_entity):
     uniswap_lp_entity.calculate_position_from_notional(500, 1.0, 0.9, 1.1)
-    assert uniswap_lp_entity._internal_state.token0_amount > 0
-    assert uniswap_lp_entity._internal_state.token1_amount > 0
+    assert uniswap_lp_entity._internal_state.token0_amount_position > 0
+    assert uniswap_lp_entity._internal_state.token1_amount_position > 0
 
 
 @pytest.mark.core

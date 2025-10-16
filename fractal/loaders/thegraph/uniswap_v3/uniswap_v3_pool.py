@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Optional
 
 import pandas as pd
 
@@ -64,7 +65,12 @@ class UniswapV3EthereumPoolDayDataLoader(EthereumUniswapV3Loader):
             volumes=self._data['volume'].astype(float).values,
             fees=self._data['fees'].astype(float).values,
             liquidity=self._data['liquidity'].astype(float).values,
-            time=pd.to_datetime(self._data['date'], utc=True)
+            time=pd.to_datetime(self._data['date'], utc=True),
+            price=self._data['token0_price'].astype(float).values,
+            open=self._data['open'].astype(float).values,
+            high=self._data['high'].astype(float).values,
+            low=self._data['low'].astype(float).values,
+            close=self._data['close'].astype(float).values
         )
 
 
@@ -141,20 +147,67 @@ class UniswapV3ArbitrumPoolHourDataLoader(UniswapV3ArbitrumPoolDayDataLoader):
 
 class UniswapV3EthereumPoolHourDataLoader(UniswapV3EthereumPoolDayDataLoader):
 
-    def __init__(self, api_key: str, pool: str, loader_type: LoaderType = LoaderType.CSV) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        pool: str,
+        loader_type: LoaderType,
+        start_time: Optional[datetime] = None,
+        end_time: Optional[datetime] = None,
+    ) -> None:
         super().__init__(api_key=api_key, pool=pool, loader_type=loader_type)
+        self.start_time = start_time
+        self.end_time = end_time
+
+    def extract(self):
+        current_loaded_time = self.start_time.timestamp() if self.start_time else 0
+        end_time = self.end_time.timestamp() if self.end_time else datetime.now().timestamp()
+
+        batches = []
+        while current_loaded_time < end_time:
+            query = """
+            {
+            poolHourDatas(
+                first: 1000
+                orderBy: periodStartUnix
+                orderDirection: asc
+                where: {pool: "%s", periodStartUnix_gte: %s}
+            ) {
+                periodStartUnix
+                volumeUSD
+                tvlUSD
+                feesUSD
+                liquidity,
+                token0Price,
+                open,
+                high,
+                low,
+                close
+                }
+            }
+            """ % (self.pool.lower(), current_loaded_time)
+            response = self._make_request(query)
+            batch = pd.DataFrame(response['poolHourDatas'])
+
+            if current_loaded_time == batch['periodStartUnix'].astype(int).max():
+                break
+
+            current_loaded_time = batch['periodStartUnix'].astype(int).max()
+            batches.append(batch)
+
+        self._data = pd.concat(batches)
 
     def transform(self):
-        super().transform()
-        # stretch daily data to hourly and data values devided by 24
-        self._data.index = pd.to_datetime(self._data['date'])
-        self._data.drop(columns=['date'], inplace=True)
-        self._data.index = self._data.index.to_period('D')
-        self._data = self._data.resample('H').ffill()
-        self._data['fees'] /= 24
-        self._data['volume'] /= 24
-        self._data.reset_index(inplace=True)
-        self._data['date'] = self._data['date'].dt.to_timestamp()
+        self._data['date'] = self._data['periodStartUnix'].astype(int).apply(lambda x: datetime.utcfromtimestamp(x))
+        self._data['volume'] = self._data['volumeUSD'].astype(float)
+        self._data['tvl'] = self._data['tvlUSD'].astype(float)
+        self._data['fees'] = self._data['feesUSD'].astype(float)
+        self._data['liquidity'] = self._data['liquidity'].astype(float)
+        self._data['token0_price'] = self._data['token0Price'].astype(float)
+        self._data['open'] = self._data['open'].astype(float)
+        self._data['high'] = self._data['high'].astype(float)
+        self._data['low'] = self._data['low'].astype(float)
+        self._data['close'] = self._data['close'].astype(float)
 
 
 class UniswapV3EthereumPoolMinuteDataLoader(UniswapV3EthereumPoolDayDataLoader):

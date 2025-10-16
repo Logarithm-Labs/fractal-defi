@@ -54,7 +54,7 @@ def test_hyperliquid_perp_prices_loader():
     loader: HyperLiquidPerpsPricesLoader = HyperLiquidPerpsPricesLoader(
         ticker="ETH",
         interval="1d",
-
+    )
     data: PriceHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["price"].dtype == "float64"

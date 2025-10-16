@@ -43,12 +43,23 @@ class PoolHistory(pd.DataFrame):
     """
     Pool data structure.
     """
-    def __init__(self, tvls: np.array, volumes: np.array, fees: np.array,
-                 liquidity: np.array, time: np.array, prices: Optional[np.array] = None):
+    def __init__(
+        self,
+        tvls: np.array,
+        volumes: np.array,
+        fees: np.array,
+        liquidity: np.array,
+        time: np.array,
+        price: Optional[np.array] = None,
+        open: Optional[np.array] = None,
+        high: Optional[np.array] = None,
+        low: Optional[np.array] = None,
+        close: Optional[np.array] = None,
+    ):
         super().__init__(
-            data=np.array([tvls, volumes, fees, liquidity]).T,
+            data=np.array([tvls, volumes, fees, liquidity, price, open, high, low, close]).T,
             index=time,
-            columns=['tvl', 'volume', 'fees', 'liquidity']
+            columns=['tvl', 'volume', 'fees', 'liquidity', 'price', 'open', 'high', 'low', 'close']
         )
 
 

@@ -153,7 +153,7 @@ cython_debug/
 
 # data
 *.csv
-*.ipynb
+# *.ipynb
 backtest/.DS_Store
 *.pickle
 *.zip
@@ -172,6 +172,8 @@ catboost_info
 *loader
 /mlruns
 /mlartifact
-/fractal_data
+*fractal_data
 /.idea
 *.db
+*runs
+*model_logs
