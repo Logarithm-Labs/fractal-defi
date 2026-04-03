@@ -303,15 +303,4 @@ class HyperliquidEntity(BaseHedgeEntity):
         # If margin_available is negative, the position should be liquidated immediately.
         if margin_available < 0:
             return True
-
-        # Note: (1 - (1/leverage)*side) is:
-        #   For a long (side=1): 1 - 1/leverage.
-        #   For a short (side=-1): 1 + 1/leverage.
-        liq_price = current_price - side * (margin_available) / (position_size * (1 - (1 / leverage) * side))
-        if liq_price <= 0:
-            liq_price = 0
-
-        if side < 0:
-            return current_price >= liq_price
-        else:
-            return current_price <= liq_price
+        return False
