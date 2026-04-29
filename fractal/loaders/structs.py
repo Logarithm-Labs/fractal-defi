@@ -58,6 +58,7 @@ class KlinesHistory(pd.DataFrame):
     """
     def __init__(self, time: np.array,
                  open: np.array, high: np.array,
-                 low: np.array, close: np.array):
-        super().__init__(data=np.array([open, high, low, close]).T,
-                         index=time, columns=['open', 'high', 'low', 'close'])
+                 low: np.array, close: np.array,
+                 volume: np.array):
+        super().__init__(data=np.array([open, high, low, close, volume]).T,
+                         index=time, columns=['open', 'high', 'low', 'close', 'volume'])
