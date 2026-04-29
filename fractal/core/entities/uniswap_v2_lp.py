@@ -1,7 +1,5 @@
 from dataclasses import dataclass
 
-import numpy as np
-
 from fractal.core.base.entity import EntityException
 from fractal.core.entities.pool import BasePoolEntity
 
@@ -38,6 +36,7 @@ class UniswapV2LPInternalState:
         liquidity (float): The position liquidity.
         cash (float): The cash balance.
     """
+
     token0_amount: float = 0.0
     token1_amount: float = 0.0
     price_init: float = 0.0
@@ -56,6 +55,7 @@ class UniswapV2LPConfig:
         token1_decimals (int): The token1 decimals.
         trading_fee (float): The trading fee.
     """
+
     fees_rate: float = 0.005
     token0_decimals: int = 18
     token1_decimals: int = 18
@@ -68,6 +68,7 @@ class UniswapV2LPEntity(BasePoolEntity):
 
     It maintains exact 50-50 position of token0 and token1 in the pool.
     """
+
     def __init__(self, config: UniswapV2LPConfig, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.is_position = False
@@ -100,6 +101,30 @@ class UniswapV2LPEntity(BasePoolEntity):
             raise EntityException("Insufficient funds to withdraw.")
         self._internal_state.cash -= amount_in_notional
 
+    def _mint_lp_tokens(self, x: float, y: float) -> float:
+        """
+        Mint LP tokens based on the amount of token0 and token1 in the pool.
+
+        Args:
+            x (float): The amount of token0 in the pool.
+            y (float): The amount of token1 in the pool.
+
+        Returns:
+            float: The amount of LP tokens minted.
+        """
+        total_lp = self._global_state.liquidity
+        reserve0 = self._global_state.tvl / 2
+
+        if self._global_state.price == 0:
+            raise EntityException("Price is 0.")
+
+        reserve1 = reserve0 / self._global_state.price
+
+        if reserve0 == 0 or reserve1 == 0:
+            raise EntityException("Reserve is 0.")
+
+        return min((x / reserve0) * total_lp, (y / reserve1) * total_lp)
+
     def action_open_position(self, amount_in_notional: float) -> None:
         """
         Open a position in the LP entity.
@@ -114,13 +139,13 @@ class UniswapV2LPEntity(BasePoolEntity):
         self.is_position = True
         self._internal_state.cash -= amount_in_notional
         amount_in_position = amount_in_notional * (1 - self.trading_fee)
+
         x = amount_in_position / 2
         y = amount_in_position / 2 / self._global_state.price
         self._internal_state.token0_amount = x
         self._internal_state.token1_amount = y
         self._internal_state.price_init = self._global_state.price
-        self._internal_state.liquidity = (amount_in_position ** 2) *\
-                                         (10 ** (self.token0_decimals / self.token1_decimals))
+        self._internal_state.liquidity = self._mint_lp_tokens(x, y)
 
     def action_close_position(self):
         """
@@ -128,7 +153,11 @@ class UniswapV2LPEntity(BasePoolEntity):
         """
         if not self.is_position:
             raise EntityException("No position to close.")
-        cash = self.balance * (1 - self.trading_fee)
+
+        lp_value = self._internal_state.token0_amount + self._internal_state.token1_amount * self._global_state.price
+
+        cash = (lp_value * (1 - self.trading_fee)) + self._internal_state.cash
+
         self.is_position = False
         self._internal_state = UniswapV2LPInternalState(cash=cash)
 
@@ -142,10 +171,21 @@ class UniswapV2LPEntity(BasePoolEntity):
             state (UniswapV2LPGlobalState): The state of the pool.
         """
         self._global_state = state
-        p = state.price
+
         if self.is_position:
-            self._internal_state.token0_amount = np.sqrt(self._internal_state.liquidity * p)
-            self._internal_state.token1_amount = np.sqrt(self._internal_state.liquidity / p)
+
+            if self._global_state.price == 0:
+                raise EntityException("Price is 0.")
+            if self._global_state.liquidity == 0:
+                raise EntityException("Pool liquidity is 0.")
+
+            share = self._internal_state.liquidity / self._global_state.liquidity
+            reserve0 = self._global_state.tvl / 2
+            reserve1 = reserve0 / self._global_state.price
+
+            self._internal_state.token0_amount = share * reserve0
+            self._internal_state.token1_amount = share * reserve1
+
         self._internal_state.cash += self.calculate_fees()
 
     @property

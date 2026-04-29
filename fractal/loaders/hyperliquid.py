@@ -156,6 +156,7 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
         self._data["high_price"] = self._data["h"].astype(float)
         self._data["low_price"] = self._data["l"].astype(float)
         self._data["close_price"] = self._data["c"].astype(float)
+        self._data["volume"] = self._data["v"].astype(float)
 
     def read(self, with_run: bool = False) -> PriceHistory:
         """
@@ -186,5 +187,6 @@ class HyperliquidPerpsKlinesLoader(HyperLiquidPerpsPricesLoader):
             high=self._data["high_price"].values,
             low=self._data["low_price"].values,
             close=self._data["close_price"].values,
+            volume=self._data["volume"].values,
             time=pd.to_datetime(self._data["open_time"], utc=True),
         )
