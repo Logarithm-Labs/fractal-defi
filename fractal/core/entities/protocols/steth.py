@@ -44,12 +44,14 @@ class StakedETHEntity(BaseLiquidStakingToken):
     _global_state: StakedETHGlobalState
 
     def __init__(self, *args, trading_fee: float = 0.003, **kwargs):
-        super().__init__(*args, **kwargs)
+        # Set config BEFORE super so any subclass override of
+        # ``_initialize_states`` can rely on ``self.TRADING_FEE``.
         self.TRADING_FEE: float = trading_fee
+        super().__init__(*args, **kwargs)
 
     def _initialize_states(self):
-        self._internal_state: StakedETHInternalState = StakedETHInternalState()
-        self._global_state: StakedETHGlobalState = StakedETHGlobalState()
+        self._internal_state = StakedETHInternalState()
+        self._global_state = StakedETHGlobalState()
 
     @property
     def internal_state(self) -> StakedETHInternalState:  # type: ignore[override]
@@ -72,8 +74,16 @@ class StakedETHEntity(BaseLiquidStakingToken):
             amount_in_notional (float, optional): The amount to buy in notional value.
 
         Raises:
-            ValueError: If there is not enough cash to buy.
+            StakedETHEntityException: If amount is negative or exceeds cash.
         """
+        if amount_in_notional < 0:
+            raise StakedETHEntityException(
+                f"buy amount must be >= 0, got {amount_in_notional}"
+            )
+        if self._global_state.price <= 0:
+            raise StakedETHEntityException(
+                f"price must be > 0, got {self._global_state.price}"
+            )
         if amount_in_notional > self._internal_state.cash:
             raise StakedETHEntityException(
                 f"Not enough cash to buy: {amount_in_notional} > {self._internal_state.cash}")
@@ -88,8 +98,12 @@ class StakedETHEntity(BaseLiquidStakingToken):
             amount_in_product (float, optional): The amount to sell in product value.
 
         Raises:
-            ValueError: If there is not enough product to sell.
+            StakedETHEntityException: If amount is negative or exceeds holdings.
         """
+        if amount_in_product < 0:
+            raise StakedETHEntityException(
+                f"sell amount must be >= 0, got {amount_in_product}"
+            )
         if amount_in_product > self._internal_state.amount:
             raise StakedETHEntityException(
                 f"Not enough product to sell: {amount_in_product} > {self._internal_state.amount}")
@@ -104,8 +118,12 @@ class StakedETHEntity(BaseLiquidStakingToken):
             amount_in_notional (float, optional): The amount to withdraw in notional value.
 
         Raises:
-            ValueError: If there is not enough cash to withdraw.
+            StakedETHEntityException: If amount is negative or exceeds cash.
         """
+        if amount_in_notional < 0:
+            raise StakedETHEntityException(
+                f"withdraw amount must be >= 0, got {amount_in_notional}"
+            )
         if amount_in_notional > self._internal_state.cash:
             raise StakedETHEntityException(
                 f"Not enough cash to withdraw: {amount_in_notional} > {self._internal_state.cash}")
@@ -118,8 +136,10 @@ class StakedETHEntity(BaseLiquidStakingToken):
         Args:
             amount_in_notional (float): The amount to deposit in notional value.
         """
-        if amount_in_notional <= 0:
-            raise StakedETHEntityException(f"Invalid deposit amount: {amount_in_notional}")
+        if amount_in_notional < 0:
+            raise StakedETHEntityException(
+                f"deposit amount must be >= 0, got {amount_in_notional}"
+            )
         self._internal_state.cash += amount_in_notional
 
     def update_state(self, state: StakedETHGlobalState) -> None:

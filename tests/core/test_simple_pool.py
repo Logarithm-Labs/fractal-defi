@@ -8,7 +8,7 @@ from fractal.core.entities.simple.pool import (SimplePoolEntity,
 
 @pytest.fixture
 def pool() -> SimplePoolEntity:
-    e = SimplePoolEntity(trading_fee=0.0)
+    e = SimplePoolEntity(pool_fee_rate=0.0)
     e.update_state(SimplePoolGlobalState(
         price=1000.0, tvl=10_000.0, volume=5_000.0, fees=0.0, liquidity=10_000.0,
     ))
@@ -24,9 +24,15 @@ def test_can_be_instantiated():
 
 
 @pytest.mark.core
-def test_negative_trading_fee_rejected():
+def test_negative_pool_fee_rate_rejected():
     with pytest.raises(SimplePoolException):
-        SimplePoolEntity(trading_fee=-0.01)
+        SimplePoolEntity(pool_fee_rate=-0.01)
+
+
+@pytest.mark.core
+def test_negative_slippage_rejected():
+    with pytest.raises(SimplePoolException):
+        SimplePoolEntity(slippage_pct=-0.01)
 
 
 @pytest.mark.core
@@ -71,13 +77,26 @@ def test_open_position_mints_proportional_lp(pool):
 
 @pytest.mark.core
 def test_open_position_with_fee_reduces_minted_lp():
-    e = SimplePoolEntity(trading_fee=0.01)
+    """Fee applied only to swapped half. With pool_fee_rate=0.01:
+    deployed = amount × (1 - fee/2) = 1000 × 0.995 = 995.
+    share = 995/10000 = 0.0995, lp_minted = 0.0995 × 10_000 = 995.
+    """
+    e = SimplePoolEntity(pool_fee_rate=0.01)
     e.update_state(SimplePoolGlobalState(price=1000, tvl=10_000, liquidity=10_000))
     e.action_deposit(1000)
     e.action_open_position(1000)
-    # deployed = 1000 * 0.99 = 990, share = 990/10000 = 0.099
-    # lp_minted = 0.099 * 10_000 = 990
-    assert e.internal_state.liquidity == pytest.approx(990)
+    assert e.internal_state.liquidity == pytest.approx(995)
+
+
+@pytest.mark.core
+def test_open_position_with_slippage_adds_to_fee():
+    """slippage_pct stacks with pool_fee_rate on the swapped half."""
+    e = SimplePoolEntity(pool_fee_rate=0.003, slippage_pct=0.002)
+    e.update_state(SimplePoolGlobalState(price=1000, tvl=10_000, liquidity=10_000))
+    e.action_deposit(1000)
+    e.action_open_position(1000)
+    # effective_fee = 0.005, deployed = 1000 × (1 - 0.005/2) = 1000 × 0.9975 = 997.5
+    assert e.internal_state.liquidity == pytest.approx(997.5)
 
 
 @pytest.mark.core
@@ -106,7 +125,7 @@ def test_open_position_rejects_zero_or_negative(pool):
 
 @pytest.mark.core
 def test_open_position_rejects_dead_pool():
-    e = SimplePoolEntity(trading_fee=0.0)
+    e = SimplePoolEntity(pool_fee_rate=0.0)
     e.update_state(SimplePoolGlobalState(price=1000, tvl=0, liquidity=0))
     e.action_deposit(1000)
     with pytest.raises(SimplePoolException):
@@ -127,13 +146,17 @@ def test_close_position_returns_pro_rata_value(pool):
 
 @pytest.mark.core
 def test_close_position_with_fee():
-    e = SimplePoolEntity(trading_fee=0.01)
+    """Fee applied to volatile (swap) half on close.
+
+    Open: lp = 995 (deployed = 1000 × 0.995). On close: share = 0.0995,
+    gross = 995. Half swaps with fee → proceeds = 995 × (1 - 0.01/2) = 990.025.
+    """
+    e = SimplePoolEntity(pool_fee_rate=0.01)
     e.update_state(SimplePoolGlobalState(price=1000, tvl=10_000, liquidity=10_000))
     e.action_deposit(1000)
-    e.action_open_position(1000)  # lp = 990
+    e.action_open_position(1000)
     e.action_close_position()
-    # share = 990/10000 = 0.099; proceeds = 0.099 * 10_000 * 0.99 = 980.1
-    assert e.internal_state.cash == pytest.approx(980.1)
+    assert e.internal_state.cash == pytest.approx(990.025)
 
 
 @pytest.mark.core
@@ -147,7 +170,7 @@ def test_close_position_when_flat_is_noop(pool):
 # --------------------------------------------------------- fee accrual
 @pytest.mark.core
 def test_update_state_accrues_proportional_fees():
-    e = SimplePoolEntity(trading_fee=0.0)
+    e = SimplePoolEntity(pool_fee_rate=0.0)
     e.update_state(SimplePoolGlobalState(price=1000, tvl=10_000, liquidity=10_000))
     e.action_deposit(1000)
     e.action_open_position(1000)

@@ -68,24 +68,20 @@ class HyperliquidEntity(BasePerpEntity):
     """
     Represents a Hyperliquid isolated market entity.
     """
-    def __init__(self, *args, trading_fee: float = 0.00035, max_leverage: float = 50, **kwargs):
-        """
-        Initializes the Hyperliquid entity.
-
-        Args:
-            trading_fee (float, optional): Trading fee. Defaults to 0.00035.
-            max_leverage (float, optional): Maximum leverage. Defaults to 50.
-        """
-        super().__init__(*args, **kwargs)
-        self.TRADING_FEE = trading_fee
-        self.MAX_LEVERAGE = max_leverage
 
     _internal_state: HyperLiquidInternalState
     _global_state: HyperLiquidGlobalState
 
+    def __init__(self, *args, trading_fee: float = 0.00035, max_leverage: float = 50, **kwargs):
+        # Set config BEFORE super so any subclass override of
+        # ``_initialize_states`` can rely on ``self.TRADING_FEE`` / ``self.MAX_LEVERAGE``.
+        self.TRADING_FEE: float = trading_fee
+        self.MAX_LEVERAGE: float = max_leverage
+        super().__init__(*args, **kwargs)
+
     def _initialize_states(self):
-        self._internal_state: HyperLiquidInternalState = HyperLiquidInternalState()
-        self._global_state: HyperLiquidGlobalState = HyperLiquidGlobalState()
+        self._internal_state = HyperLiquidInternalState()
+        self._global_state = HyperLiquidGlobalState()
 
     @property
     def internal_state(self) -> HyperLiquidInternalState:  # type: ignore[override]
@@ -145,7 +141,12 @@ class HyperliquidEntity(BasePerpEntity):
 
         Args:
             amount_in_product (float): The amount of product to open the position with.
+                Negative values open a short.
         """
+        if self._global_state.mark_price <= 0:
+            raise HyperliquidEntityException(
+                f"mark_price must be > 0, got {self._global_state.mark_price}"
+            )
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,

@@ -11,8 +11,8 @@ mechanics — for that use
 """
 from dataclasses import dataclass
 
-from fractal.core.base.entity import EntityException, GlobalState, InternalState
-from fractal.core.entities.base.pool import BasePoolEntity
+from fractal.core.base.entity import EntityException, InternalState
+from fractal.core.entities.base.pool import BasePoolEntity, BasePoolGlobalState
 
 
 class SimplePoolException(EntityException):
@@ -20,21 +20,13 @@ class SimplePoolException(EntityException):
 
 
 @dataclass
-class SimplePoolGlobalState(GlobalState):
+class SimplePoolGlobalState(BasePoolGlobalState):
     """V2-style pool snapshot.
 
-    Attributes:
-        price: Spot price as ``token1 / token0``.
-        tvl: Total value locked in the pool, in notional units.
-        volume: Trading volume during the previous bar.
-        fees: Fees collected by the pool during the previous bar.
-        liquidity: Total LP tokens outstanding.
+    Inherits ``tvl, volume, fees, liquidity, price`` from
+    :class:`BasePoolGlobalState`. ``price`` is interpreted as
+    ``token1 / token0``.
     """
-    price: float = 0.0
-    tvl: float = 0.0
-    volume: float = 0.0
-    fees: float = 0.0
-    liquidity: float = 0.0
 
 
 @dataclass
@@ -54,24 +46,34 @@ class SimplePoolEntity(BasePoolEntity):
 
     Position lifecycle:
 
-    * :meth:`action_open_position` deposits ``amount_in_notional`` of cash
-      into the pool. After a trading fee, the deployed amount mints LP
-      tokens proportionally to the holder's share of the pool's TVL.
+    * :meth:`action_open_position` zaps in: half of ``amount_in_notional``
+      stays as the stable side, the other half is swapped to the volatile
+      side, paying ``effective_fee_rate`` on the **swapped half only**.
+      LP tokens minted proportionally to the post-fee deployed value.
     * Every :meth:`update_state` accrues
       ``share · global_state.fees`` into ``cash`` (LP yield).
-    * :meth:`action_close_position` burns all LP tokens for the current
-      pro-rata pool value (less the trading fee).
+    * :meth:`action_close_position` burns LP tokens; stable half returns at
+      full value, volatile half swaps back to notional at
+      ``effective_fee_rate`` on that half.
 
     Notation: balance is ``cash + share · tvl`` while a position is open
     (the pool's TVL already absorbs impermanent-loss because reserve
     composition shifts with price).
     """
 
-    def __init__(self, *, trading_fee: float = 0.003) -> None:
-        if trading_fee < 0:
-            raise SimplePoolException(f"trading_fee must be >= 0, got {trading_fee}")
-        self._trading_fee: float = float(trading_fee)
+    def __init__(self, *, pool_fee_rate: float = 0.003, slippage_pct: float = 0.0) -> None:
+        if pool_fee_rate < 0:
+            raise SimplePoolException(f"pool_fee_rate must be >= 0, got {pool_fee_rate}")
+        if slippage_pct < 0:
+            raise SimplePoolException(f"slippage_pct must be >= 0, got {slippage_pct}")
+        self._pool_fee_rate: float = float(pool_fee_rate)
+        self._slippage_pct: float = float(slippage_pct)
         super().__init__()
+
+    @property
+    def effective_fee_rate(self) -> float:
+        """Combined ``pool_fee_rate + slippage_pct``."""
+        return self._pool_fee_rate + self._slippage_pct
 
     _internal_state: SimplePoolInternalState
     _global_state: SimplePoolGlobalState
@@ -138,16 +140,21 @@ class SimplePoolEntity(BasePoolEntity):
                 f"liquidity={self._global_state.liquidity}"
             )
         self._internal_state.cash -= amount_in_notional
-        deployed = amount_in_notional * (1.0 - self._trading_fee)
+        # Only the swapped half pays fee. ``deployed`` value entering LP =
+        # half (no fee, stable side) + half × (1-fee) (post-fee volatile side)
+        # = amount × (1 - fee/2).
+        deployed = amount_in_notional * (1.0 - self.effective_fee_rate / 2)
         share = deployed / self._global_state.tvl
         self._internal_state.liquidity = share * self._global_state.liquidity
 
     def action_close_position(self) -> None:
-        """Burn all LP tokens for the current pro-rata pool value."""
+        """Burn LP tokens. Stable half returns at full value, volatile half swaps with fee."""
         if not self.is_position:
             return
         share = self._internal_state.liquidity / self._global_state.liquidity
-        proceeds = share * self._global_state.tvl * (1.0 - self._trading_fee)
+        # Position value at close = share × tvl. Half is stable (returns at full
+        # value), half is volatile (swap → notional at effective_fee_rate).
+        proceeds = share * self._global_state.tvl * (1.0 - self.effective_fee_rate / 2)
         self._internal_state.cash += proceeds
         self._internal_state.liquidity = 0.0
 

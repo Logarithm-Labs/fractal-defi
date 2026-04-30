@@ -176,3 +176,4 @@ catboost_info
 /.idea
 *.db
 REVIEW.md
+entities_review.md

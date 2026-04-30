@@ -77,25 +77,21 @@ class GMXV2Entity(BasePerpEntity):
     """
     Represents a GMX isolated market entity.
     """
-    def __init__(self, *args, trading_fee: float = 0.001,
-                 liquidation_leverage: float = 100, **kwargs):
-        """
-        Initializes the GMX entity.
-
-        Args:
-            trading_fee (float, optional): Trading fee. Defaults to 0.001.
-            liquidation_leverage (float, optional): Liquidation leverage in GMX. Defaults to 100.
-        """
-        super().__init__(*args, **kwargs)
-        self.TRADING_FEE = trading_fee
-        self.LIQUIDATION_LEVERAGE = liquidation_leverage
 
     _internal_state: GMXV2InternalState
     _global_state: GMXV2GlobalState
 
+    def __init__(self, *args, trading_fee: float = 0.001,
+                 liquidation_leverage: float = 100, **kwargs):
+        # Set config BEFORE super so any subclass override of
+        # ``_initialize_states`` can rely on ``self.TRADING_FEE`` / ``self.LIQUIDATION_LEVERAGE``.
+        self.TRADING_FEE: float = trading_fee
+        self.LIQUIDATION_LEVERAGE: float = liquidation_leverage
+        super().__init__(*args, **kwargs)
+
     def _initialize_states(self):
-        self._internal_state: GMXV2InternalState = GMXV2InternalState()
-        self._global_state: GMXV2GlobalState = GMXV2GlobalState()
+        self._internal_state = GMXV2InternalState()
+        self._global_state = GMXV2GlobalState()
 
     @property
     def internal_state(self) -> GMXV2InternalState:  # type: ignore[override]
@@ -123,12 +119,14 @@ class GMXV2Entity(BasePerpEntity):
         Args:
             amount_in_notional (float): The amount of notional to withdraw.
 
-        Returns:
-            float: The remaining balance after the withdrawal.
-
         Raises:
-            ValueError: If there is not enough balance to withdraw.
+            GMXV2EntityException: If amount is negative or exceeds available
+                balance / maintenance-margin headroom.
         """
+        if amount_in_notional < 0:
+            raise GMXV2EntityException(
+                f"withdraw amount must be >= 0, got {amount_in_notional}"
+            )
         if self.balance < amount_in_notional:
             raise GMXV2EntityException(f"Not enough balance to withdraw: {self.balance} < {amount_in_notional}.")
         max_withdrawal: float = self.balance - np.abs(self.size * self._global_state.price) / self.LIQUIDATION_LEVERAGE
@@ -142,7 +140,12 @@ class GMXV2Entity(BasePerpEntity):
 
         Args:
             amount_in_product (float): The amount of product to open the position with.
+                Negative values open a short.
         """
+        if self._global_state.price <= 0:
+            raise GMXV2EntityException(
+                f"price must be > 0, got {self._global_state.price}"
+            )
         self._internal_state.positions.append(
             GMXV2Position(amount=amount_in_product, entry_price=self._global_state.price))
         self._internal_state.collateral -= np.abs(amount_in_product * self.TRADING_FEE * self._global_state.price)
