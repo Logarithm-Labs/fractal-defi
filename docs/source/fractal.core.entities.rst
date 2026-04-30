@@ -20,14 +20,6 @@ fractal.core.entities.aave module
    :undoc-members:
    :show-inheritance:
 
-fractal.core.entities.gmx\_v2 module
-------------------------------------
-
-.. automodule:: fractal.core.entities.gmx_v2
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 fractal.core.entities.hedge module
 ----------------------------------
 

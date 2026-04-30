@@ -5,15 +5,12 @@ legitimate no-op (we treat ``=0`` as identity, not invalid).
 
 Perp ``action_open_position`` is intentionally **not** covered — there
 ``amount_in_product < 0`` means *short*, which is valid on
-:class:`HyperliquidEntity` and :class:`GMXV2Entity`.
+:class:`HyperliquidEntity`.
 """
 import pytest
 
 from fractal.core.base import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
-from fractal.core.entities.protocols.gmx_v2 import (GMXV2Entity,
-                                                    GMXV2EntityException,
-                                                    GMXV2GlobalState)
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
                                                    StakedETHEntityException,
                                                    StakedETHGlobalState)
@@ -73,29 +70,6 @@ def test_aave_zero_amounts_are_noop(aave):
     aave.action_borrow(0)
     aave.action_repay(0)
     assert aave.internal_state.collateral == 1000
-
-
-# =================================================== GMXV2
-@pytest.fixture
-def gmx() -> GMXV2Entity:
-    e = GMXV2Entity()
-    e.update_state(GMXV2GlobalState(price=1000.0))
-    return e
-
-
-@pytest.mark.core
-def test_gmx_withdraw_rejects_negative(gmx):
-    gmx.action_deposit(1000)
-    with pytest.raises(GMXV2EntityException, match=">= 0"):
-        gmx.action_withdraw(-1)
-
-
-@pytest.mark.core
-def test_gmx_open_position_negative_is_short_not_rejected(gmx):
-    """Negative amount on perp open_position = short, must NOT raise."""
-    gmx.action_deposit(1000)
-    gmx.action_open_position(-0.1)  # short, must be allowed
-    assert gmx.size == pytest.approx(-0.1)
 
 
 # =================================================== UniV2LP

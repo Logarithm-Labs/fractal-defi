@@ -14,9 +14,6 @@ import pytest
 
 from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState,
                                                   AaveInternalState)
-from fractal.core.entities.protocols.gmx_v2 import (GMXV2Entity,
-                                                    GMXV2GlobalState,
-                                                    GMXV2InternalState)
 from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState,
                                                          HyperLiquidInternalState)
@@ -64,21 +61,6 @@ def test_hyperliquid_config_available_in_initialize_states():
 
     _Sub(trading_fee=0.001, max_leverage=20)
     assert captured == {"TRADING_FEE": 0.001, "MAX_LEVERAGE": 20}
-
-
-@pytest.mark.core
-def test_gmx_config_available_in_initialize_states():
-    captured = {}
-
-    class _Sub(GMXV2Entity):
-        def _initialize_states(self):
-            captured["TRADING_FEE"] = self.TRADING_FEE
-            captured["LIQUIDATION_LEVERAGE"] = self.LIQUIDATION_LEVERAGE
-            self._internal_state = GMXV2InternalState()
-            self._global_state = GMXV2GlobalState()
-
-    _Sub(trading_fee=0.002, liquidation_leverage=50)
-    assert captured == {"TRADING_FEE": 0.002, "LIQUIDATION_LEVERAGE": 50}
 
 
 @pytest.mark.core

@@ -86,13 +86,13 @@ def test_entities_simple_subpackage():
 
 @pytest.mark.core
 def test_entities_protocols_subpackage():
-    from fractal.core.entities.protocols import (AaveEntity, GMXV2Entity,
+    from fractal.core.entities.protocols import (AaveEntity,
                                                  HyperliquidEntity,
                                                  StakedETHEntity,
                                                  UniswapV2LPEntity,
                                                  UniswapV3LPEntity,
                                                  UniswapV3SpotEntity)
-    assert all((AaveEntity, GMXV2Entity, HyperliquidEntity, StakedETHEntity,
+    assert all((AaveEntity, HyperliquidEntity, StakedETHEntity,
                 UniswapV2LPEntity, UniswapV3LPEntity, UniswapV3SpotEntity))
 
 
@@ -125,7 +125,6 @@ def test_old_module_paths_no_longer_exist():
         "fractal.core.entities.simple_perp",
         "fractal.core.entities.simple_spot",
         "fractal.core.entities.hyperliquid",
-        "fractal.core.entities.gmx_v2",
         "fractal.core.entities.aave",
     ):
         with pytest.raises(ModuleNotFoundError):

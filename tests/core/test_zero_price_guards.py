@@ -10,9 +10,6 @@ import pytest
 
 from fractal.core.base import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
-from fractal.core.entities.protocols.gmx_v2 import (GMXV2Entity,
-                                                    GMXV2EntityException,
-                                                    GMXV2GlobalState)
 from fractal.core.entities.protocols.hyperliquid import (
     HyperliquidEntity, HyperliquidEntityException, HyperLiquidGlobalState)
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
@@ -104,15 +101,6 @@ def test_hyperliquid_open_position_rejects_zero_mark_price():
     # default global state mark_price = 0
     e.action_deposit(1000)
     with pytest.raises(HyperliquidEntityException, match="mark_price must be > 0"):
-        e.action_open_position(1.0)
-
-
-# ===================================================== GMXV2: open_position
-@pytest.mark.core
-def test_gmx_open_position_rejects_zero_price():
-    e = GMXV2Entity()
-    e.action_deposit(1000)
-    with pytest.raises(GMXV2EntityException, match="price must be > 0"):
         e.action_open_position(1.0)
 
 

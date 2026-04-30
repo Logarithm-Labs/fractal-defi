@@ -2,20 +2,18 @@
 
 A perp entity holds collateral and an aggregated position. It exposes a
 uniform contract so strategies can talk to any concrete perp
-(:class:`HyperliquidEntity`, :class:`GMXV2Entity`,
-:class:`SimplePerpEntity`, …) polymorphically.
+(:class:`HyperliquidEntity`, :class:`SimplePerpEntity`, …) polymorphically.
 
 Closing convention: a perp entity is closed via an **opposite-sign
 ``action_open_position``** call. Concrete impls realize the close
-through their own clearing routine (``HyperliquidEntity._clearing``,
-``GMXV2Entity._clearing``, or scalar netting in
-:class:`SimplePerpEntity`). The default
+through their own clearing routine (``HyperliquidEntity._clearing`` or
+scalar netting in :class:`SimplePerpEntity`). The default
 :meth:`BasePerpEntity.action_close_position` is a thin sugar wrapper —
 override only if your impl needs special bookkeeping at close time.
 
 Common state contract: every perp keeps free notional ``collateral``,
 formalized via :class:`BasePerpInternalState`. Position layout differs
-between impls (Hyperliquid/GMXV2 keep a ``positions: List``, SimplePerp
+between impls (Hyperliquid keeps a ``positions: List``, SimplePerp
 keeps a scalar ``size``) and is therefore exposed via the
 :attr:`size` and :attr:`pnl` *properties* on the entity rather than via
 the internal-state dataclass.

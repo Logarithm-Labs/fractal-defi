@@ -3,9 +3,8 @@
 A minimal generic perp model: one aggregated position with linear PnL,
 single-sided funding (longs pay shorts when ``funding_rate > 0``), and
 margin-based liquidation. Use it for tests, examples and quick
-prototypes; for protocol-specific quirks (two-sided funding/borrowing,
-oracle deviations, isolated-vs-cross modes) reach for
-:class:`HyperliquidEntity` or :class:`GMXV2Entity`.
+prototypes; for protocol-specific quirks (oracle deviations,
+isolated-vs-cross modes) reach for :class:`HyperliquidEntity`.
 
 Position model:
 

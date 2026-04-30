@@ -8,7 +8,7 @@ Three logical levels:
   (``SimplePerpEntity``, ``SimpleSpotExchange``, ``SimplePoolEntity``,
   ``SimpleLendingEntity``). Use for tests, examples, prototypes.
 * :mod:`fractal.core.entities.protocols` — protocol-specific
-  implementations (``HyperliquidEntity``, ``GMXV2Entity``, ``AaveEntity``,
+  implementations (``HyperliquidEntity``, ``AaveEntity``,
   ``UniswapV2LPEntity``, ``UniswapV3LPEntity``, ``UniswapV3SpotEntity``,
   ``StakedETHEntity``).
 """
@@ -21,8 +21,7 @@ from fractal.core.entities.base import (BaseHedgeEntity,  # deprecated alias
                                         BaseSpotInternalState)
 # Protocols
 from fractal.core.entities.protocols import (AaveEntity, AaveGlobalState,
-                                              GMXV2Entity, GMXV2GlobalState,
-                                              GMXV2Position, HyperliquidEntity,
+                                              HyperliquidEntity,
                                               HyperLiquidGlobalState,
                                               HyperLiquidInternalState,
                                               StakedETHEntity,
@@ -72,7 +71,6 @@ __all__ = [
     "SimpleLiquidStakingTokenInternalState",
     # protocols
     "AaveEntity", "AaveGlobalState",
-    "GMXV2Entity", "GMXV2GlobalState", "GMXV2Position",
     "HyperliquidEntity", "HyperLiquidGlobalState", "HyperLiquidInternalState",
     "StakedETHEntity", "StakedETHGlobalState",
     "UniswapV2LPConfig", "UniswapV2LPEntity", "UniswapV2LPGlobalState",

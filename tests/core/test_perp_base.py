@@ -4,8 +4,7 @@ back-compat alias :class:`BaseHedgeEntity`.
 import pytest
 
 from fractal.core.entities import (BaseHedgeEntity, BasePerpEntity,
-                                   GMXV2Entity, HyperliquidEntity,
-                                   SimplePerpEntity)
+                                   HyperliquidEntity, SimplePerpEntity)
 
 
 @pytest.mark.core
@@ -14,7 +13,7 @@ def test_base_hedge_entity_is_alias_of_base_perp_entity():
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("cls", [HyperliquidEntity, GMXV2Entity, SimplePerpEntity])
+@pytest.mark.parametrize("cls", [HyperliquidEntity, SimplePerpEntity])
 def test_concrete_perps_are_base_perp_entities(cls):
     assert issubclass(cls, BasePerpEntity)
     # Old name still works for isinstance / issubclass:
@@ -22,7 +21,7 @@ def test_concrete_perps_are_base_perp_entities(cls):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("cls", [HyperliquidEntity, GMXV2Entity, SimplePerpEntity])
+@pytest.mark.parametrize("cls", [HyperliquidEntity, SimplePerpEntity])
 def test_concrete_perps_expose_uniform_interface(cls):
     """Every concrete perp must declare the four properties + close action."""
     instance = cls()

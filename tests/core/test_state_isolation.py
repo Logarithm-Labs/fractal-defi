@@ -11,7 +11,6 @@ constructed two entities of the same type in one backtest.
 import pytest
 
 from fractal.core.entities.protocols.aave import AaveEntity
-from fractal.core.entities.protocols.gmx_v2 import GMXV2Entity
 from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity
 from fractal.core.entities.protocols.steth import StakedETHEntity
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
@@ -23,10 +22,6 @@ from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
 
 def _make_aave():
     return AaveEntity()
-
-
-def _make_gmx():
-    return GMXV2Entity()
 
 
 def _make_hl():
@@ -52,7 +47,6 @@ def _make_uni_v3_spot():
 @pytest.mark.core
 @pytest.mark.parametrize("factory", [
     _make_aave,
-    _make_gmx,
     _make_hl,
     _make_steth,
     _make_uni_v2,
@@ -71,7 +65,6 @@ def test_internal_state_is_per_instance(factory):
 @pytest.mark.core
 @pytest.mark.parametrize("factory", [
     _make_aave,
-    _make_gmx,
     _make_hl,
     _make_steth,
     _make_uni_v2,
