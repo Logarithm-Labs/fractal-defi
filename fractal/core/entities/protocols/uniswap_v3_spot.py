@@ -38,6 +38,14 @@ class UniswapV3SpotEntity(BaseSpotEntity):
         super().__init__(*args, **kwargs)
 
     @property
+    def effective_fee_rate(self) -> float:
+        """Combined execution-cost rate. Spot/LST entities have no slippage
+        component (unlike Pool entities with ``pool_fee_rate + slippage_pct``),
+        so this aliases :attr:`trading_fee` and gives polymorphic strategy
+        code a uniform name across pool/spot/LST/perp."""
+        return self.trading_fee
+
+    @property
     def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
         """Deprecated alias for :attr:`trading_fee`.
 

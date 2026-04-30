@@ -67,6 +67,17 @@ class SimpleLiquidStakingToken(BaseLiquidStakingToken):
 
     # ------------------------------------------------------------ readouts
     @property
+    def trading_fee(self) -> float:
+        """Public read-only accessor for the trading-fee config."""
+        return self._trading_fee
+
+    @property
+    def effective_fee_rate(self) -> float:
+        """Combined execution-cost rate. LST has no slippage component;
+        aliases :attr:`trading_fee` for polymorphic use."""
+        return self._trading_fee
+
+    @property
     def current_price(self) -> float:
         return self._global_state.price
 

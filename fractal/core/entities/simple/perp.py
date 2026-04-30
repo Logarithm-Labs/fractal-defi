@@ -28,6 +28,7 @@ Update sequence on each ``update_state``:
 Funding settles **before** liquidation so a positive funding tick can
 genuinely save a position that just barely crossed maintenance.
 """
+import warnings
 from dataclasses import dataclass
 
 from fractal.core.base.entity import EntityException, GlobalState
@@ -86,9 +87,29 @@ class SimplePerpEntity(BasePerpEntity):
             raise SimplePerpEntityException(f"trading_fee must be >= 0, got {trading_fee}")
         if max_leverage <= 0:
             raise SimplePerpEntityException(f"max_leverage must be > 0, got {max_leverage}")
-        self.TRADING_FEE: float = float(trading_fee)
-        self.MAX_LEVERAGE: float = float(max_leverage)
+        self.trading_fee: float = float(trading_fee)
+        self.max_leverage: float = float(max_leverage)
         super().__init__(*args, **kwargs)
+
+    @property
+    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+        """Deprecated alias for :attr:`trading_fee`."""
+        warnings.warn(
+            "SimplePerpEntity.TRADING_FEE is deprecated; use trading_fee (lowercase).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.trading_fee
+
+    @property
+    def MAX_LEVERAGE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+        """Deprecated alias for :attr:`max_leverage`."""
+        warnings.warn(
+            "SimplePerpEntity.MAX_LEVERAGE is deprecated; use max_leverage (lowercase).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.max_leverage
 
     _internal_state: SimplePerpInternalState
     _global_state: SimplePerpGlobalState
@@ -147,7 +168,7 @@ class SimplePerpEntity(BasePerpEntity):
 
         # Charge taker fee on traded notional, regardless of net direction.
         self._internal_state.collateral -= (
-            abs(amount_in_product) * mark_price * self.TRADING_FEE
+            abs(amount_in_product) * mark_price * self.trading_fee
         )
 
         old_size = self._internal_state.size
@@ -231,7 +252,7 @@ class SimplePerpEntity(BasePerpEntity):
         return (
             abs(self._internal_state.size)
             * self._global_state.mark_price
-            / self.MAX_LEVERAGE
+            / self.max_leverage
         )
 
     @property
@@ -251,7 +272,7 @@ class SimplePerpEntity(BasePerpEntity):
         if size == 0:
             return float("nan")
         entry = self._internal_state.entry_price
-        mmr = 1.0 / self.MAX_LEVERAGE
+        mmr = 1.0 / self.max_leverage
         side = 1.0 if size > 0 else -1.0
         return (size * entry - self._internal_state.collateral) / (size * (1.0 - mmr * side))
 

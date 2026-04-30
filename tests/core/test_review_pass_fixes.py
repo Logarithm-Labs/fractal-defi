@@ -208,18 +208,18 @@ def test_simple_perp_initialize_states_no_local_annotations():
 # ============================================================ B14 — SimplePerp init order
 @pytest.mark.core
 def test_simple_perp_config_attrs_set_before_initialize_states():
-    """Override ``_initialize_states`` in a subclass and rely on TRADING_FEE.
+    """Override ``_initialize_states`` in a subclass and rely on trading_fee.
     If the parent init still ran ``_initialize_states`` before our config
     setters, the assertion below would fail."""
     seen: dict = {}
 
     class _Probe(SimplePerpEntity):
         def _initialize_states(self):
-            seen["TRADING_FEE_at_init_states"] = self.TRADING_FEE
+            seen["trading_fee_at_init_states"] = self.trading_fee
             super()._initialize_states()
 
     _Probe(trading_fee=0.0007)
-    assert seen["TRADING_FEE_at_init_states"] == pytest.approx(0.0007)
+    assert seen["trading_fee_at_init_states"] == pytest.approx(0.0007)
 
 
 # ============================================================ B15 — BaseStrategyParams no @dataclass

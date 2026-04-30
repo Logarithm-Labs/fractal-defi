@@ -57,6 +57,12 @@ class StakedETHEntity(BaseLiquidStakingToken):
         super().__init__(*args, **kwargs)
 
     @property
+    def effective_fee_rate(self) -> float:
+        """Combined execution-cost rate. LST entities have no slippage
+        component, so this aliases :attr:`trading_fee` for polymorphic use."""
+        return self.trading_fee
+
+    @property
     def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
         """Deprecated alias for :attr:`trading_fee`.
 

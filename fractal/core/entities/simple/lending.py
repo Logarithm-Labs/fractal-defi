@@ -198,6 +198,37 @@ class SimpleLendingEntity(BaseLendingEntity):
             return 0.0
         return self.liq_thr / ltv
 
+    @property
+    def max_borrow_amount(self) -> float:
+        """Additional debt borrowable before breaching ``max_ltv`` (in debt-token units)."""
+        cap_value = self.collateral_value * self.max_ltv
+        headroom_value = cap_value - self.debt_value
+        if headroom_value <= 0 or self._global_state.debt_price <= 0:
+            return 0.0
+        return headroom_value / self._global_state.debt_price
+
+    @property
+    def liquidation_price(self) -> float:
+        """Volatile-asset price that would push LTV to ``liq_thr``.
+
+        See :attr:`AaveEntity.liquidation_price` for the full convention —
+        same closed form, ``collateral_is_volatile`` flag distinguishes
+        long-volatile vs short-volatile setups.
+        """
+        if self._internal_state.borrowed == 0:
+            return float("nan")
+        if self._internal_state.collateral == 0:
+            return float("nan")
+        if self.collateral_is_volatile:
+            denom = self._internal_state.collateral * self.liq_thr
+            if denom == 0:
+                return float("inf")
+            return (self._internal_state.borrowed * self._global_state.debt_price) / denom
+        denom = self._internal_state.borrowed
+        if denom == 0:
+            return float("inf")
+        return (self.liq_thr * self._internal_state.collateral * self._global_state.collateral_price) / denom
+
     def calculate_repay(self, target_ltv: float) -> float:
         """Amount of product to repay to drive LTV down to ``target_ltv``.
 

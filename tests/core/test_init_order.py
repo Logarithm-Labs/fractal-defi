@@ -54,13 +54,13 @@ def test_hyperliquid_config_available_in_initialize_states():
 
     class _Sub(HyperliquidEntity):
         def _initialize_states(self):
-            captured["TRADING_FEE"] = self.TRADING_FEE
-            captured["MAX_LEVERAGE"] = self.MAX_LEVERAGE
+            captured["trading_fee"] = self.trading_fee
+            captured["max_leverage"] = self.max_leverage
             self._internal_state = HyperLiquidInternalState()
             self._global_state = HyperLiquidGlobalState()
 
     _Sub(trading_fee=0.001, max_leverage=20)
-    assert captured == {"TRADING_FEE": 0.001, "MAX_LEVERAGE": 20}
+    assert captured == {"trading_fee": 0.001, "max_leverage": 20}
 
 
 @pytest.mark.core

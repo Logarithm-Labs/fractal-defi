@@ -295,6 +295,55 @@ class AaveEntity(BaseLendingEntity):
         return self._internal_state.borrowed * self._global_state.debt_price
 
     @property
+    def max_borrow_amount(self) -> float:
+        """Additional debt that can be borrowed before breaching ``max_ltv``.
+
+        Returns ``0`` when there is no headroom (already at or above
+        ``max_ltv``) or when ``debt_price <= 0`` (undefined denominator).
+        Result is in **debt-token units** (so e.g. for stable-debt mode
+        with ``debt_price = 1.0`` it equals the headroom in USD).
+        """
+        cap_value = self.collateral_value * self.max_ltv
+        headroom_value = cap_value - self.debt_value
+        if headroom_value <= 0 or self._global_state.debt_price <= 0:
+            return 0.0
+        return headroom_value / self._global_state.debt_price
+
+    @property
+    def liquidation_price(self) -> float:
+        """Price at which the volatile side would push LTV to ``liq_thr``.
+
+        Returned in **the volatile asset's USD price**:
+
+        * ``collateral_is_volatile=True`` (long-volatile, e.g. ETH-collateral
+          / USDC-debt): returns the **collateral price drop level** that
+          triggers liquidation. Closed form:
+          ``liq = debt × debt_price / (collateral × liq_thr)``.
+        * ``collateral_is_volatile=False`` (short-volatile, e.g. USDC-collateral
+          / ETH-debt): returns the **debt price rise level** that triggers
+          liquidation:
+          ``liq = liq_thr × collateral × collateral_price / debt``.
+
+        Returns ``NaN`` when there is no debt (no liquidation possible) or
+        when collateral is zero. Returns ``+inf`` if the formula's
+        denominator is zero (degenerate state).
+        """
+        if self._internal_state.borrowed == 0:
+            return float("nan")
+        if self._internal_state.collateral == 0:
+            return float("nan")
+        if self.collateral_is_volatile:
+            denom = self._internal_state.collateral * self.liq_thr
+            if denom == 0:
+                return float("inf")
+            return (self._internal_state.borrowed * self._global_state.debt_price) / denom
+        # stable-collateral mode: debt is volatile
+        denom = self._internal_state.borrowed
+        if denom == 0:
+            return float("inf")
+        return (self.liq_thr * self._internal_state.collateral * self._global_state.collateral_price) / denom
+
+    @property
     def health_factor(self) -> float:
         """Margin against liquidation: ``liq_thr / ltv``.
 

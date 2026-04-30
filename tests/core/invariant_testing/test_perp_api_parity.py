@@ -42,6 +42,9 @@ SHARED_PUBLIC_API = {
     "pnl",
     "maintenance_margin",
     "liquidation_price",
+    # Config-derived (post-D5 lowercase rename)
+    "trading_fee",
+    "max_leverage",
 }
 
 # Members allowed only on Hyperliquid (none expected currently — but we

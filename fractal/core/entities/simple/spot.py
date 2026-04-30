@@ -67,6 +67,17 @@ class SimpleSpotExchange(BaseSpotEntity):
         self._global_state = state
 
     @property
+    def trading_fee(self) -> float:
+        """Public read-only accessor for the trading-fee config."""
+        return self._trading_fee
+
+    @property
+    def effective_fee_rate(self) -> float:
+        """Combined execution-cost rate. Spot has no slippage component;
+        aliases :attr:`trading_fee` for polymorphic use."""
+        return self._trading_fee
+
+    @property
     def current_price(self) -> float:
         return self._global_state.close
 

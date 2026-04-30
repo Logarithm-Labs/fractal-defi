@@ -43,7 +43,7 @@ def test_action_open_position(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE)
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee)
 
 
 @pytest.mark.core
@@ -61,9 +61,9 @@ def test_balance(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE)
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee)
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3100))
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE) + (0.5 * (3100 - 3000))
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee) + (0.5 * (3100 - 3000))
 
 
 @pytest.mark.core
@@ -79,7 +79,7 @@ def test_leverage(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE))
+    assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee))
 
     
 @pytest.mark.core
@@ -96,7 +96,7 @@ def test_check_liquidation(hyperliquid_entity):
 def test_leverage_change(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
-    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.trading_fee = 0.0
     hyperliquid_entity.action_open_position(1)
     assert hyperliquid_entity.leverage == 3
     hyperliquid_entity.action_withdraw(500)
@@ -117,7 +117,7 @@ def test_state_update(hyperliquid_entity):
 def test_action_close_position_flattens_long(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
-    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.trading_fee = 0.0
     hyperliquid_entity.action_open_position(0.5)
     assert hyperliquid_entity.size == 0.5
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3100))
@@ -131,7 +131,7 @@ def test_action_close_position_flattens_long(hyperliquid_entity):
 def test_action_close_position_flattens_short(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
-    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.trading_fee = 0.0
     hyperliquid_entity.action_open_position(-0.5)
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=2900))
     hyperliquid_entity.action_close_position()
@@ -156,7 +156,7 @@ def test_pnl_property_polymorphic(hyperliquid_entity):
     assert isinstance(hyperliquid_entity, BasePerpEntity)
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
-    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.trading_fee = 0.0
     hyperliquid_entity.action_open_position(0.5)
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3200))
     assert hyperliquid_entity.pnl == pytest.approx(0.5 * 200)
@@ -168,11 +168,11 @@ def test_clearing(hyperliquid_entity):
     hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
                                                                            entry_price=hyperliquid_entity._global_state.mark_price,
                                                                            max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.TRADING_FEE * hyperliquid_entity._global_state.mark_price)
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.trading_fee * hyperliquid_entity._global_state.mark_price)
     hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
                                                                            entry_price=hyperliquid_entity._global_state.mark_price,
                                                                            max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.TRADING_FEE * hyperliquid_entity._global_state.mark_price)
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.trading_fee * hyperliquid_entity._global_state.mark_price)
     leverage_before_clearing = hyperliquid_entity.leverage
     balance_before_clearing = hyperliquid_entity.balance
     hyperliquid_entity._clearing()

@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass, field
 from typing import List
 
@@ -69,10 +70,31 @@ class HyperliquidEntity(BasePerpEntity):
                 f"max_leverage must be > 0, got {max_leverage}"
             )
         # Set config BEFORE super so any subclass override of
-        # ``_initialize_states`` can rely on ``self.TRADING_FEE`` / ``self.MAX_LEVERAGE``.
-        self.TRADING_FEE: float = trading_fee
-        self.MAX_LEVERAGE: float = max_leverage
+        # ``_initialize_states`` can rely on these.
+        self.trading_fee: float = trading_fee
+        self.max_leverage: float = max_leverage
         super().__init__(*args, **kwargs)
+
+    @property
+    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+        """Deprecated alias for :attr:`trading_fee` (PEP 8 wants lowercase
+        for instance attrs; UPPERCASE is reserved for module/class constants)."""
+        warnings.warn(
+            "HyperliquidEntity.TRADING_FEE is deprecated; use trading_fee (lowercase).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.trading_fee
+
+    @property
+    def MAX_LEVERAGE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+        """Deprecated alias for :attr:`max_leverage`."""
+        warnings.warn(
+            "HyperliquidEntity.MAX_LEVERAGE is deprecated; use max_leverage (lowercase).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.max_leverage
 
     def _initialize_states(self):
         self._internal_state = HyperLiquidInternalState()
@@ -142,9 +164,9 @@ class HyperliquidEntity(BasePerpEntity):
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
-                                max_leverage=self.MAX_LEVERAGE))
+                                max_leverage=self.max_leverage))
 
-        self._internal_state.collateral -= abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
+        self._internal_state.collateral -= abs(self._global_state.mark_price * amount_in_product * self.trading_fee)
         self._clearing()  # consider only one position for simplicity
 
     @property
