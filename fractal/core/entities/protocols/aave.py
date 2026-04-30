@@ -156,14 +156,16 @@ class AaveEntity(BaseLendingEntity):
             raise EntityException(
                 f"debt_price must be > 0, got {self._global_state.debt_price}"
             )
-        if (
-            amount_in_product
-            * self._global_state.debt_price
+        # Check LTV against the *cumulative* debt, not just the new borrow —
+        # otherwise repeated sub-limit borrows can stack past max_ltv.
+        new_debt = self._internal_state.borrowed + amount_in_product
+        new_ltv = (
+            new_debt * self._global_state.debt_price
             / (self._internal_state.collateral * self._global_state.collateral_price)
-            > self.max_ltv
-        ):
+        )
+        if new_ltv > self.max_ltv:
             raise EntityException("Exceeds maximum loan-to-value ratio.")
-        self._internal_state.borrowed += amount_in_product
+        self._internal_state.borrowed = new_debt
 
     def action_deposit(self, amount_in_notional: float) -> None:
         """

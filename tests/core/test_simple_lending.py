@@ -108,6 +108,42 @@ def test_borrow_rejects_when_ltv_exceeds_max(lending):
         lending.action_borrow(900)  # ltv = 0.9 > 0.8 max
 
 
+# -------------------------------------------------- M4: price-zero guards
+@pytest.mark.core
+def test_borrow_rejects_zero_collateral_price():
+    """M4: zero ``collateral_price`` makes the LTV check ill-defined.
+    Must raise a domain exception, not a ZeroDivisionError."""
+    e = SimpleLendingEntity()
+    e.update_state(SimpleLendingGlobalState(collateral_price=0, debt_price=1))
+    e._internal_state.collateral = 1000
+    with pytest.raises(SimpleLendingException, match="collateral_price"):
+        e.action_borrow(100)
+
+
+@pytest.mark.core
+def test_borrow_rejects_zero_debt_price():
+    """M4: zero ``debt_price`` is rejected with a clear message."""
+    e = SimpleLendingEntity()
+    e.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=0))
+    e._internal_state.collateral = 1000
+    with pytest.raises(SimpleLendingException, match="debt_price"):
+        e.action_borrow(100)
+
+
+@pytest.mark.core
+def test_withdraw_with_debt_rejects_zero_prices():
+    """M4: withdraw against an existing debt must validate prices before
+    computing the post-withdraw LTV."""
+    e = SimpleLendingEntity()
+    e.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=1))
+    e._internal_state.collateral = 1000
+    e._internal_state.borrowed = 100
+    # Now flip debt_price to zero — same call shape would otherwise divide.
+    e.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=0))
+    with pytest.raises(SimpleLendingException, match="debt_price"):
+        e.action_withdraw(100)
+
+
 @pytest.mark.core
 def test_repay_reduces_borrowed(lending):
     lending.action_deposit(1000)

@@ -275,3 +275,57 @@ def test_close_position_helper_is_noop_when_flat(perp):
     perp.action_close_position()
     assert perp.size == 0
     assert perp.internal_state.collateral == 1000
+
+
+# -------------------------------------------------------------- H4 lock-ins
+@pytest.mark.core
+def test_open_position_rejects_above_max_leverage():
+    """H4: opening a position whose post-trade leverage/margin would be
+    invalid is rejected pre-trade and rolled back atomically.
+
+    For SimplePerp ``MMR = 1/max_leverage`` (tighter than HL's
+    ``1/(2·max_lev)``), so the maintenance-margin check fires before the
+    leverage check — both flag the same illegal trade.
+    """
+    e = SimplePerpEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(SimplePerpGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    with pytest.raises(SimplePerpEntityException,
+                       match="leverage|maintenance_margin"):
+        e.action_open_position(2.0)  # notional 2000 → MM 200 > balance 100
+    assert e.size == 0
+    assert e.internal_state.collateral == 100
+
+
+@pytest.mark.core
+def test_open_position_rejects_without_deposit():
+    """H4: opening any non-zero position with zero collateral is rejected."""
+    e = SimplePerpEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(SimplePerpGlobalState(mark_price=1000.0))
+    with pytest.raises(SimplePerpEntityException):
+        e.action_open_position(0.1)
+    assert e.size == 0
+    assert e.internal_state.collateral == 0
+
+
+@pytest.mark.core
+def test_open_position_at_max_leverage_passes():
+    """H4 boundary: leverage == max_leverage is allowed (strict ``>`` check)."""
+    e = SimplePerpEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(SimplePerpGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # notional 1000 → leverage exactly 10x
+    assert e.size == 1.0
+
+
+@pytest.mark.core
+def test_close_position_passes_even_from_margin_bound_state():
+    """H4: risk-reducing trades (close / partial close) must NOT be rejected
+    by the leverage check, even when current leverage is at the cap."""
+    e = SimplePerpEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(SimplePerpGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # opened at exactly 10x
+    # Reduce by half — this is risk-decreasing, must pass.
+    e.action_open_position(-0.5)
+    assert e.size == 0.5

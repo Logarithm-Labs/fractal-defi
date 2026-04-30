@@ -37,7 +37,7 @@ class HyperliquidBaseLoader(Loader):
         end_time: Optional[datetime] = None,
         url: str = DEFAULT_URL,
     ) -> None:
-        super().__init__(loader_type)
+        super().__init__(loader_type=loader_type)
         self._ticker: str = ticker
         self._start_dt = to_utc(start_time) if start_time is not None else None
         self._end_dt = to_utc(end_time) if end_time is not None else utcnow()

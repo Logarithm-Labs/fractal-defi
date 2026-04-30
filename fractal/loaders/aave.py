@@ -11,8 +11,17 @@ The loader picks the smallest window that covers the user's
 
 Rates returned by the API are **annualized**. We convert to per-period
 rates (``annual / (365 * 24 / resolution)``) so they match the legacy
-``LendingHistory`` semantics. Borrowing rates are stored with a negative
-sign (you pay), supply rates with a positive sign (you receive).
+``LendingHistory`` semantics.
+
+Sign convention (matches ``SimpleLendingEntity`` / ``AaveEntity``):
+
+* ``lending_rate > 0`` — collateral grows per step (you receive).
+* ``borrowing_rate > 0`` — debt grows per step (you pay).
+
+Both legs apply via ``balance *= 1 + rate`` in the consuming entities.
+Prior versions of this loader stored ``borrowing_rate`` with a flipped
+sign; that was a bug (it caused debt to *shrink* in backtests) and was
+fixed in v1.4.0.
 """
 import warnings
 from datetime import datetime, timedelta
@@ -24,6 +33,7 @@ from fractal.loaders._dt import to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import LendingHistory
+from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 
 DEFAULT_URL = "https://api.v3.aave.com/graphql"
 
@@ -76,9 +86,9 @@ class AaveV3RatesLoader(Loader):
         end_time: Optional[datetime] = None,
         resolution: int = 1,
     ) -> None:
-        super().__init__(loader_type)
-        self.asset_address: str = asset_address.lower()
-        self.market_address: str = market_address
+        super().__init__(loader_type=loader_type)
+        self.asset_address: str = validate_evm_address(asset_address, field="asset_address")
+        self.market_address: str = validate_evm_address(market_address, field="market_address")
         self.chain_id: int = int(chain_id)
         self._url: str = url
         self.start_time: Optional[datetime] = to_utc(start_time)
@@ -146,7 +156,7 @@ class AaveV3RatesLoader(Loader):
         # the annual rate by (year_hours / resolution_hours).
         scale = (365 * 24) / max(self._resolution, 1)
         df["lending_rate"] = df["lending_rate"].astype(float) / scale
-        df["borrowing_rate"] = -df["borrowing_rate"].astype(float) / scale
+        df["borrowing_rate"] = df["borrowing_rate"].astype(float) / scale
         # Filter to user-requested window
         if self.start_time is not None:
             df = df[df["date"] >= self.start_time]

@@ -217,10 +217,14 @@ def test_close_when_flat_is_noop(factory):
 @pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
                                          (_sp, SimplePerpGlobalState)])
 def test_liquidation_wipes_position(factory, cls):
-    """Sharp move past liq → both entities wipe collateral and clear position."""
-    e = factory(fee=0.0, collateral=100.0, max_lev=10.0)
-    e.action_open_position(-1.0)  # short
-    # Push mark up enough to liquidate either entity
+    """Sharp move past liq → both entities wipe collateral and clear position.
+
+    Open within ``max_leverage`` (3x at $3000 with 1k coll, 10x cap) so the
+    H4 pre-trade check passes; then move mark up to push past the
+    liquidation threshold (~$3.18k SP / ~$3.33k HL with these params).
+    """
+    e = factory(fee=0.0, collateral=1000.0, max_lev=10.0)
+    e.action_open_position(-1.0)  # short, leverage at open ≈ 3x
     e.update_state(cls(mark_price=4000, funding_rate=0.0))
     assert e.size == 0
     assert e._internal_state.collateral == 0

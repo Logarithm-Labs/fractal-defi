@@ -8,6 +8,7 @@ import pandas as pd
 from fractal.loaders._dt import to_seconds, to_utc, utcnow
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.structs import PriceHistory
+from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_arbitrum import \
     ArbitrumUniswapV3Loader
 from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
@@ -122,12 +123,12 @@ class UniswapV3ArbitrumPricesLoader(_UniswapV3PricesBase, ArbitrumUniswapV3Loade
         **kwargs,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
-        self.pool: str = pool
+        self.pool: str = validate_evm_address(pool, field="pool")
         self.start_time: Optional[datetime] = to_utc(start_time)
         self.end_time: Optional[datetime] = to_utc(end_time)
         decimals = kwargs.get("decimals", None)
         if decimals is None:
-            decimals0, decimals1 = self.get_pool_decimals(pool)
+            decimals0, decimals1 = self.get_pool_decimals(self.pool)
             decimals = decimals0 - decimals1
         self.decimals: float = decimals
 
@@ -161,11 +162,11 @@ class UniswapV3EthereumPricesLoader(_UniswapV3PricesBase, EthereumUniswapV3Loade
         **kwargs,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
-        self.pool: str = pool
+        self.pool: str = validate_evm_address(pool, field="pool")
         self.start_time: Optional[datetime] = to_utc(start_time)
         self.end_time: Optional[datetime] = to_utc(end_time)
         decimals = kwargs.get("decimals", None)
         if decimals is None:
-            decimals0, decimals1 = self.get_pool_decimals(pool)
+            decimals0, decimals1 = self.get_pool_decimals(self.pool)
             decimals = decimals0 - decimals1
         self.decimals: float = decimals

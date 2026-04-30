@@ -112,7 +112,15 @@ class SimpleLendingEntity(BaseLendingEntity):
             raise SimpleLendingException(
                 "cannot withdraw all collateral while debt remains"
             )
-        if post > 0:
+        if post > 0 and self._internal_state.borrowed > 0:
+            if self._global_state.collateral_price <= 0:
+                raise SimpleLendingException(
+                    f"collateral_price must be > 0, got {self._global_state.collateral_price}"
+                )
+            if self._global_state.debt_price <= 0:
+                raise SimpleLendingException(
+                    f"debt_price must be > 0, got {self._global_state.debt_price}"
+                )
             new_ltv = (
                 self._internal_state.borrowed * self._global_state.debt_price
                 / (post * self._global_state.collateral_price)
@@ -131,6 +139,14 @@ class SimpleLendingEntity(BaseLendingEntity):
             )
         if self._internal_state.collateral == 0:
             raise SimpleLendingException("no collateral available to borrow against")
+        if self._global_state.collateral_price <= 0:
+            raise SimpleLendingException(
+                f"collateral_price must be > 0, got {self._global_state.collateral_price}"
+            )
+        if self._global_state.debt_price <= 0:
+            raise SimpleLendingException(
+                f"debt_price must be > 0, got {self._global_state.debt_price}"
+            )
         new_debt = self._internal_state.borrowed + amount_in_product
         new_ltv = (
             new_debt * self._global_state.debt_price
@@ -140,7 +156,7 @@ class SimpleLendingEntity(BaseLendingEntity):
             raise SimpleLendingException(
                 f"borrow would push LTV to {new_ltv} > max {self.max_ltv}"
             )
-        self._internal_state.borrowed += amount_in_product
+        self._internal_state.borrowed = new_debt
 
     def action_repay(self, amount_in_product: float) -> None:
         if amount_in_product < 0:

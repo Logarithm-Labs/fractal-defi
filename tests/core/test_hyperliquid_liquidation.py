@@ -94,15 +94,17 @@ def test_liquidation_price_fully_collateralized_long_is_nonpositive():
 def test_liquidation_triggers_at_exact_liq_price_clean_fp():
     """Boundary case with clean-fp numbers (no rounding error).
 
-    With ``max_leverage=1`` → MMR=0.5, denominator (1-0.5)=0.5 is exact in float,
-    so liq_price comes out exactly representable. At ``mark=liq``, ``balance``
-    and ``maintenance_margin`` are bit-exact equal → ``<=`` triggers.
+    With ``max_leverage=1`` → MMR=0.5; denominator ``size·(1 − MMR·side)``
+    is exact in float for a short (side=−1, denom=−1.5), so ``liq_price``
+    is exactly representable. At ``mark=liq``, ``balance`` and
+    ``maintenance_margin`` are bit-exact equal → ``<=`` triggers.
 
-    Setup: long 1 unit at entry=$3, collateral=$2 → liq=(3-2)/0.5=$2 exactly.
+    Setup: short 1 unit at entry=$3, collateral=$3 (leverage 1x = max_lev,
+    H4 lets it open) → balance(p)=6−p, mm(p)=0.5p, liq=4 exactly.
     """
-    e = _make(collateral=2.0, size=1.0, entry=3.0, max_leverage=1.0)
-    assert e.liquidation_price == 2.0  # clean fp
-    _set_mark(e, 2.0)
+    e = _make(collateral=3.0, size=-1.0, entry=3.0, max_leverage=1.0)
+    assert e.liquidation_price == 4.0  # clean fp
+    _set_mark(e, 4.0)
     assert e._check_liquidation() is True
 
 

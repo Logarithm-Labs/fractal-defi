@@ -2,8 +2,9 @@ import typing
 from abc import ABC, abstractmethod
 from copy import deepcopy
 from datetime import datetime
-from typing import (Callable, Dict, Generic, List, NamedTuple, Optional, Type,
-                    TypeVar, Union)
+from types import MappingProxyType
+from typing import (Callable, Dict, Generic, List, Mapping, NamedTuple, Optional,
+                    Type, TypeVar, Union)
 
 from fractal.core.base.entity import (Action, BaseEntity, GlobalState,
                                       InternalState)
@@ -142,14 +143,24 @@ class BaseStrategy(ABC, Generic[PT]):
                   generic param class). Raises ``TypeError`` if any field
                   on that class lacks a default. Falls back to an empty
                   :class:`BaseStrategyParams` if ``PARAMS_CLS`` is unset.
-                * a ``dict`` — wrapped in :class:`BaseStrategyParams`.
+                * a ``dict`` — when ``PARAMS_CLS`` is declared (typed
+                  strategy), the dict is splatted into it
+                  (``PARAMS_CLS(**params)``) so dataclass defaults,
+                  ``__post_init__`` and unknown-key rejection apply.
+                  Without ``PARAMS_CLS`` it is wrapped in a generic
+                  :class:`BaseStrategyParams`.
                 * a :class:`BaseStrategyParams` instance — used as-is.
         """
         if params is None:
             cls = self.PARAMS_CLS or BaseStrategyParams
             self._params = cls()
         elif isinstance(params, dict):
-            self._params = BaseStrategyParams(data=params)
+            if self.PARAMS_CLS is not None:
+                # Typed strategy: instantiate the declared dataclass so
+                # defaults, type hints and unknown-field detection apply.
+                self._params = self.PARAMS_CLS(**params)
+            else:
+                self._params = BaseStrategyParams(data=params)
         elif isinstance(params, BaseStrategyParams):
             self._params = params
         else:
@@ -202,11 +213,15 @@ class BaseStrategy(ABC, Generic[PT]):
             raise ValueError(f"Entity {entity_name} is not registered.")
         return self._entities.get(entity_name)
 
-    def get_all_available_entities(self) -> Dict[str, Type[BaseEntity]]:
+    def get_all_available_entities(self) -> Mapping[str, BaseEntity]:
+        """Read-only view over registered entities.
+
+        Returns a :class:`MappingProxyType` so callers cannot bypass
+        :meth:`register_entity` by mutating the registry directly. The
+        annotation is ``Mapping[str, BaseEntity]`` (instance values, not
+        types — the prior ``Dict[..., Type[BaseEntity]]`` was a typo).
         """
-        Get all available entities.
-        """
-        return self._entities
+        return MappingProxyType(self._entities)
 
     @property
     def total_balance(self) -> float:
@@ -301,11 +316,12 @@ class BaseStrategy(ABC, Generic[PT]):
         self._debug("Running step...")
         self._debug(f"Observation: {observation.timestamp}")
 
+        # Validate first (subclasses may override) so that storage never
+        # contains snapshots that would have been rejected at the boundary.
+        self._validate_observation(observation)
+
         if self.observations_storage is not None:
             self.observations_storage.write(observation)
-
-        # validate observation (single underscore — subclasses may override)
-        self._validate_observation(observation)
 
         # update states of the entities
         for entity_name, state in observation.states.items():

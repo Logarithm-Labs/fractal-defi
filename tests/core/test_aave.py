@@ -69,6 +69,52 @@ def test_action_borrow_exceeds_max_ltv(aave_entity: AaveEntity):
 
 
 @pytest.mark.core
+def test_action_borrow_rejects_cumulative_ltv_over_max():
+    """H2 lock-in: each borrow individually under ``max_ltv``, but
+    together they exceed it. Pre-fix this passed silently because the
+    LTV check used only ``amount_in_product`` instead of cumulative debt.
+    """
+    e = AaveEntity()
+    e.update_state(AaveGlobalState(collateral_price=1, debt_price=1))
+    e.action_deposit(1000)
+    e.max_ltv = 0.8
+
+    e.action_borrow(600)  # LTV 0.6, below limit
+    assert e.internal_state.borrowed == 600
+
+    # Second borrow would push cumulative LTV to 1.2 — must reject.
+    with pytest.raises(EntityException, match="loan-to-value"):
+        e.action_borrow(600)
+    assert e.internal_state.borrowed == 600  # state unchanged on rejection
+
+
+@pytest.mark.core
+def test_action_borrow_cumulative_parity_with_simple_lending():
+    """Both Aave and SimpleLending must reject the same cumulative-LTV
+    scenario identically (same convention)."""
+    from fractal.core.entities.simple.lending import (SimpleLendingEntity,
+                                                      SimpleLendingException,
+                                                      SimpleLendingGlobalState)
+
+    aave = AaveEntity()
+    simple = SimpleLendingEntity()
+    aave.update_state(AaveGlobalState(collateral_price=1, debt_price=1))
+    simple.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=1))
+    aave.action_deposit(1000)
+    simple.action_deposit(1000)
+    aave.max_ltv = 0.8
+    simple.max_ltv = 0.8
+
+    aave.action_borrow(700)
+    simple.action_borrow(700)
+
+    with pytest.raises(EntityException):
+        aave.action_borrow(200)  # cumulative 0.9 > 0.8
+    with pytest.raises(SimpleLendingException):
+        simple.action_borrow(200)
+
+
+@pytest.mark.core
 def test_action_deposit(aave_entity: AaveEntity):
     aave_entity.action_deposit(1000)
     assert aave_entity.internal_state.collateral == 1000
@@ -150,3 +196,51 @@ def test_calculate_repay(aave_entity: AaveEntity):
     target_ltv = 0.4
     expected_repay = 10
     assert aave_entity.calculate_repay(target_ltv) == pytest.approx(expected_repay, 1e-6)
+
+
+@pytest.mark.core
+def test_positive_borrowing_rate_grows_debt():
+    """H1 lock-in: positive ``borrowing_rate`` ⇒ debt grows.
+
+    Prior to the fix, ``AaveV3RatesLoader`` flipped the sign and downstream
+    backtests received the inverse — debt would *shrink*. Both legs use
+    the convention ``balance *= 1 + rate``, matching ``SimpleLendingEntity``.
+    """
+    e = AaveEntity()
+    e.update_state(AaveGlobalState(collateral_price=1, debt_price=1))
+    e.action_deposit(1000)
+    e.action_borrow(500)
+    e.update_state(AaveGlobalState(
+        collateral_price=1, debt_price=1,
+        lending_rate=0.0, borrowing_rate=0.01,  # +1% per step
+    ))
+    assert e.internal_state.borrowed == pytest.approx(500 * 1.01)
+
+
+@pytest.mark.core
+def test_aave_simple_lending_parity_under_same_rates():
+    """H1 parity: ``AaveEntity`` and ``SimpleLendingEntity`` must apply
+    the same positive ``borrowing_rate`` identically — both grow debt
+    by the same factor."""
+    from fractal.core.entities.simple.lending import (SimpleLendingEntity,
+                                                      SimpleLendingGlobalState)
+
+    aave = AaveEntity()
+    simple = SimpleLendingEntity()
+    aave.update_state(AaveGlobalState(collateral_price=1, debt_price=1))
+    simple.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=1))
+    aave.action_deposit(1000)
+    simple.action_deposit(1000)
+    aave.action_borrow(400)
+    simple.action_borrow(400)
+
+    aave.update_state(AaveGlobalState(
+        collateral_price=1, debt_price=1,
+        lending_rate=0.005, borrowing_rate=0.02,
+    ))
+    simple.update_state(SimpleLendingGlobalState(
+        collateral_price=1, debt_price=1,
+        lending_rate=0.005, borrowing_rate=0.02,
+    ))
+    assert aave.internal_state.collateral == pytest.approx(simple._internal_state.collateral)
+    assert aave.internal_state.borrowed == pytest.approx(simple._internal_state.borrowed)

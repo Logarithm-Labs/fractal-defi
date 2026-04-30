@@ -421,7 +421,32 @@ class UniswapV3LPEntity(BasePoolEntity):
         self._internal_state.cash += stable_back + volatile_proceeds
 
     def update_state(self, state: UniswapV3LPGlobalState) -> None:
-        """Apply pool snapshot, rebalance position by V3 formula, accrue fees."""
+        """Apply pool snapshot, rebalance position by V3 formula, accrue fees.
+
+        Validates the snapshot when a position is open: ``price`` must be
+        positive (used as PnL/rebalance basis), and ``liquidity`` / ``fees``
+        / ``tvl`` must be non-negative (negative values would propagate
+        into amounts and balance). When the entity is flat we accept any
+        snapshot — degenerate values cannot mutate state in that branch.
+        """
+        if self.is_position:
+            if state.price <= 0:
+                raise EntityException(
+                    f"price must be > 0 with an open position, got {state.price}"
+                )
+            if state.liquidity < 0:
+                raise EntityException(
+                    f"liquidity must be >= 0, got {state.liquidity}"
+                )
+            if state.fees < 0:
+                raise EntityException(
+                    f"fees must be >= 0, got {state.fees}"
+                )
+            if state.tvl < 0:
+                raise EntityException(
+                    f"tvl must be >= 0, got {state.tvl}"
+                )
+
         self._global_state = state
         if not self.is_position:
             return

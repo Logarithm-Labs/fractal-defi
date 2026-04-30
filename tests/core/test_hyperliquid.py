@@ -2,6 +2,7 @@ import numpy as np
 import pytest
 
 from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
+                                                         HyperliquidEntityException,
                                                          HyperLiquidGlobalState,
                                                          HyperLiquidPosition)
 
@@ -180,3 +181,50 @@ def test_clearing(hyperliquid_entity):
     hyperliquid_entity._clearing()
     assert hyperliquid_entity.leverage == leverage_before_clearing
     assert hyperliquid_entity.balance == balance_before_clearing
+
+
+# -------------------------------------------------------------- H4 lock-ins
+@pytest.mark.core
+def test_open_position_rejects_above_max_leverage():
+    """H4: post-trade leverage above ``max_leverage`` is rejected and
+    rolled back atomically."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperLiquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    with pytest.raises(HyperliquidEntityException, match="leverage"):
+        e.action_open_position(2.0)  # notional 2000 → leverage 20x > 10
+    assert e.size == 0
+    assert e._internal_state.collateral == 100
+    assert e._internal_state.positions == []
+
+
+@pytest.mark.core
+def test_open_position_rejects_without_deposit():
+    """H4: opening any non-zero position with zero collateral is rejected."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperLiquidGlobalState(mark_price=1000.0))
+    with pytest.raises(HyperliquidEntityException):
+        e.action_open_position(0.1)
+    assert e.size == 0
+    assert e._internal_state.positions == []
+
+
+@pytest.mark.core
+def test_open_position_at_max_leverage_passes():
+    """H4 boundary: leverage == max_leverage is allowed."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperLiquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # notional 1000 → leverage exactly 10x
+    assert e.size == 1.0
+
+
+@pytest.mark.core
+def test_close_position_passes_even_from_margin_bound_state():
+    """H4: risk-reducing trades must NOT be rejected by the leverage check."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperLiquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # opened at exactly 10x
+    e.action_open_position(-0.5)  # risk-reducing
+    assert e.size == 0.5

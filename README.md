@@ -1,7 +1,7 @@
 # Fractal
 [![PyPI version](https://badge.fury.io/py/fractal-defi.svg)](https://badge.fury.io/py/fractal-defi)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/BSD)
+[![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Downloads](https://pepy.tech/badge/fractal-defi)](https://pepy.tech/project/fractal-defi)
 [![Downloads](https://pepy.tech/badge/fractal-defi/month)](https://pepy.tech/project/fractal-defi)
 
@@ -12,7 +12,7 @@ Fractal is the ultimate DeFi research library for strategies development and bac
 Fractal offers a modular architecture where each component plays a crucial role in constructing and managing complex DeFi strategies. Whether you’re experimenting with automated market-making, liquidity management, or yield strategies, Fractal provides the building blocks and pipelines necessary for thorough analysis and execution.
 
 - **[Entities](https://github.com/Logarithm-Labs/fractal-defi/tree/main/fractal/core/entities)** represent a scope of DeFi primitives with behavior replicated in Python. Each entity holds global market states (e.g., prices, yield rates) along with its own internal states (e.g., balances, open positions, LP positions).
-- **[Strategies](https://github.com/Logarithm-Labs/fractal-defi/tree/main/fractal/strategies)** contain management logic on top of the entites with actions execution.
+- **[Strategies](https://github.com/Logarithm-Labs/fractal-defi/tree/main/fractal/strategies)** contain management logic on top of the entities with actions execution.
 - **[Loaders](https://github.com/Logarithm-Labs/fractal-defi/tree/main/fractal/loaders)** simplify the process of gathering and preparing market data from various DeFi protocols. Fractal provides a collection of ad-hoc ETL tools to quickly load data, making it easier to construct observations for dynamic strategy execution.
 - Fractal’s engine includes robust backtesting and simulation **[pipelines](https://github.com/Logarithm-Labs/fractal-defi/blob/main/fractal/core/pipeline.py)** for strategy optimization powered by [MLFlow](https://mlflow.org/):
 
@@ -137,7 +137,7 @@ if __name__ == '__main__':
         debug=True,
     )
 
-    # Run the DefualtPipeline
+    # Run the DefaultPipeline
     pipeline: DefaultPipeline = DefaultPipeline(
         experiment_config=experiment_config,
         mlflow_config=mlflow_config

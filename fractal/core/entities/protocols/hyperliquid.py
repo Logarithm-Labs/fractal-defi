@@ -153,6 +153,12 @@ class HyperliquidEntity(BasePerpEntity):
         Args:
             amount_in_product (float): The amount of product to open the position with.
                 Negative values open a short. Zero is a no-op.
+
+        Risk-increasing trades (``|new_size| > |old_size|``) are validated
+        post-trade against ``max_leverage`` and ``maintenance_margin``;
+        rejected trades are rolled back atomically. Risk-reducing trades
+        (close / partial close) bypass the leverage check, so a
+        margin-bound position can always be closed.
         """
         if self._global_state.mark_price <= 0:
             raise HyperliquidEntityException(
@@ -161,6 +167,18 @@ class HyperliquidEntity(BasePerpEntity):
         # Zero-amount short-circuit: no fee, no state mutation.
         if amount_in_product == 0:
             return
+
+        # Snapshot for atomic rollback. Copy positions list deeply because
+        # ``_clearing`` mutates the position objects in place.
+        snap_collateral = self._internal_state.collateral
+        snap_positions = [
+            HyperLiquidPosition(amount=p.amount,
+                                entry_price=p.entry_price,
+                                max_leverage=p.max_leverage)
+            for p in self._internal_state.positions
+        ]
+        old_size = sum(p.amount for p in snap_positions)
+
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
@@ -168,6 +186,25 @@ class HyperliquidEntity(BasePerpEntity):
 
         self._internal_state.collateral -= abs(self._global_state.mark_price * amount_in_product * self.trading_fee)
         self._clearing()  # consider only one position for simplicity
+
+        if abs(self.size) > abs(old_size):
+            balance = self.balance
+            mm = self.maintenance_margin
+            if balance < mm:
+                self._internal_state.collateral = snap_collateral
+                self._internal_state.positions = snap_positions
+                raise HyperliquidEntityException(
+                    f"open_position would leave balance {balance} below "
+                    f"maintenance_margin {mm}"
+                )
+            if self.leverage > self.max_leverage:
+                lev = self.leverage
+                self._internal_state.collateral = snap_collateral
+                self._internal_state.positions = snap_positions
+                raise HyperliquidEntityException(
+                    f"open_position would push leverage {lev} above "
+                    f"max_leverage {self.max_leverage}"
+                )
 
     @property
     def pnl(self) -> float:

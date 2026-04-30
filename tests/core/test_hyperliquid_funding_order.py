@@ -49,16 +49,16 @@ def test_positive_funding_tips_long_into_liquidation_same_bar():
     """A long that would survive the price tick alone gets liquidated by
     funding cost in the SAME bar (not next bar).
 
-    Setup: long 1 ETH at $3000, collateral=$40 (just above MM=30 at entry).
-    Apply funding_rate=+1% with no price move: collateral -= 30 → 10. MM=30
-    (unchanged). 10 < 30 → liquidate.
+    Setup: long 1 ETH at $3000, collateral=$80 (leverage=37.5x ≤ max_lev=50,
+    H4 lets it open). MM=30. Apply funding_rate=+2% with no price move:
+    collateral -= 60 → 20. MM=30 (unchanged). 20 < 30 → liquidate.
     """
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
     e.update_state(HyperLiquidGlobalState(mark_price=3000))
-    e.action_deposit(40)
+    e.action_deposit(80)
     e.action_open_position(1)
-    # No price move; funding pays 30 from collateral.
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.01))
+    # No price move; funding pays 60 from collateral.
+    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.02))
     assert e.size == 0, "long should have been liquidated by funding tick"
 
 
@@ -152,8 +152,9 @@ def test_funding_uses_alive_size_before_potential_liquidation():
     on its full alive size FIRST (could push further into liquidation),
     not on size=0 after wipe.
 
-    Setup: long 1 ETH @ 3000, coll=40, walk price to 2900. Without funding:
-    balance = 40 + (2900-3000) = -60 < MM(29) → liquidate, position wiped.
+    Setup: long 1 ETH @ 3000, coll=80 (leverage=37.5x, H4 lets it open),
+    walk price to 2900. Without funding:
+    balance = 80 + (2900-3000) = -20 < MM(29) → liquidate, position wiped.
     Funding then would settle on size=0 in old order → no-op, collateral
     irrelevant after wipe.
 
@@ -164,7 +165,7 @@ def test_funding_uses_alive_size_before_potential_liquidation():
     """
     e = HyperliquidEntity(trading_fee=0.0)
     e.update_state(HyperLiquidGlobalState(mark_price=3000))
-    e.action_deposit(40)
+    e.action_deposit(80)
     e.action_open_position(1)
     e.update_state(HyperLiquidGlobalState(mark_price=2900, funding_rate=0.01))
     # Liquidated either way; the lock-in is that order is correct, no exception.
@@ -195,25 +196,25 @@ def test_funding_payment_matches_quadrant(size, rate, expected_collateral_delta)
 def test_hyperliquid_matches_simple_perp_funding_order():
     """Both entities apply funding before liquidation check.
 
-    With identical setup (long 1 unit at $3000, coll=$40, rate=+1%, no price
-    move), both should have collateral=10 after one update_state — which
-    triggers liquidation in the same bar.
+    Identical setup (long 1 unit at $3000, coll=$80 → 37.5x ≤ max_lev=50,
+    H4 lets it open); funding_rate=+2% drains 60 → coll=20 < MM(SP)=60
+    and < MM(HL)=30. Both wipe in the same bar.
     """
     from fractal.core.entities.simple.perp import (SimplePerpEntity,
                                                    SimplePerpGlobalState)
 
     hl = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
     hl.update_state(HyperLiquidGlobalState(mark_price=3000))
-    hl.action_deposit(40)
+    hl.action_deposit(80)
     hl.action_open_position(1)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.01))
+    hl.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.02))
 
     sp = SimplePerpEntity(trading_fee=0.0, max_leverage=50.0)
     sp.update_state(SimplePerpGlobalState(mark_price=3000))
-    sp.action_deposit(40)
+    sp.action_deposit(80)
     sp.action_open_position(1)
-    sp.update_state(SimplePerpGlobalState(mark_price=3000, funding_rate=0.01))
+    sp.update_state(SimplePerpGlobalState(mark_price=3000, funding_rate=0.02))
 
-    # Both should be liquidated (collateral=10 < MM=30 after funding tick).
+    # Both should be liquidated.
     assert hl.size == 0
     assert sp.size == 0

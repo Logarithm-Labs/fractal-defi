@@ -30,11 +30,38 @@ def test_observation_eq_returns_not_implemented_for_non_observation():
 
 
 @pytest.mark.core
-def test_observation_eq_compares_two_observations_by_payload():
+def test_observation_eq_compares_timestamp_and_states():
+    """Same states + same timestamp → equal."""
+    a = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=100)})
+    b = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=100)})
+    assert a == b
+    assert hash(a) == hash(b)
+
+
+@pytest.mark.core
+def test_observation_eq_distinguishes_by_timestamp():
+    """Same states, different timestamps → not equal (hash diverges too)."""
     a = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=100)})
     b = Observation(timestamp=datetime(2024, 1, 2), states={"X": _S(price=100)})
-    # Equality is content-based via __json__, not timestamp-based.
-    assert a == b
+    assert a != b
+    assert hash(a) != hash(b)
+
+
+@pytest.mark.core
+def test_observation_eq_distinguishes_by_states():
+    """Same timestamp, different states → not equal."""
+    a = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=100)})
+    b = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=200)})
+    assert a != b
+
+
+@pytest.mark.core
+def test_observation_set_does_not_collapse_distinct_timestamps():
+    """Two snapshots with same states but different timestamps must coexist
+    in a set — earlier behavior collapsed them."""
+    a = Observation(timestamp=datetime(2024, 1, 1), states={"X": _S(price=100)})
+    b = Observation(timestamp=datetime(2024, 1, 2), states={"X": _S(price=100)})
+    assert len({a, b}) == 2
 
 
 @pytest.mark.core

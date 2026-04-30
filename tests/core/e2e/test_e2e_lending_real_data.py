@@ -59,7 +59,7 @@ def test_real_aave_rates_walk_balance_stable(real_aave_rates):
             collateral_price=1.0,
             debt_price=1.0,
             lending_rate=float(row["lending_rate"]),
-            borrowing_rate=float(abs(row["borrowing_rate"])),
+            borrowing_rate=float(row["borrowing_rate"]),
         ))
         assert e.balance == e.balance, "NaN balance"
         assert e._internal_state.collateral >= 0
@@ -79,7 +79,7 @@ def test_real_aave_rates_collateral_grows_borrowed_grows(real_aave_rates):
 
     for _, row in real_aave_rates.iterrows():
         lending = float(row["lending_rate"])
-        borrowing = float(abs(row["borrowing_rate"]))  # ensure positive
+        borrowing = float(row["borrowing_rate"])
         e.update_state(AaveGlobalState(
             collateral_price=1.0,
             debt_price=1.0,

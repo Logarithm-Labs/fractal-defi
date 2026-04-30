@@ -156,6 +156,12 @@ class SimplePerpEntity(BasePerpEntity):
 
         Same-sign trades update the weighted-average entry; opposite-sign
         trades realize PnL on the closed leg into collateral.
+
+        Risk-increasing trades (``|new_size| > |old_size|``) are validated
+        post-trade against ``max_leverage`` and ``maintenance_margin``;
+        rejected trades are rolled back atomically. Risk-reducing trades
+        (close / partial close) bypass the leverage check, so a
+        margin-bound position can always be closed.
         """
         if amount_in_product == 0:
             return
@@ -166,46 +172,68 @@ class SimplePerpEntity(BasePerpEntity):
                 f"cannot trade at non-positive mark price {mark_price}"
             )
 
+        # Snapshot for atomic rollback on margin/leverage rejection.
+        snap_size = self._internal_state.size
+        snap_entry = self._internal_state.entry_price
+        snap_collateral = self._internal_state.collateral
+
         # Charge taker fee on traded notional, regardless of net direction.
         self._internal_state.collateral -= (
             abs(amount_in_product) * mark_price * self.trading_fee
         )
 
-        old_size = self._internal_state.size
-        old_entry = self._internal_state.entry_price
+        old_size = snap_size
+        old_entry = snap_entry
 
         if old_size == 0:
             self._internal_state.size = amount_in_product
             self._internal_state.entry_price = mark_price
-            return
-
-        if old_size * amount_in_product > 0:
+        elif old_size * amount_in_product > 0:
             # Same direction → weighted-average entry, sum sizes.
             new_size = old_size + amount_in_product
             self._internal_state.entry_price = (
                 (old_entry * old_size + mark_price * amount_in_product) / new_size
             )
             self._internal_state.size = new_size
-            return
-
-        # Opposite direction → close part (or flip).
-        closed_qty = min(abs(old_size), abs(amount_in_product))
-        sign = 1.0 if old_size > 0 else -1.0
-        realized_pnl = closed_qty * (mark_price - old_entry) * sign
-        self._internal_state.collateral += realized_pnl
-
-        new_size = old_size + amount_in_product
-        if abs(new_size) < self._EPS:
-            # Fully closed.
-            self._internal_state.size = 0.0
-            self._internal_state.entry_price = 0.0
-        elif abs(amount_in_product) > abs(old_size):
-            # Flipped: remaining quantity inherits the trade price.
-            self._internal_state.size = new_size
-            self._internal_state.entry_price = mark_price
         else:
-            # Partial close; existing entry stays.
-            self._internal_state.size = new_size
+            # Opposite direction → close part (or flip).
+            closed_qty = min(abs(old_size), abs(amount_in_product))
+            sign = 1.0 if old_size > 0 else -1.0
+            realized_pnl = closed_qty * (mark_price - old_entry) * sign
+            self._internal_state.collateral += realized_pnl
+
+            new_size = old_size + amount_in_product
+            if abs(new_size) < self._EPS:
+                self._internal_state.size = 0.0
+                self._internal_state.entry_price = 0.0
+            elif abs(amount_in_product) > abs(old_size):
+                # Flipped.
+                self._internal_state.size = new_size
+                self._internal_state.entry_price = mark_price
+            else:
+                self._internal_state.size = new_size
+
+        # Post-trade validation, only when risk increased.
+        if abs(self._internal_state.size) > abs(snap_size):
+            balance = self.balance
+            mm = self.maintenance_margin
+            if balance < mm:
+                self._internal_state.size = snap_size
+                self._internal_state.entry_price = snap_entry
+                self._internal_state.collateral = snap_collateral
+                raise SimplePerpEntityException(
+                    f"open_position would leave balance {balance} below "
+                    f"maintenance_margin {mm}"
+                )
+            if self.leverage > self.max_leverage:
+                lev = self.leverage
+                self._internal_state.size = snap_size
+                self._internal_state.entry_price = snap_entry
+                self._internal_state.collateral = snap_collateral
+                raise SimplePerpEntityException(
+                    f"open_position would push leverage {lev} above "
+                    f"max_leverage {self.max_leverage}"
+                )
 
     # ``action_close_position`` is inherited from :class:`BasePerpEntity`
     # (default impl: ``action_open_position(amount_in_product=-self.size)``).

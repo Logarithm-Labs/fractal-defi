@@ -350,3 +350,33 @@ def test_constant_fundings_loader_empty_when_end_before_start():
     assert isinstance(data, FundingHistory)
     assert len(data) == 0
     assert list(data.columns) == ["rate"]
+
+
+# --------------------------------------------- loader_type plumbing
+@pytest.mark.core
+def test_monte_carlo_loader_propagates_loader_type_to_base():
+    """Regression: ``Loader.__init__(*args, loader_type=...)`` is keyword-only,
+    so subclasses must pass it BY NAME. Earlier ``super().__init__(loader_type)``
+    silently dropped it into ``*args`` and ``self.loader_type`` fell back to
+    ``LoaderType.CSV`` — making MonteCarloHourPriceLoader.run() crash trying
+    to write a list as CSV.
+    """
+    history = _toy_price_history(n=20)
+    loader = MonteCarloPriceLoader(history, trajectories_number=2, seed=0)
+    assert loader.loader_type == LoaderType.PICKLE
+
+
+@pytest.mark.core
+def test_loader_subclasses_keep_user_loader_type():
+    """Cross-cutting check: a few loaders that historically had the same
+    keyword-only-arg-passed-positionally bug. Default is ``CSV``, but the
+    user's explicit choice must stick."""
+    from fractal.loaders.aave import AaveV3ArbitrumLoader
+
+    # Aave passes through loader_type. Default is CSV; we keep CSV here
+    # so this stays purely offline (constructor doesn't hit the network).
+    a = AaveV3ArbitrumLoader(
+        asset_address="0x82af49447d8a07e3bd95bd0d56f35241523fbab1",
+        loader_type=LoaderType.JSON,
+    )
+    assert a.loader_type == LoaderType.JSON

@@ -75,12 +75,20 @@ def test_leverage_zero_when_no_position_even_with_zero_balance():
 @pytest.mark.core
 def test_leverage_inf_when_balance_negative_with_position():
     """Long position underwater (PnL drove balance < 0) → leverage = +inf,
-    not a negative ratio."""
+    not a negative ratio.
+
+    Built by directly inserting the position; ``action_open_position``
+    rejects this setup post-H4 because it exceeds ``max_leverage`` at
+    the time of opening (this test is about leverage math under water,
+    not about whether it could have been opened).
+    """
     e = HyperliquidEntity(trading_fee=0.0)
     e.update_state(HyperLiquidGlobalState(mark_price=3000))
     e.action_deposit(30)
-    e.action_open_position(1.0)
-    # Bypass update_state (which would auto-liquidate) by mutating mark directly.
+    e._internal_state.positions.append(
+        HyperLiquidPosition(amount=1.0, entry_price=3000.0, max_leverage=50.0)
+    )
+    # Now move price down so PnL drives balance below zero.
     e._global_state.mark_price = 2900
     # balance = 30 + 1 × (2900 - 3000) = -70
     assert e.balance < 0

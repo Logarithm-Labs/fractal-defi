@@ -59,9 +59,11 @@ class Observation:
         return self.__json__()
 
     def __hash__(self):
-        return hash(self.__json__())
+        # Include timestamp so two snapshots at different points in time
+        # do not collide in sets/dicts even if their states match.
+        return hash((self.timestamp, self.__json__()))
 
     def __eq__(self, other):
         if not isinstance(other, Observation):
             return NotImplemented
-        return self.__json__() == other.__json__()
+        return self.timestamp == other.timestamp and self.__json__() == other.__json__()

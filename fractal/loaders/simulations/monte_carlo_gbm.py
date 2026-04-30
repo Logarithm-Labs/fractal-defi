@@ -62,7 +62,10 @@ class MonteCarloPriceLoader(Loader):
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
     ) -> None:
-        super().__init__(loader_type)
+        # ``loader_type`` is keyword-only on the ABC (after ``*args``) — must
+        # pass it by name, not positionally, otherwise it lands in ``*args``
+        # and ``self.loader_type`` silently falls back to ``LoaderType.CSV``.
+        super().__init__(loader_type=loader_type)
         if loader_type != LoaderType.PICKLE:
             raise ValueError(
                 "MonteCarloPriceLoader requires LoaderType.PICKLE because it "

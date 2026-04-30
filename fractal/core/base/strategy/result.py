@@ -50,8 +50,14 @@ class StrategyResult:
                 If it is a float, the notional price is the value of the float.
 
         Returns:
-            StrategyMetrics: Metrics of the strategy.
+            StrategyMetrics: Metrics of the strategy. For degenerate inputs
+            (empty df, single timestamp, zero/non-finite initial balance,
+            zero notional_price column) returns ``StrategyMetrics`` filled
+            with ``0.0`` rather than raising or returning ``inf``/``nan``.
         """
+        if data is None or data.empty:
+            return self._zero_metrics()
+
         data = data.sort_values('timestamp').copy()
         if notional_price is None:
             notional_price = 1
@@ -61,30 +67,52 @@ class StrategyResult:
             pass
         else:
             raise ValueError("notional_price must be None, str or float")
-        data['net_balance'] /= notional_price
-        accumulated_return: float = data['net_balance'].iloc[-1] / data['net_balance'].iloc[0] - 1
+
+        # H6 guards: avoid divide-by-zero / inf / nan from degenerate inputs.
+        if isinstance(notional_price, np.ndarray):
+            if (notional_price == 0).any() or (~np.isfinite(notional_price)).any():
+                return self._zero_metrics()
+
+        data['net_balance'] = data['net_balance'] / notional_price
+
+        first_balance = data['net_balance'].iloc[0]
+        if first_balance == 0 or not np.isfinite(first_balance):
+            return self._zero_metrics()
+
         total_seconds: float = (data['timestamp'].iloc[-1] - data['timestamp'].iloc[0]).total_seconds()
+        if total_seconds <= 0:
+            return self._zero_metrics()
         total_years: float = total_seconds / (60 * 60 * 24 * 365)
+
+        accumulated_return: float = data['net_balance'].iloc[-1] / first_balance - 1
         apy = accumulated_return / total_years
         data_frequency = len(data) / total_years
 
-        net_balance_std = data['net_balance'].pct_change().std()
-        if net_balance_std == 0:
-            sharpe = 0
+        returns = data['net_balance'].pct_change().dropna()
+        net_balance_std = returns.std()
+        if returns.empty or net_balance_std == 0 or not np.isfinite(net_balance_std):
+            sharpe = 0.0
         else:
-            sharpe = data['net_balance'].pct_change().mean() / net_balance_std
-        sharpe *= np.sqrt(data_frequency)  # annualize sharpe
+            sharpe = returns.mean() / net_balance_std
+            sharpe *= np.sqrt(data_frequency)
 
         net_balance = data['net_balance'].values
         cumulative_max = np.maximum.accumulate(net_balance)
+        # cumulative_max can hit 0 if first_balance is 0 — already guarded above.
         drawdowns = net_balance / cumulative_max - 1
-        max_drawdown = np.min(drawdowns)
+        max_drawdown = float(np.min(drawdowns)) if drawdowns.size else 0.0
 
         return StrategyMetrics(
             accumulated_return=accumulated_return,
             apy=apy,
             sharpe=sharpe,
             max_drawdown=max_drawdown
+        )
+
+    @staticmethod
+    def _zero_metrics() -> "StrategyMetrics":
+        return StrategyMetrics(
+            accumulated_return=0.0, apy=0.0, sharpe=0.0, max_drawdown=0.0,
         )
 
     def get_default_metrics(self) -> StrategyMetrics:

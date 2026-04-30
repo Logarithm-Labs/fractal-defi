@@ -38,8 +38,8 @@ def test_aave_v3_arbitrum():
     assert len(data) > 0
     assert data["borrowing_rate"].dtype == "float64"
     assert data["lending_rate"].dtype == "float64"
-    assert data["lending_rate"].iloc[-1] > 0  # supply rate is positive
-    assert data["borrowing_rate"].iloc[0] < 0  # borrow stored as negative
+    assert data["lending_rate"].iloc[-1] > 0  # supply rate: positive ⇒ you earn
+    assert data["borrowing_rate"].iloc[0] > 0  # borrow rate: positive ⇒ debt grows
     assert data.index.tz is not None
 
 
@@ -57,7 +57,7 @@ def test_aave_v3_ethereum():
     data: LendingHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["lending_rate"].iloc[-1] > 0
-    assert data["borrowing_rate"].iloc[0] < 0
+    assert data["borrowing_rate"].iloc[0] > 0
 
 
 @pytest.mark.integration

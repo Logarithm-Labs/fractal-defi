@@ -5,6 +5,7 @@ All TheGraph loaders go through ``gateway-arbitrum.network.thegraph.com``
 subgraphs). Concrete loaders supply a subgraph id; this class handles
 URL construction, transport, error wrapping.
 """
+import re
 from typing import Any, Dict, Optional
 
 from fractal.loaders._http import HttpClient
@@ -13,6 +14,24 @@ from fractal.loaders.base_loader import Loader, LoaderType
 
 class GraphLoaderException(RuntimeError):
     pass
+
+
+# 0x-prefixed 40-hex-char EVM address. Concrete loaders interpolate pool
+# / token addresses into GraphQL queries — validating shape up front
+# stops bogus or malicious strings reaching the subgraph.
+_EVM_ADDRESS_RE = re.compile(r"^0x[a-fA-F0-9]{40}$")
+
+
+def validate_evm_address(value: str, field: str = "address") -> str:
+    """Reject anything that does not look like a 0x-prefixed EVM address.
+
+    Returns the lower-cased canonical form so caches/keys stay stable.
+    """
+    if not isinstance(value, str) or not _EVM_ADDRESS_RE.match(value):
+        raise GraphLoaderException(
+            f"{field} must match ^0x[a-fA-F0-9]{{40}}$, got {value!r}"
+        )
+    return value.lower()
 
 
 class BaseGraphLoader(Loader):

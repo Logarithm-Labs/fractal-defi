@@ -7,6 +7,7 @@ import pandas as pd
 from fractal.loaders._dt import to_seconds, to_utc, utcnow
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.structs import PoolHistory
+from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_arbitrum import \
     ArbitrumUniswapV3Loader
 from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
@@ -69,7 +70,7 @@ class UniswapV3EthereumPoolDayDataLoader(_UniswapV3PoolBase, EthereumUniswapV3Lo
         end_time: Optional[datetime] = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
-        self.pool: str = pool
+        self.pool: str = validate_evm_address(pool, field="pool")
         self.start_time: Optional[datetime] = to_utc(start_time)
         self.end_time: Optional[datetime] = to_utc(end_time)
 
@@ -125,7 +126,7 @@ class UniswapV3ArbitrumPoolDayDataLoader(_UniswapV3PoolBase, ArbitrumUniswapV3Lo
         end_time: Optional[datetime] = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
-        self.pool: str = pool
+        self.pool: str = validate_evm_address(pool, field="pool")
         self.start_time: Optional[datetime] = to_utc(start_time)
         self.end_time: Optional[datetime] = to_utc(end_time)
 

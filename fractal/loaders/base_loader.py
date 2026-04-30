@@ -2,7 +2,7 @@
 
 Lifecycle: ``extract → transform → load`` via ``run()``. ``read(with_run=True)``
 runs the pipeline; ``read()`` reads the on-disk cache. Cache files live under
-``<DATA_PATH or PYTHONPATH or cwd>/fractal_data/<loader_class>/<key>.<ext>``.
+``<DATA_PATH or cwd>/fractal_data/<loader_class>/<key>.<ext>``.
 
 Subclasses MUST override:
   - ``extract``, ``transform`` — populate ``self._data``;
@@ -36,7 +36,10 @@ class Loader(ABC):
         self.loader_type: LoaderType = loader_type
         self._data: Any = None
 
-        base_path: str = os.getenv("DATA_PATH") or os.getenv("PYTHONPATH") or os.getcwd()
+        # ``DATA_PATH`` is the explicit knob; otherwise cache lives under cwd.
+        # ``PYTHONPATH`` is a colon-separated import list, not a directory,
+        # so we no longer fall back to it.
+        base_path: str = os.getenv("DATA_PATH") or os.getcwd()
         self._base_path: str = os.path.join(base_path, "fractal_data")
 
     # ------------------------------------------------------------------ ABC

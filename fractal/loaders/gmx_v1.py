@@ -17,6 +17,7 @@ from fractal.loaders._dt import to_seconds, to_utc
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import FundingHistory
+from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 
 LEGACY_URL = "https://subgraph.satsuma-prod.com/3b2ced13c8d9/gmx/gmx-arbitrum-stats/api"
 
@@ -35,8 +36,8 @@ class GMXV1FundingLoader(Loader):
         end_time: Optional[datetime] = None,
         period: str = "daily",
     ) -> None:
-        super().__init__(loader_type)
-        self.token_address: str = token_address.lower()
+        super().__init__(loader_type=loader_type)
+        self.token_address: str = validate_evm_address(token_address, field="token_address")
         self._url: str = url
         self._period: str = period
         self.start_time: Optional[datetime] = to_utc(start_time)

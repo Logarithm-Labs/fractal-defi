@@ -48,7 +48,7 @@ class BinancePriceLoader(Loader):
         end_time: Optional[datetime] = None,
         http: Optional[BinanceHttp] = None,
     ) -> None:
-        super().__init__(loader_type)
+        super().__init__(loader_type=loader_type)
         self.ticker: str = ticker.upper()
         self.inverse_price: bool = inverse_price
         self.interval: str = interval

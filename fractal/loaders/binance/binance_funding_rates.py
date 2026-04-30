@@ -29,7 +29,7 @@ class BinanceFundingLoader(Loader):
         end_time: Optional[datetime] = None,
         http: Optional[BinanceHttp] = None,
     ) -> None:
-        super().__init__(loader_type)
+        super().__init__(loader_type=loader_type)
         self.ticker: str = ticker.upper()
         self.start_time: Optional[datetime] = to_utc(start_time)
         self.end_time: Optional[datetime] = to_utc(end_time)

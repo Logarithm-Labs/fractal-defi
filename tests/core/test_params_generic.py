@@ -96,11 +96,33 @@ def test_params_none_on_untyped_strategy_falls_back_to_empty_namespace():
 
 # ---------------------------------------------- C) other params shapes
 @pytest.mark.core
-def test_params_dict_still_works():
+def test_params_dict_on_typed_strategy_coerced_to_dataclass():
+    """M10: when the strategy declares ``BaseStrategy[Params]``, a dict
+    must be splatted into ``PARAMS_CLS(**dict)`` so dataclass defaults,
+    type hints and unknown-key rejection apply — not silently wrapped
+    in a generic ``BaseStrategyParams``."""
     s = _StratWithDefaults(params={"BUY_THRESHOLD": 9000.0})
-    # The base wraps dicts as BaseStrategyParams (not the typed subclass) —
-    # historical behaviour preserved.
+    assert isinstance(s._params, _ParamsWithDefaults)
     assert s._params.BUY_THRESHOLD == 9000.0
+    # Default for unspecified field flows through.
+    assert s._params.SELL_THRESHOLD == 2500.0
+
+
+@pytest.mark.core
+def test_params_dict_with_unknown_key_rejected_on_typed_strategy():
+    """M10: typo in dict key must fail loudly via dataclass ``__init__``
+    rather than silently land in an untyped namespace."""
+    with pytest.raises(TypeError):
+        _StratWithDefaults(params={"BUY_THRSHOLD": 9000.0})  # typo
+
+
+@pytest.mark.core
+def test_params_dict_on_untyped_strategy_wraps_in_basestrategyparams():
+    """M10: without ``PARAMS_CLS`` we keep the historical fallback —
+    a dict is wrapped in a generic ``BaseStrategyParams``."""
+    s = _UntypedStrat(params={"foo": 1})
+    assert isinstance(s._params, BaseStrategyParams)
+    assert s._params.foo == 1
 
 
 @pytest.mark.core
