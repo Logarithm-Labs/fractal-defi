@@ -1,6 +1,6 @@
 import pytest
 
-from fractal.core.entities.uniswap_v3_spot import (UniswapV3SpotEntity,
+from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
                                                    UniswapV3SpotGlobalState,
                                                    UniswapV3SpotInternalState)
 

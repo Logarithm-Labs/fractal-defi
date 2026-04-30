@@ -8,8 +8,8 @@ from fractal.core.base import (
     BaseStrategy, Action, BaseStrategyParams,
     ActionToTake, NamedEntity, Observation)
 
-from fractal.core.entities.single_spot_exchange import (
-    SingleSpotExchange, SingleSpotExchangeGlobalState, SingleSpotExchangeInternalState
+from fractal.core.entities.simple.spot import (
+    SimpleSpotExchange, SimpleSpotExchangeGlobalState, SimpleSpotExchangeInternalState
 )
 from fractal.core.base.observations import ObservationsStorage, SQLiteObservationsStorage
 from fractal.loaders import LoaderType
@@ -27,7 +27,7 @@ class AgentTradingStrategyParams(BaseStrategyParams):
     PROMPT: str = NEUTRAL_PROMPT
 
 
-class AgentTradingStrategy(BaseStrategy):
+class AgentTradingStrategy(BaseStrategy[AgentTradingStrategyParams]):
 
     def __init__(self, debug: bool = False, params: AgentTradingStrategyParams | None = None,
                  observations_storage: ObservationsStorage | None = None):
@@ -47,16 +47,16 @@ class AgentTradingStrategy(BaseStrategy):
         return create_agent(model=self._params.MODEL, tools=[get_klines], prompt=self._params.PROMPT)
 
     def set_up(self):
-        self.register_entity(NamedEntity(entity_name='exchange', entity=SingleSpotExchange()))
+        self.register_entity(NamedEntity(entity_name='exchange', entity=SimpleSpotExchange()))
         exchange = self.get_entity('exchange')
         exchange.action_deposit(self._params.INITIAL_BALANCE)
 
     def predict(self) -> ActionToTake:
 
         if self._window_size == 0:
-            exchange: SingleSpotExchange = self.get_entity('exchange')
-            internal_state: SingleSpotExchangeInternalState = exchange.internal_state
-            global_state: SingleSpotExchangeGlobalState = exchange.global_state
+            exchange: SimpleSpotExchange = self.get_entity('exchange')
+            internal_state: SimpleSpotExchangeInternalState = exchange.internal_state
+            global_state: SimpleSpotExchangeGlobalState = exchange.global_state
             res = Runner.run_sync(
                 self._agent,
                 (
@@ -70,13 +70,21 @@ class AgentTradingStrategy(BaseStrategy):
             # sleep to avoid rps limit
             time.sleep(1)
             self._window_size = self._params.WINDOW_SIZE
-            if prediction.action.lower() == 'hold':
+            action_name = prediction.action.lower()
+            if action_name == 'hold':
                 return []
+            # Agent's `prediction.amount` is in product units; convert for the
+            # asymmetric BaseSpotEntity contract (buy → notional, sell → product).
+            if action_name == 'buy':
+                args = {'amount_in_notional': prediction.amount * global_state.close}
+            elif action_name == 'sell':
+                args = {'amount_in_product': prediction.amount}
             else:
-                return [ActionToTake(
-                    entity_name='exchange',
-                    action=Action(action=prediction.action.lower(), args={'amount': prediction.amount})
-                )]
+                return []
+            return [ActionToTake(
+                entity_name='exchange',
+                action=Action(action=action_name, args=args),
+            )]
         else:
             self._window_size -= 1
             return []
@@ -90,7 +98,7 @@ if __name__ == '__main__':
 
     # Build observations list
     observations: List[Observation] = [
-        Observation(timestamp=timestamp, states={'exchange': SingleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
+        Observation(timestamp=timestamp, states={'exchange': SimpleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
         for timestamp, o, h, l, c in zip(binance_klines.index, binance_klines['open'], binance_klines['high'],
                                          binance_klines['low'], binance_klines['close'])
     ]

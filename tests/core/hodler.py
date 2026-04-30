@@ -31,7 +31,7 @@ class Hodler(BaseEntity):
         self._global_state = HodlerGlobalState()
         self._internal_state = HodlerInternalState()
 
-    def update_state(self, state: HodlerGlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: HodlerGlobalState) -> None:
         self._global_state = state
 
     @property
@@ -54,11 +54,11 @@ class HodlerParams(BaseStrategyParams):
     BUY_THRESHOLD: float = 3000.0
 
 
-class HodlerStrategy(BaseStrategy):
+class HodlerStrategy(BaseStrategy[HodlerParams]):
     """
     Testing strategy. Simple strategy that buys and sells based on the price.
     """
-    def __init__(self, debug: bool, params: HodlerParams):
+    def __init__(self, debug: bool = False, params: HodlerParams = None):
         super().__init__(debug=debug, params=params)
 
     def set_up(self, *args, **kwargs):

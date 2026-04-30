@@ -1,8 +1,8 @@
 from dataclasses import dataclass
 
-from fractal.core.base.entity import (EntityException, GlobalState,
-                                      InternalState)
-from fractal.core.entities.spot import BaseSpotEntity
+from fractal.core.base.entity import EntityException, GlobalState
+from fractal.core.entities.base.liquid_staking import BaseLiquidStakingToken
+from fractal.core.entities.base.spot import BaseSpotInternalState
 
 
 class StakedETHEntityException(EntityException):
@@ -25,24 +25,24 @@ class StakedETHGlobalState(GlobalState):
 
 
 @dataclass
-class StakedETHInternalState(InternalState):
-    """
-    Represents the internal state of the StakedETH entity.
-
-    Attributes:
-        amount (float): The stored amount of stETH.
-        cash (float): The amount of cash in notional.
-    """
-    amount: float = 0.0
-    cash: float = 0.0
+class StakedETHInternalState(BaseSpotInternalState):
+    """Internal state of the StakedETH entity (inherits ``amount``, ``cash``)."""
+    pass
 
 
-class StakedETHEntity(BaseSpotEntity):
+class StakedETHEntity(BaseLiquidStakingToken):
+    """Lido stETH (or any LST-ETH-like) entity.
+
+    Categorically a :class:`BaseLiquidStakingToken`: spot-traded with
+    rebasing balance accruing at ``global_state.rate`` per step.
+    The historical ``rate`` field name is preserved for back-compat;
+    polymorphic strategy code should use the
+    :attr:`staking_rate` property instead.
     """
-    Represents an entity for trading on the StakedETH token.
-    This is a simple entity that can buy, sell, deposit, and withdraw stETH.
-    Also this entity control staking rate.
-    """
+
+    _internal_state: StakedETHInternalState
+    _global_state: StakedETHGlobalState
+
     def __init__(self, *args, trading_fee: float = 0.003, **kwargs):
         super().__init__(*args, **kwargs)
         self.TRADING_FEE: float = trading_fee
@@ -50,6 +50,19 @@ class StakedETHEntity(BaseSpotEntity):
     def _initialize_states(self):
         self._internal_state: StakedETHInternalState = StakedETHInternalState()
         self._global_state: StakedETHGlobalState = StakedETHGlobalState()
+
+    @property
+    def internal_state(self) -> StakedETHInternalState:  # type: ignore[override]
+        return self._internal_state
+
+    @property
+    def global_state(self) -> StakedETHGlobalState:  # type: ignore[override]
+        return self._global_state
+
+    @property
+    def staking_rate(self) -> float:
+        """Polymorphic LST contract — delegates to legacy ``global_state.rate``."""
+        return self._global_state.rate
 
     def action_buy(self, amount_in_notional: float):
         """
@@ -109,7 +122,7 @@ class StakedETHEntity(BaseSpotEntity):
             raise StakedETHEntityException(f"Invalid deposit amount: {amount_in_notional}")
         self._internal_state.cash += amount_in_notional
 
-    def update_state(self, state: StakedETHGlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: StakedETHGlobalState) -> None:
         """
         Updates the global state of the StakedETH protocol.
         1. Updates the global state.
@@ -120,6 +133,10 @@ class StakedETHEntity(BaseSpotEntity):
         """
         self._global_state: StakedETHGlobalState = state
         self._internal_state.amount *= (self._global_state.rate + 1)
+
+    @property
+    def current_price(self) -> float:
+        return self._global_state.price
 
     @property
     def balance(self) -> float:

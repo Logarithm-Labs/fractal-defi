@@ -17,7 +17,7 @@ class TauResetParams(BaseStrategyParams):
     INITIAL_BALANCE: float
 
 
-class TauResetStrategy(BaseStrategy):
+class TauResetStrategy(BaseStrategy[TauResetParams]):
     """
     The τ-reset strategy manages liquidity in Uniswap v3 by concentrating it
     within a price range around the current market price. If the price exits this range,
@@ -36,7 +36,6 @@ class TauResetStrategy(BaseStrategy):
     tick_spacing: int = -1
 
     def __init__(self, params: TauResetParams, debug: bool = False, *args, **kwargs):
-        self._params: TauResetParams = None  # set for type hinting
         assert self.token0_decimals != -1 and self.token1_decimals != -1 and self.tick_spacing != -1
         super().__init__(params=params, debug=debug, *args, **kwargs)
         self.deposited_initial_funds = False

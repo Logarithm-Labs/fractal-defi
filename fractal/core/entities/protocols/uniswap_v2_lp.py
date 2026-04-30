@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from fractal.core.base.entity import EntityException
-from fractal.core.entities.pool import BasePoolEntity
+from fractal.core.base.entity import EntityException, GlobalState, InternalState
+from fractal.core.entities.base.pool import BasePoolEntity
 
 
 @dataclass
-class UniswapV2LPGlobalState:
+class UniswapV2LPGlobalState(GlobalState):
     """
     Represents the global state of the UniswapV2 LP entity.
 
@@ -25,7 +25,7 @@ class UniswapV2LPGlobalState:
 
 
 @dataclass
-class UniswapV2LPInternalState:
+class UniswapV2LPInternalState(InternalState):
     """
     Represents the internal state of an UniswapV2 LP entity.
 

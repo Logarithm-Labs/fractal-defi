@@ -9,7 +9,7 @@ from fractal.loaders import LoaderType
 from fractal.loaders.binance import BinanceKlinesLoader
 from fractal.core.base import Observation
 from fractal.core.base.observations import SQLiteObservationsStorage
-from fractal.core.entities.single_spot_exchange import SingleSpotExchangeGlobalState
+from fractal.core.entities.simple.spot import SimpleSpotExchangeGlobalState
 from fractal.core.pipeline import (
     DefaultPipeline, MLFlowConfig, ExperimentConfig)
 
@@ -27,7 +27,7 @@ def build_observations() -> List[Observation]:
 
     # Build observations list
     observations: List[Observation] = [
-        Observation(timestamp=timestamp, states={'exchange': SingleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
+        Observation(timestamp=timestamp, states={'exchange': SimpleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
         for timestamp, o, h, l, c in zip(binance_klines.index, binance_klines['open'], binance_klines['high'],
                                          binance_klines['low'], binance_klines['close'])
     ]

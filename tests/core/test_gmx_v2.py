@@ -125,6 +125,42 @@ def test_state_update(gmx_v2_entity: GMXV2Entity):
 
 
 @pytest.mark.core
+def test_action_close_position_flattens_long(gmx_v2_entity: GMXV2Entity):
+    gmx_v2_entity.update_state(GMXV2GlobalState(price=3000))
+    gmx_v2_entity.action_deposit(1000)
+    gmx_v2_entity.TRADING_FEE = 0.0
+    gmx_v2_entity.action_open_position(0.5)
+    assert gmx_v2_entity.size == 0.5
+    gmx_v2_entity.update_state(GMXV2GlobalState(price=3100))
+    gmx_v2_entity.action_close_position()
+    assert gmx_v2_entity.size == 0
+    # Realized profit: 0.5 * (3100 - 3000) = 50
+    assert gmx_v2_entity.balance == pytest.approx(1050)
+
+
+@pytest.mark.core
+def test_action_close_position_when_flat_is_noop(gmx_v2_entity: GMXV2Entity):
+    gmx_v2_entity.update_state(GMXV2GlobalState(price=3000))
+    gmx_v2_entity.action_deposit(1000)
+    gmx_v2_entity.action_close_position()
+    assert gmx_v2_entity.size == 0
+    assert gmx_v2_entity.balance == 1000
+
+
+@pytest.mark.core
+def test_pnl_property_polymorphic(gmx_v2_entity: GMXV2Entity):
+    from fractal.core.entities import BasePerpEntity
+    assert isinstance(gmx_v2_entity, BasePerpEntity)
+    gmx_v2_entity.update_state(GMXV2GlobalState(price=3000))
+    gmx_v2_entity.action_deposit(1000)
+    gmx_v2_entity.TRADING_FEE = 0.0
+    gmx_v2_entity.action_open_position(-0.5)
+    gmx_v2_entity.update_state(GMXV2GlobalState(price=2800))
+    # Short profits when price drops: -0.5 * (2800 - 3000) = +100
+    assert gmx_v2_entity.pnl == pytest.approx(100)
+
+
+@pytest.mark.core
 def test_clearing(gmx_v2_entity: GMXV2Entity):
     gmx_v2_entity.update_state(GMXV2GlobalState(price=3000))
     gmx_v2_entity._internal_state.positions.append(GMXV2Position(amount=0.5, entry_price=gmx_v2_entity._global_state.price))

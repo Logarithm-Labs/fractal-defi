@@ -5,7 +5,7 @@ import numpy as np
 
 from fractal.core.base import (Action, ActionToTake, BaseStrategy,
                                BaseStrategyParams)
-from fractal.core.entities import BaseHedgeEntity, BaseSpotEntity
+from fractal.core.entities import BasePerpEntity, BaseSpotEntity
 
 
 class BasisTradingStrategyException(Exception):
@@ -28,22 +28,18 @@ class BasisTradingStrategyHyperparams(BaseStrategyParams):
     INITIAL_BALANCE: float
 
 
-class BasisTradingStrategy(BaseStrategy):
+class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
     """
     A basis trading strategy that implements the BaseStrategy interface.
     This strategy aims to maintain a target leverage ratio between a hedge entity and a spot entity.
     """
-    def __init__(self, *args, params: Optional[BasisTradingStrategyHyperparams] = None,
-                 debug: bool = False, **kwargs):
-        self._params: BasisTradingStrategyHyperparams = None  # set for type hinting
-        super().__init__(params=params, debug=debug, *args, **kwargs)
 
     def set_up(self, *args, **kwargs):
         """
         Set up the strategy by registering the hedge and spot entities.
         """
         # Check if the SPOT and HEDGE entities are already registered
-        assert isinstance(self.get_entity('HEDGE'), BaseHedgeEntity)
+        assert isinstance(self.get_entity('HEDGE'), BasePerpEntity)
         assert isinstance(self.get_entity('SPOT'), BaseSpotEntity)
 
     def predict(self, *args, **kwargs) -> List[ActionToTake]:
@@ -51,7 +47,7 @@ class BasisTradingStrategy(BaseStrategy):
         Predict the actions to take based on the current state of the entities.
         Returns a list of ActionToTake objects representing the actions to be executed.
         """
-        hedge: BaseHedgeEntity = self.get_entity('HEDGE')
+        hedge: BasePerpEntity = self.get_entity('HEDGE')
         spot: BaseSpotEntity = self.get_entity('SPOT')
         if hedge.balance == 0 and spot.balance == 0:
             self._debug("Depositing initial funds into the strategy...")
@@ -69,7 +65,7 @@ class BasisTradingStrategy(BaseStrategy):
         Rebalance the entities to maintain the target leverage ratio.
         Returns a list of ActionToTake objects representing the rebalancing actions to be executed.
         """
-        hedge: BaseHedgeEntity = self.get_entity('HEDGE')
+        hedge: BasePerpEntity = self.get_entity('HEDGE')
         spot: BaseSpotEntity = self.get_entity('SPOT')
         hedge_balance = hedge.balance
         spot_balance = spot.balance

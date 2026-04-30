@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, List
+from typing import Generic, List, TypeVar
 
 from fractal.core.base.action import Action
 
@@ -33,7 +33,15 @@ class InternalState:
         return f"{self.__dict__}"
 
 
-class BaseEntity(ABC):
+# Type parameters for :class:`BaseEntity`. Concrete entities that wish
+# to expose narrowly-typed ``internal_state`` / ``global_state`` to
+# strategy code should declare themselves as
+# ``MyEntity(BaseEntity[MyGlobalState, MyInternalState])``.
+GS = TypeVar("GS", bound=GlobalState)
+IS = TypeVar("IS", bound=InternalState)
+
+
+class BaseEntity(ABC, Generic[GS, IS]):
     """
     Base class for entities.
     Entities are responsible for managing their internal state
@@ -56,9 +64,12 @@ class BaseEntity(ABC):
     - `action_withdraw(amount_in_notional: float) -> None` - Withdraw the specified amount from the entity's account.
     - `balance` - Property that returns the balance of the entity.
     """
+    _internal_state: IS
+    _global_state: GS
+
     def __init__(self):
-        self._internal_state: InternalState = None
-        self._global_state: GlobalState = None
+        # Concrete subclasses populate ``_internal_state`` / ``_global_state``
+        # inside ``_initialize_states``; no need to pre-set to None.
         self._initialize_states()
 
     @abstractmethod
@@ -70,28 +81,34 @@ class BaseEntity(ABC):
         raise NotImplementedError
 
     def get_available_actions(self) -> List[str]:
-        """
-        Get available actions for the entity.
+        """List actions exposed by ``action_*`` methods.
 
-        Returns:
-            List[str]: List of available actions.
+        Walks the **class**, not the instance, so we never accidentally
+        invoke property getters during introspection.
         """
+        cls = type(self)
         return [
-            func.replace('action_', '')
-            for func in dir(self)
-            if callable(getattr(self, func)) and func.startswith("action")
+            name.replace("action_", "")
+            for name in dir(cls)
+            if name.startswith("action_") and callable(getattr(cls, name, None))
         ]
 
     @property
-    def global_state(self) -> GlobalState:
+    def global_state(self) -> GS:
         return self._global_state
 
     @property
-    def internal_state(self) -> InternalState:
+    def internal_state(self) -> IS:
         return self._internal_state
 
     @abstractmethod
-    def update_state(self, state: GlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: GS) -> None:
+        """Apply the new ``state`` to the entity.
+
+        Single-argument by design: all environment context flows through
+        :class:`GlobalState`. If you need new context, extend the state
+        dataclass — do **not** add side-channel parameters here.
+        """
         raise NotImplementedError
 
     @property
@@ -100,40 +117,46 @@ class BaseEntity(ABC):
         raise NotImplementedError
 
     def action_deposit(self, amount_in_notional: float) -> None:
-        """
-        Deposits the specified amount in notional value into the entity.
-        Most entities can store the cash balance in notional value.
+        """Deposit notional cash into the entity.
 
-        Args:
-            amount_in_notional (float): The amount to be
-            deposited in notional value.
+        The default raises ``NotImplementedError`` so that entities that
+        do not handle cash (e.g. pure data feeds) fail loudly instead of
+        silently dropping the amount. Concrete entities holding notional
+        cash MUST override this method.
         """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support action_deposit; "
+            "override it on the concrete entity if it holds notional cash."
+        )
 
     def action_withdraw(self, amount_in_notional: float) -> None:
-        """
-        Withdraws the specified amount from the entity's account.
-        Most entities can store the cash balance in notional value.
+        """Withdraw notional cash from the entity.
 
-        Args:
-            amount_in_notional (float): The amount to withdraw
-            in notional value.
+        Same default-raise semantics as :meth:`action_deposit`.
         """
+        raise NotImplementedError(
+            f"{type(self).__name__} does not support action_withdraw; "
+            "override it on the concrete entity if it holds notional cash."
+        )
 
-    def execute(self, action: Action) -> Any:
+    def execute(self, action: Action) -> None:
+        """Execute an action on the entity.
+
+        Action methods on entities only mutate internal state; their
+        return value (if any) is discarded. The strategy-side flow only
+        cares about side effects, so we hide the return contract.
         """
-        Execute action on the entity.
-        """
-        # check if action is available
-        if action.action not in self.get_available_actions():
+        available = self.get_available_actions()
+        if action.action not in available:
             raise EntityException(
-                f"Action {action.action} is not available\
-                for entity {self.__class__.__name__}.\
-                Available actions: {self.get_available_actions()}"
+                f"Action {action.action!r} is not available for entity "
+                f"{self.__class__.__name__}. Available actions: {available}"
             )
-        return getattr(self, 'action_' + action.action)(**action.args)
+        getattr(self, "action_" + action.action)(**action.args)
 
     def __repr__(self) -> str:
-        repr: str = f"{self.__class__.__name__}("
-        repr += f"global_state={self.global_state}, "
-        repr += f"internal_state={self.internal_state})"
-        return repr
+        return (
+            f"{self.__class__.__name__}("
+            f"global_state={self.global_state}, "
+            f"internal_state={self.internal_state})"
+        )

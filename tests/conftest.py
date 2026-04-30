@@ -8,8 +8,11 @@ from core.hodler import Hodler, HodlerParams, HodlerStrategy
 def hodler() -> Hodler:
     return Hodler()
 
-@pytest.fixture(scope='module', autouse=True)
+@pytest.fixture(scope='function', autouse=True)
 def hodler_strategy() -> HodlerStrategy:
+    # Function-scoped: each test gets a fresh strategy. Shared scope was
+    # making tests order-dependent (mutations from test_register_entity
+    # leaked into test_step under STRICT_OBSERVATIONS).
     strategy = HodlerStrategy(debug=True, params=HodlerParams())
     return strategy
 

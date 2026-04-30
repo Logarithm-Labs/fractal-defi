@@ -1,6 +1,6 @@
 import pytest
 
-from fractal.core.entities.aave import (AaveEntity, AaveGlobalState,
+from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState,
                                         EntityException)
 
 
@@ -10,18 +10,42 @@ def aave_entity():
 
 
 @pytest.mark.core
-def test_action_redeem(aave_entity: AaveEntity):
+def test_action_repay(aave_entity: AaveEntity):
     aave_entity.internal_state.borrowed = 1000
-    aave_entity.action_redeem(500)
+    aave_entity.action_repay(500)
     assert aave_entity.internal_state.borrowed == 500
 
 
 @pytest.mark.core
-def test_action_redeem_exceeds_borrowed_amount(aave_entity: AaveEntity):
+def test_action_repay_exceeds_borrowed_amount(aave_entity: AaveEntity):
     aave_entity.internal_state.borrowed = 1000
     with pytest.raises(EntityException):
-        aave_entity.action_redeem(1500)
+        aave_entity.action_repay(1500)
     assert aave_entity.internal_state.borrowed == 1000
+
+
+@pytest.mark.core
+def test_action_redeem_deprecated_alias(aave_entity: AaveEntity):
+    """Old ``action_redeem`` still works but emits a DeprecationWarning."""
+    import warnings
+    aave_entity.internal_state.borrowed = 1000
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        aave_entity.action_redeem(400)
+    assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+    assert aave_entity.internal_state.borrowed == 600
+
+
+@pytest.mark.core
+def test_action_redeem_via_execute_routes_to_repay(aave_entity: AaveEntity):
+    """``Action('redeem', ...)`` keeps working via the alias."""
+    from fractal.core.base import Action
+    aave_entity.internal_state.borrowed = 1000
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        aave_entity.execute(Action("redeem", {"amount_in_product": 250}))
+    assert aave_entity.internal_state.borrowed == 750
 
 
 @pytest.mark.core

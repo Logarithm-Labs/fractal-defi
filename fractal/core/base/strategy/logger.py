@@ -48,8 +48,9 @@ class DefaultLogger(BaseLogger):
 
     def _init_base_path(self, base_artifacts_path: Optional[str] = None, class_name: str = None):
         if base_artifacts_path is None:
-            base_path: str = os.getenv('PYTHONAPTH', '')
-            if base_path == '':
+            # Honor an explicit run-output root if set; otherwise fall back to cwd.
+            base_path: str = os.getenv("PYTHONPATH", "")
+            if base_path == "":
                 base_path = os.getcwd()
             path = Path(f'{base_path}/runs/{class_name}/{self._id}')
             path.mkdir(parents=True, exist_ok=True)

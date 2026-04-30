@@ -3,9 +3,8 @@ from typing import List
 
 import numpy as np
 
-from fractal.core.base.entity import (EntityException, GlobalState,
-                                      InternalState)
-from fractal.core.entities.hedge import BaseHedgeEntity
+from fractal.core.base.entity import EntityException, GlobalState
+from fractal.core.entities.base.perp import BasePerpEntity, BasePerpInternalState
 
 
 class HyperliquidEntityException(EntityException):
@@ -57,17 +56,15 @@ class HyperLiquidGlobalState(GlobalState):
 
 
 @dataclass
-class HyperLiquidInternalState(InternalState):
-    """
-    Represents the internal state of the HyperLiquid entity.
+class HyperLiquidInternalState(BasePerpInternalState):
+    """Internal state of the HyperLiquid entity.
 
-    It includes the collateral and the positions of the entity.
+    Inherits ``collateral`` and adds an aggregated ``positions`` list.
     """
-    collateral: float = 0.0
     positions: List[HyperLiquidPosition] = field(default_factory=list)
 
 
-class HyperliquidEntity(BaseHedgeEntity):
+class HyperliquidEntity(BasePerpEntity):
     """
     Represents a Hyperliquid isolated market entity.
     """
@@ -83,9 +80,20 @@ class HyperliquidEntity(BaseHedgeEntity):
         self.TRADING_FEE = trading_fee
         self.MAX_LEVERAGE = max_leverage
 
+    _internal_state: HyperLiquidInternalState
+    _global_state: HyperLiquidGlobalState
+
     def _initialize_states(self):
         self._internal_state: HyperLiquidInternalState = HyperLiquidInternalState()
         self._global_state: HyperLiquidGlobalState = HyperLiquidGlobalState()
+
+    @property
+    def internal_state(self) -> HyperLiquidInternalState:  # type: ignore[override]
+        return self._internal_state
+
+    @property
+    def global_state(self) -> HyperLiquidGlobalState:  # type: ignore[override]
+        return self._global_state
 
     def action_deposit(self, amount_in_notional: float):
         """
@@ -248,7 +256,7 @@ class HyperliquidEntity(BaseHedgeEntity):
         else:
             self._internal_state.positions = [base]
 
-    def update_state(self, state: HyperLiquidGlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: HyperLiquidGlobalState) -> None:
         """
         Updates the entity's state with the given global state.
 

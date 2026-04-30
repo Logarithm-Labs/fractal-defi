@@ -3,10 +3,10 @@ from typing import List, Optional
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams
 from fractal.core.base.strategy import NamedEntity
-from fractal.core.entities import BaseHedgeEntity, BaseSpotEntity, GMXV2Entity, StakedETHEntity
-from fractal.core.entities.aave import AaveEntity
-from fractal.core.entities.lending import BaseLendingEntity
-from fractal.core.entities.uniswap_v3_spot import UniswapV3SpotEntity
+from fractal.core.entities import BasePerpEntity, BaseSpotEntity, GMXV2Entity, StakedETHEntity
+from fractal.core.entities.protocols.aave import AaveEntity
+from fractal.core.entities.base.lending import BaseLendingEntity
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
 
 
 @dataclass
@@ -30,7 +30,7 @@ class BasisAaveGmxReversedNotionalParams(BaseStrategyParams):
     STAKE: bool
 
 
-class BasisAaveGmxReversedNotional(BaseStrategy):
+class BasisAaveGmxReversedNotional(BaseStrategy[BasisAaveGmxReversedNotionalParams]):
     """
     A basis strategy with non usd notional.
     Strategy is based on the following steps:
@@ -95,9 +95,8 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
             debug (bool): Flag to enable debug mode.
             **kwargs: Arbitrary keyword arguments.
         """
-        self._params: BasisAaveGmxReversedNotionalParams = None  # set for type hinting
         super().__init__(params=params, debug=debug, *args, **kwargs)
-        self._stake = params.STAKE
+        self._stake = self._params.STAKE
 
     def set_up(self, *args, **kwargs):
         """
@@ -125,7 +124,7 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
         Returns:
             List[ActionToTake]: A list of actions to take.
         """
-        hedge: BaseHedgeEntity = self.get_entity("HEDGE")
+        hedge: BasePerpEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
         lending: BaseLendingEntity = self.get_entity("LENDING")
 
@@ -156,7 +155,7 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
         Returns:
             List[ActionToTake]: A list of actions to take.
         """
-        hedge: BaseHedgeEntity = self.get_entity("HEDGE")
+        hedge: BasePerpEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
         lending: BaseLendingEntity = self.get_entity("LENDING")
 
@@ -208,7 +207,7 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
                 ),
                 ActionToTake(
                     entity_name="LENDING",
-                    action=Action("redeem", {"amount_in_product": repay_amount_real}),
+                    action=Action("repay", {"amount_in_product": repay_amount_real}),
                 ),
                 ActionToTake(
                     entity_name="SPOT",
@@ -226,7 +225,7 @@ class BasisAaveGmxReversedNotional(BaseStrategy):
         Returns:
             List[ActionToTake]: A list of actions to take.
         """
-        hedge: BaseHedgeEntity = self.get_entity("HEDGE")
+        hedge: BasePerpEntity = self.get_entity("HEDGE")
         spot: BaseSpotEntity = self.get_entity("SPOT")
         hedge_balance = hedge.balance
         spot_balance = spot.balance

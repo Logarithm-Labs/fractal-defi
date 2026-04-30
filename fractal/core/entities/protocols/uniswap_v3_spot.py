@@ -1,8 +1,7 @@
 from dataclasses import dataclass
 
-from fractal.core.base.entity import (EntityException, GlobalState,
-                                      InternalState)
-from fractal.core.entities.spot import BaseSpotEntity
+from fractal.core.base.entity import EntityException, GlobalState
+from fractal.core.entities.base.spot import BaseSpotEntity, BaseSpotInternalState
 
 
 class UniswapV3SpotEntityException(EntityException):
@@ -15,9 +14,8 @@ class UniswapV3SpotGlobalState(GlobalState):
 
 
 @dataclass
-class UniswapV3SpotInternalState(InternalState):
-    amount: float = 0.0
-    cash: float = 0.0
+class UniswapV3SpotInternalState(BaseSpotInternalState):
+    pass
 
 
 class UniswapV3SpotEntity(BaseSpotEntity):
@@ -90,7 +88,7 @@ class UniswapV3SpotEntity(BaseSpotEntity):
             raise UniswapV3SpotEntityException(f"Invalid deposit amount: {amount_in_notional}")
         self._internal_state.cash += amount_in_notional
 
-    def update_state(self, state: UniswapV3SpotGlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: UniswapV3SpotGlobalState) -> None:
         """
         Updates the global state of the Uniswap V3 Spot protocol.
 
@@ -98,6 +96,10 @@ class UniswapV3SpotEntity(BaseSpotEntity):
             state (UniswapV3SpotGlobalState): The new global state.
         """
         self._global_state: UniswapV3SpotGlobalState = state
+
+    @property
+    def current_price(self) -> float:
+        return self._global_state.price
 
     @property
     def balance(self) -> float:

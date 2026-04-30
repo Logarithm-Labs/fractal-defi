@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from fractal.core.entities.hyperliquid import (HyperliquidEntity,
+from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                HyperLiquidGlobalState,
                                                HyperLiquidPosition)
 
@@ -111,6 +111,55 @@ def test_state_update(hyperliquid_entity):
     state = HyperLiquidGlobalState(mark_price=10, funding_rate=0.004)
     hyperliquid_entity.update_state(state)
     assert hyperliquid_entity.global_state == state
+
+
+@pytest.mark.core
+def test_action_close_position_flattens_long(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.action_open_position(0.5)
+    assert hyperliquid_entity.size == 0.5
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3100))
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    # Realized profit folded into collateral: 0.5 * (3100 - 3000) = 50
+    assert hyperliquid_entity.balance == pytest.approx(1050)
+
+
+@pytest.mark.core
+def test_action_close_position_flattens_short(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.action_open_position(-0.5)
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=2900))
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    # Short profits when price drops: 0.5 * (3000 - 2900) = 50
+    assert hyperliquid_entity.balance == pytest.approx(1050)
+
+
+@pytest.mark.core
+def test_action_close_position_when_flat_is_noop(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    assert hyperliquid_entity.balance == 1000
+
+
+@pytest.mark.core
+def test_pnl_property_polymorphic(hyperliquid_entity):
+    """Through BasePerpEntity, `pnl` is the contract for unrealized PnL."""
+    from fractal.core.entities import BasePerpEntity
+    assert isinstance(hyperliquid_entity, BasePerpEntity)
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.action_open_position(0.5)
+    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3200))
+    assert hyperliquid_entity.pnl == pytest.approx(0.5 * 200)
 
 
 @pytest.mark.core

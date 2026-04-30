@@ -2,14 +2,14 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from fractal.core.base.entity import EntityException
+from fractal.core.base.entity import EntityException, GlobalState, InternalState
 from fractal.core.entities.models.uniswap_v3_fees import (estimate_fee,
                                                           get_liquidity_delta)
-from fractal.core.entities.pool import BasePoolEntity
+from fractal.core.entities.base.pool import BasePoolEntity
 
 
 @dataclass
-class UniswapV3LPGlobalState:
+class UniswapV3LPGlobalState(GlobalState):
     """
     Represents the global state of the UniswapV3 LP entity.
 
@@ -28,7 +28,7 @@ class UniswapV3LPGlobalState:
 
 
 @dataclass
-class UniswapV3LPInternalState:
+class UniswapV3LPInternalState(InternalState):
     """
     Represents the internal state of an UniswapV3 LP entity.
 

@@ -1,11 +1,11 @@
 from dataclasses import dataclass
 
-from fractal.core.base.entity import EntityException
-from fractal.core.entities.lending import BaseLendingEntity
+from fractal.core.base.entity import EntityException, GlobalState, InternalState
+from fractal.core.entities.base.lending import BaseLendingEntity
 
 
 @dataclass
-class AaveGlobalState:
+class AaveGlobalState(GlobalState):
     """
     Represents the global state of the Aave protocol.
 
@@ -22,7 +22,7 @@ class AaveGlobalState:
 
 
 @dataclass
-class AaveInternalState:
+class AaveInternalState(InternalState):
     """
     Represents the internal state of an Aave entity.
 
@@ -55,16 +55,32 @@ class AaveEntity(BaseLendingEntity):
         self._internal_state: AaveInternalState = AaveInternalState()
         self._global_state: AaveGlobalState = AaveGlobalState()
 
-    def action_redeem(self, amount_in_product: float):
-        """
-        Redeems an amount on the Aave protocol.
+    def action_repay(self, amount_in_product: float):
+        """Repay borrowed product debt on Aave.
 
         Args:
-            amount_in_product (float, optional): The amount to redeem in product value.
+            amount_in_product: Amount of borrowed product to repay.
         """
         if amount_in_product > self._internal_state.borrowed:
             raise EntityException("Repay amount exceeds borrowed amount")
         self._internal_state.borrowed -= amount_in_product
+
+    def action_redeem(self, amount_in_product: float):
+        """Deprecated alias of :meth:`action_repay`.
+
+        Kept for back-compat: the method was originally named ``redeem``
+        even though semantically it repays debt (Aave V3 uses
+        ``repay``). New code should use :meth:`action_repay`. Calls
+        through ``execute(Action('redeem', ...))`` continue to work.
+        """
+        import warnings
+        warnings.warn(
+            "AaveEntity.action_redeem is deprecated; use action_repay instead "
+            "(it repays borrowed debt — 'redeem' was a misnomer).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        self.action_repay(amount_in_product)
 
     def action_borrow(self, amount_in_product: float):
         """

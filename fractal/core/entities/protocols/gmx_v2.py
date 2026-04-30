@@ -3,9 +3,8 @@ from typing import List
 
 import numpy as np
 
-from fractal.core.base.entity import (EntityException, GlobalState,
-                                      InternalState)
-from fractal.core.entities.hedge import BaseHedgeEntity
+from fractal.core.base.entity import EntityException, GlobalState
+from fractal.core.entities.base.perp import BasePerpEntity, BasePerpInternalState
 
 
 class GMXV2EntityException(EntityException):
@@ -66,17 +65,15 @@ class GMXV2GlobalState(GlobalState):
 
 
 @dataclass
-class GMXV2InternalState(InternalState):
-    """
-    Represents the internal state of the GMX V2 entity.
+class GMXV2InternalState(BasePerpInternalState):
+    """Internal state of the GMX V2 entity.
 
-    It includes the collateral and the positions of the entity.
+    Inherits ``collateral`` and adds an aggregated ``positions`` list.
     """
-    collateral: float = 0.0
     positions: List[GMXV2Position] = field(default_factory=list)
 
 
-class GMXV2Entity(BaseHedgeEntity):
+class GMXV2Entity(BasePerpEntity):
     """
     Represents a GMX isolated market entity.
     """
@@ -93,9 +90,20 @@ class GMXV2Entity(BaseHedgeEntity):
         self.TRADING_FEE = trading_fee
         self.LIQUIDATION_LEVERAGE = liquidation_leverage
 
+    _internal_state: GMXV2InternalState
+    _global_state: GMXV2GlobalState
+
     def _initialize_states(self):
         self._internal_state: GMXV2InternalState = GMXV2InternalState()
         self._global_state: GMXV2GlobalState = GMXV2GlobalState()
+
+    @property
+    def internal_state(self) -> GMXV2InternalState:  # type: ignore[override]
+        return self._internal_state
+
+    @property
+    def global_state(self) -> GMXV2GlobalState:  # type: ignore[override]
+        return self._global_state
 
     def action_deposit(self, amount_in_notional: float):
         """
@@ -108,7 +116,7 @@ class GMXV2Entity(BaseHedgeEntity):
             raise GMXV2EntityException(f"Invalid deposit amount: {amount_in_notional} < 0.")
         self._internal_state.collateral += amount_in_notional
 
-    def action_withdraw(self, amount_in_notional: float) -> float:
+    def action_withdraw(self, amount_in_notional: float) -> None:
         """
         Withdraws a specified amount of notional from the entity's collateral.
 
@@ -206,7 +214,7 @@ class GMXV2Entity(BaseHedgeEntity):
         price = self._global_state.price
         self._internal_state.positions = [GMXV2Position(amount=size, entry_price=price)]
 
-    def update_state(self, state: GMXV2GlobalState, *args, **kwargs) -> None:
+    def update_state(self, state: GMXV2GlobalState) -> None:
         """
         Updates the entity's state with the given global state.
 
