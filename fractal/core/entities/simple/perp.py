@@ -218,8 +218,14 @@ class SimplePerpEntity(BasePerpEntity):
             abs(self._internal_state.size) * self._global_state.mark_price / self.balance
         )
 
-    # ----------------------------------------------------------- internals
-    def _maintenance_margin(self) -> float:
+    @property
+    def maintenance_margin(self) -> float:
+        """Maintenance margin required at the **current** mark price.
+
+        SimplePerp simplification: ``MM = |size| × mark_price / max_leverage``
+        (i.e. ``MMR = 1 / max_leverage``, vs Hyperliquid's
+        ``1 / (2 × max_leverage)``). Returns ``0`` when flat.
+        """
         if self._internal_state.size == 0:
             return 0.0
         return (
@@ -228,10 +234,36 @@ class SimplePerpEntity(BasePerpEntity):
             / self.MAX_LEVERAGE
         )
 
+    @property
+    def liquidation_price(self) -> float:
+        """Closed-form liquidation price for the current position.
+
+        Solves ``balance(p) = MM(p)`` with ``MM(p) = |size| × p / max_leverage``:
+
+            liq = (size × entry − collateral) / (size × (1 − MMR × side))
+
+        where ``MMR = 1 / max_leverage`` and ``side ∈ {+1, −1}``.
+        Returns ``NaN`` when no position is open. May be ``≤ 0`` for an
+        over-collateralized long (no liquidation possible at any positive
+        price).
+        """
+        size = self._internal_state.size
+        if size == 0:
+            return float("nan")
+        entry = self._internal_state.entry_price
+        mmr = 1.0 / self.MAX_LEVERAGE
+        side = 1.0 if size > 0 else -1.0
+        return (size * entry - self._internal_state.collateral) / (size * (1.0 - mmr * side))
+
+    # ----------------------------------------------------------- internals
+    def _maintenance_margin(self) -> float:
+        """Deprecated alias of :attr:`maintenance_margin` — kept for back-compat."""
+        return self.maintenance_margin
+
     def _check_liquidation(self) -> bool:
         if self._internal_state.size == 0:
             return False
-        return self.balance < self._maintenance_margin()
+        return self.balance < self.maintenance_margin
 
     def _wipe(self) -> None:
         self._internal_state.collateral = 0.0

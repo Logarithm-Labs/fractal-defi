@@ -1,8 +1,6 @@
 from dataclasses import dataclass, field
 from typing import List
 
-import numpy as np
-
 from fractal.core.base.entity import EntityException, GlobalState
 from fractal.core.entities.base.perp import BasePerpEntity, BasePerpInternalState
 
@@ -13,34 +11,23 @@ class HyperliquidEntityException(EntityException):
     """
 
 
+@dataclass
 class HyperLiquidPosition:
+    """A single Hyperliquid perp position.
+
+    Attributes:
+        amount: Signed product quantity. Positive = long, negative = short.
+        entry_price: Mark price at which the position was opened (in notional).
+        max_leverage: Per-position max leverage (3x–50x on Hyperliquid mainnet).
+            Together with ``MMR = 1 / (2 × max_leverage)`` drives the
+            maintenance-margin and liquidation-price computations.
     """
-    A position in the Hyperliquid Hedge.
-    It includes the amount, the entry price and desired leverage of the position.
-        """
-
-    def __init__(self, amount: float, entry_price: float, max_leverage: float):
-        """
-        Initializes the HyperLiquidPosition.
-
-        Args:
-            amount (float): The amount of the position in product (e.g. BTC, ETH, etc.)
-            entry_price (float): The entry price of the position in notional (e.g. USD, USDC, etc.)
-            max_leverage (float): Pair's max leverage available to trade (from 3x to 50x on HyperLiquid)
-        """
-        self.amount: float = amount  # negative if short
-        self.entry_price: float = entry_price
-        self.max_leverage: float = max_leverage
-
-    def __repr__(self):
-        return (f"HyperLiquidPosition(amount={self.amount}, entry_price={self.entry_price})")
+    amount: float
+    entry_price: float
+    max_leverage: float
 
     def unrealised_pnl(self, price: float) -> float:
-        """
-        Calculates the profit and loss (PNL) of the position.
-
-        PNL = Amount * (Price - Entry Price)
-        """
+        """Mark-to-market PnL: ``amount × (price − entry_price)``."""
         return self.amount * (price - self.entry_price)
 
 
@@ -73,6 +60,14 @@ class HyperliquidEntity(BasePerpEntity):
     _global_state: HyperLiquidGlobalState
 
     def __init__(self, *args, trading_fee: float = 0.00035, max_leverage: float = 50, **kwargs):
+        if trading_fee < 0:
+            raise HyperliquidEntityException(
+                f"trading_fee must be >= 0, got {trading_fee}"
+            )
+        if max_leverage <= 0:
+            raise HyperliquidEntityException(
+                f"max_leverage must be > 0, got {max_leverage}"
+            )
         # Set config BEFORE super so any subclass override of
         # ``_initialize_states`` can rely on ``self.TRADING_FEE`` / ``self.MAX_LEVERAGE``.
         self.TRADING_FEE: float = trading_fee
@@ -104,17 +99,16 @@ class HyperliquidEntity(BasePerpEntity):
         self._internal_state.collateral += amount_in_notional
 
     def action_withdraw(self, amount_in_notional: float):
-        """
-        Withdraws a specified amount of notional from the entity's collateral.
+        """Withdraws notional collateral, blocking if it would push the
+        position below maintenance margin at the **current** mark price.
 
         Args:
-            amount_in_notional (float): The amount of notional to withdraw.
-
-        Returns:
-            float: The remaining balance after the withdrawal.
+            amount_in_notional: Amount of notional to withdraw.
 
         Raises:
-            ValueError: If there is not enough balance to withdraw.
+            HyperliquidEntityException: If amount is negative, exceeds balance,
+                or would push post-withdrawal balance strictly below the
+                maintenance margin requirement.
         """
         if amount_in_notional < 0:
             raise HyperliquidEntityException(f"Invalid withdraw amount: {amount_in_notional} < 0.")
@@ -122,17 +116,12 @@ class HyperliquidEntity(BasePerpEntity):
             raise HyperliquidEntityException(f"Not enough balance to withdraw: {self.balance} < {amount_in_notional}.")
 
         if self._internal_state.positions:
-            position_size = sum(np.abs(pos.amount) for pos in self._internal_state.positions)
-            entry_price: float = sum(
-                (pos.entry_price * np.abs(pos.amount) / position_size) for pos in self._internal_state.positions)
-            leverage = self._internal_state.positions[0].max_leverage
-
-            maintenance_margin: float = (entry_price * position_size) / (2 * leverage)
-
-            if self.balance - amount_in_notional < maintenance_margin:
+            mm = self.maintenance_margin
+            if self.balance - amount_in_notional < mm:
                 raise HyperliquidEntityException(
-                    f"Not enough maintenance margin after withdraw: {maintenance_margin} < "
-                    f"{self.balance - amount_in_notional}.")
+                    f"Not enough maintenance margin after withdraw: post-withdraw balance "
+                    f"{self.balance - amount_in_notional} < maintenance_margin {mm}."
+                )
         self._internal_state.collateral -= amount_in_notional
 
     def action_open_position(self, amount_in_product):
@@ -141,18 +130,21 @@ class HyperliquidEntity(BasePerpEntity):
 
         Args:
             amount_in_product (float): The amount of product to open the position with.
-                Negative values open a short.
+                Negative values open a short. Zero is a no-op.
         """
         if self._global_state.mark_price <= 0:
             raise HyperliquidEntityException(
                 f"mark_price must be > 0, got {self._global_state.mark_price}"
             )
+        # Zero-amount short-circuit: no fee, no state mutation.
+        if amount_in_product == 0:
+            return
         self._internal_state.positions.append(
             HyperLiquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
                                 max_leverage=self.MAX_LEVERAGE))
 
-        self._internal_state.collateral -= np.abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
+        self._internal_state.collateral -= abs(self._global_state.mark_price * amount_in_product * self.TRADING_FEE)
         self._clearing()  # consider only one position for simplicity
 
     @property
@@ -189,17 +181,67 @@ class HyperliquidEntity(BasePerpEntity):
         return sum(pos.amount for pos in self._internal_state.positions)
 
     @property
-    def leverage(self):
-        """
-        Calculates the leverage of the entity.
+    def leverage(self) -> float:
+        """Effective leverage: ``|size| × mark_price / balance``.
 
-        The leverage is the absolute ratio of the total position size to the balance.
-        Returns:
-            float: The leverage.
+        Edge cases:
+        * No position (``size == 0``): returns ``0``.
+        * Position exists but ``balance ≤ 0`` (already underwater /
+          past-liquidation): returns ``+inf`` rather than a meaningless
+          negative ratio.
         """
-        if self.balance == 0 or self.size == 0:
+        if self.size == 0:
             return 0
+        if self.balance <= 0:
+            return float("inf")
         return abs(self.size) * self._global_state.mark_price / self.balance
+
+    @property
+    def maintenance_margin(self) -> float:
+        """Maintenance margin required at the **current** mark price.
+
+        Per Hyperliquid: ``MM = |size| × mark_price × MMR``, where
+        ``MMR = 1 / (2 × max_leverage)`` (single-tier simplification).
+
+        Returns ``0.0`` when no position is open.
+        """
+        if not self._internal_state.positions:
+            return 0.0
+        pos = self._internal_state.positions[0]
+        mmr = 1.0 / (2.0 * pos.max_leverage)
+        return abs(self.size) * self._global_state.mark_price * mmr
+
+    @property
+    def liquidation_price(self) -> float:
+        """Closed-form liquidation price for the current position.
+
+        Solves ``balance(p) = MM(p)`` where:
+
+            balance(p) = collateral + size × (p − entry)
+            MM(p)      = |size| × p × MMR
+
+        Result (with signed ``size`` and ``side ∈ {+1, −1}``):
+
+            liq = (size × entry − collateral) / (size × (1 − MMR × side))
+
+        For a long (side = +1): ``liq < entry``; the position is liquidated
+        on a price drop. For a short (side = −1): ``liq > entry``; liquidated
+        on a price rise.
+
+        Returns ``NaN`` when no position is open. May return a value ``<= 0``
+        for an over-collateralized long (no liquidation possible at any
+        positive price) — strategies should treat ``<= 0`` as "safe forever".
+        """
+        if not self._internal_state.positions:
+            return float("nan")
+        pos = self._internal_state.positions[0]
+        size = pos.amount  # signed
+        if size == 0:
+            return float("nan")
+        entry = pos.entry_price
+        mmr = 1.0 / (2.0 * pos.max_leverage)
+        side = 1.0 if size > 0 else -1.0
+        return (size * entry - self._internal_state.collateral) / (size * (1.0 - mmr * side))
 
     def _clearing(self):
         """
@@ -240,13 +282,17 @@ class HyperliquidEntity(BasePerpEntity):
                 remaining = abs(pos.amount) - closed_qty
                 if remaining > 0:
                     # If the base position is fully closed, adopt the remainder as the new base position.
+                    # Carry over the **incoming position's** ``max_leverage`` —
+                    # the remainder belongs to that position, not to the entity default.
                     if abs(base.amount) < 1e-9:
                         base = HyperLiquidPosition(
                             amount=remaining if pos.amount > 0 else -remaining,
                             entry_price=pos.entry_price,
-                            max_leverage=self.MAX_LEVERAGE
+                            max_leverage=pos.max_leverage,
                         )
-                    # If the base position is not fully closed, the remaining incoming position is effectively absorbed.
+                    # ``remaining > 0 AND abs(base.amount) > 0`` is unreachable
+                    # because ``closed_qty = min(|base|, |pos|)`` so at least one
+                    # side fully closes per iteration.
 
         # Add the realized pnl from the closed quantity to the collateral.
         self._internal_state.collateral += realized_pnl
@@ -258,58 +304,53 @@ class HyperliquidEntity(BasePerpEntity):
             self._internal_state.positions = [base]
 
     def update_state(self, state: HyperLiquidGlobalState) -> None:
-        """
-        Updates the entity's state with the given global state.
+        """Step the entity forward to ``state``.
 
-        1. Updates the global state.
-        2. Check liquidation.
-        3. Settle fundings.
+        Order: apply state → **settle funding** → **check liquidation**.
+        Funding settles BEFORE the liquidation check so a saving (or
+        damning) funding tick is honored in the same bar — matching the
+        ``SimplePerpEntity`` convention and Hyperliquid's continuous
+        funding accrual.
+
+        Funding sign convention: with ``funding_rate > 0`` the long pays
+        the short. For a long (``size > 0``): ``collateral`` decreases.
+        For a short (``size < 0``): ``collateral`` increases (received).
+        Symmetrically with negative rate.
 
         Args:
-            state (HyperLiquidGlobalState): The global state to update with.
+            state: The global state to update with.
         """
         self._global_state = state
+
+        # 1. Settle funding on the alive position.
+        if self._internal_state.positions:
+            funding_payment = self.size * state.mark_price * state.funding_rate
+            self._internal_state.collateral -= funding_payment
+
+        # 2. Check liquidation on the POST-funding balance.
         if self._check_liquidation():
             self._internal_state.collateral = 0
             self._internal_state.positions = []
 
-        global_price: float = self._global_state.mark_price
-        current_size: float = self.size
-        self._internal_state.collateral -= current_size * global_price * self._global_state.funding_rate
+    def _check_liquidation(self) -> bool:
+        """Whether the position should be liquidated at the current mark price.
 
-    def _check_liquidation(self):
+        Per Hyperliquid: liquidate when ``account_value ≤ maintenance_margin``,
+        where both sides are evaluated **at the current mark price**:
+
+            account_value(p) = collateral + size × (p − entry)
+            maintenance_margin(p) = |size| × p × MMR
+
+        Equivalent to: ``mark_price <= liquidation_price`` for a long,
+        ``mark_price >= liquidation_price`` for a short.
+
+        The original implementation computed maintenance margin from
+        ``entry_price`` instead of ``mark_price`` — this mixed reference
+        points (``balance`` is current, ``MM(entry)`` is not) and produced
+        a premature liquidation by ``(collateral / |size|) × MMR`` in price
+        terms. Catastrophically wrong for low-leverage positions; small
+        but real for high-leverage ones.
         """
-        Determine if a position should be liquidated on Hyperliquid.
-
-        Returns:
-          bool : True if liquidation should be triggered, False otherwise.
-
-        Liquidation is determined based on the liquidation price:
-          For a long position (side = 1): if current_price <= liq_price --> liquidate.
-          For a short position (side = -1): if current_price >= liq_price --> liquidate.
-
-        The formula used:
-          maintenance_margin_required = (entry_price * position_size) / (2 * leverage)
-          margin_available = margin_balance - maintenance_margin_required
-          liq_price = entry_price - side * (margin_available) / (position_size * (1 - (1/leverage)*side))
-
-        This formula follows the Hyperliquid documentation on computing liquidation price.
-        """
-
         if not self._internal_state.positions:
             return False
-
-        position_size = abs(self.size)
-        entry_price: float = self._internal_state.positions[0].entry_price
-        current_price = self._global_state.mark_price
-        margin_balance = self.balance
-        leverage = self._internal_state.positions[0].max_leverage  # One position has one max leverage value
-        side = self._internal_state.positions[0].amount / np.abs(self._internal_state.positions[0].amount)
-
-        maintenance_margin = (entry_price * position_size) / (2 * leverage)
-        margin_available = margin_balance - maintenance_margin
-
-        # If margin_available is negative, the position should be liquidated immediately.
-        if margin_available < 0:
-            return True
-        return False
+        return bool(self.balance <= self.maintenance_margin)
