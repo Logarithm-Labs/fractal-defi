@@ -8,7 +8,8 @@ from fractal.loaders.thegraph.uniswap_v3 import (
     ArbitrumUniswapV3Loader, EthereumUniswapV3Loader,
     UniswapV3ArbitrumPoolDayDataLoader, UniswapV3ArbitrumPoolHourDataLoader,
     UniswapV3ArbitrumPricesLoader, UniswapV3EthereumPoolDayDataLoader,
-    UniswapV3EthereumPoolHourDataLoader)
+    UniswapV3EthereumPoolHourDataLoader, UniswapV3EthereumPoolMinuteDataLoader,
+    UniswapV3EthereumPricesLoader)
 
 __all__ = [
     "BaseGraphLoader",
@@ -23,5 +24,7 @@ __all__ = [
     "UniswapV3EthereumPoolHourDataLoader",
     "UniswapV3ArbitrumPoolHourDataLoader",
     "UniswapV3ArbitrumPricesLoader",
+    "UniswapV3EthereumPricesLoader",
+    "UniswapV3EthereumPoolMinuteDataLoader",
     "StETHLoader",
 ]

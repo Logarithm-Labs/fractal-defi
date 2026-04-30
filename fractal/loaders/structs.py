@@ -1,64 +1,129 @@
-from typing import Optional
+"""
+Typed pandas DataFrame wrappers used as the I/O contract for all loaders.
+
+All loaders MUST return one of these structures with a UTC-aware
+``DatetimeIndex`` and the documented column set. Empty periods are valid:
+loaders return an instance of the correct shape with zero rows.
+
+Simulation loaders that produce multiple synthetic trajectories return a
+:data:`TrajectoryBundle` — a list of one of the structures above.
+"""
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 
 
+def _to_utc_index(time: np.ndarray) -> pd.DatetimeIndex:
+    """Coerce an array-like of timestamps to a UTC-aware ``DatetimeIndex``."""
+    idx = pd.to_datetime(time, utc=True)
+    if not isinstance(idx, pd.DatetimeIndex):
+        idx = pd.DatetimeIndex(idx)
+    idx.name = "time"
+    return idx
+
+
 class PriceHistory(pd.DataFrame):
-    """
-    Price history data structure.
-    """
-    def __init__(self, prices: np.array, time: np.array):
-        super().__init__(data=prices, index=time, columns=['price'])
+    """Single-column price series indexed by UTC timestamps."""
+
+    def __init__(self, prices: np.ndarray, time: np.ndarray):
+        prices = np.asarray(prices, dtype=float)
+        super().__init__(data={"price": prices}, index=_to_utc_index(time))
 
 
 class FundingHistory(pd.DataFrame):
-    """
-    Funding history data structure.
-    """
-    def __init__(self, rates: np.array, time: np.array):
-        super().__init__(data=rates,
-                         index=time, columns=['rate'])
+    """Funding-rate series indexed by UTC timestamps. Column: ``rate``."""
+
+    def __init__(self, rates: np.ndarray, time: np.ndarray):
+        rates = np.asarray(rates, dtype=float)
+        super().__init__(data={"rate": rates}, index=_to_utc_index(time))
 
 
 class RateHistory(pd.DataFrame):
-    """
-    Staking rate history data structure.
-    """
-    def __init__(self, rates: np.array, time: np.array):
-        super().__init__(data=rates,
-                         index=time, columns=['rate'])
+    """Generic rate series (e.g. staking APR/hour). Column: ``rate``."""
+
+    def __init__(self, rates: np.ndarray, time: np.ndarray):
+        rates = np.asarray(rates, dtype=float)
+        super().__init__(data={"rate": rates}, index=_to_utc_index(time))
 
 
 class LendingHistory(pd.DataFrame):
-    """
-    Lending/borrowing history data structure.
-    """
-    def __init__(self, lending_rates: np.array, borrowing_rates: np.array, time: np.array):
-        super().__init__(data=np.array([lending_rates, borrowing_rates]).T,
-                         index=time, columns=['lending_rate', 'borrowing_rate'])
+    """Lending+borrowing rate series. Columns: ``lending_rate``, ``borrowing_rate``."""
+
+    def __init__(
+        self,
+        lending_rates: np.ndarray,
+        borrowing_rates: np.ndarray,
+        time: np.ndarray,
+    ):
+        super().__init__(
+            data={
+                "lending_rate": np.asarray(lending_rates, dtype=float),
+                "borrowing_rate": np.asarray(borrowing_rates, dtype=float),
+            },
+            index=_to_utc_index(time),
+        )
 
 
 class PoolHistory(pd.DataFrame):
     """
-    Pool data structure.
+    AMM pool snapshots. Columns: ``tvl``, ``volume``, ``fees``, ``liquidity``.
+    If ``prices`` is provided it is appended as ``price`` column (used by
+    pool loaders that already carry the spot price alongside reserves).
     """
-    def __init__(self, tvls: np.array, volumes: np.array, fees: np.array,
-                 liquidity: np.array, time: np.array, prices: Optional[np.array] = None):
-        super().__init__(
-            data=np.array([tvls, volumes, fees, liquidity]).T,
-            index=time,
-            columns=['tvl', 'volume', 'fees', 'liquidity']
-        )
+
+    def __init__(
+        self,
+        tvls: np.ndarray,
+        volumes: np.ndarray,
+        fees: np.ndarray,
+        liquidity: np.ndarray,
+        time: np.ndarray,
+        prices: Optional[np.ndarray] = None,
+    ):
+        data = {
+            "tvl": np.asarray(tvls, dtype=float),
+            "volume": np.asarray(volumes, dtype=float),
+            "fees": np.asarray(fees, dtype=float),
+            "liquidity": np.asarray(liquidity, dtype=float),
+        }
+        if prices is not None:
+            data["price"] = np.asarray(prices, dtype=float)
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
+# Simulation loaders fan out into multiple trajectories. We expose the
+# return type as a named alias so downstream code can `isinstance`-check
+# / annotate cleanly without leaking ``List[PriceHistory]`` everywhere.
+TrajectoryBundle = List[PriceHistory]
 
 
 class KlinesHistory(pd.DataFrame):
     """
-    OHLC Klines data structure.
+    OHLCV klines. Columns: ``open``, ``high``, ``low``, ``close``, ``volume``.
+    ``volume`` defaults to zeros if a feed does not expose it (back-compat
+    for loaders that pre-date PR #27).
     """
-    def __init__(self, time: np.array,
-                 open: np.array, high: np.array,
-                 low: np.array, close: np.array,
-                 volume: np.array):
-        super().__init__(data=np.array([open, high, low, close, volume]).T,
-                         index=time, columns=['open', 'high', 'low', 'close', 'volume'])
+
+    def __init__(
+        self,
+        time: np.ndarray,
+        open: np.ndarray,  # noqa: A002 - shadowing built-in is the natural OHLCV name
+        high: np.ndarray,
+        low: np.ndarray,
+        close: np.ndarray,
+        volume: Optional[np.ndarray] = None,
+    ):
+        open_ = np.asarray(open, dtype=float)
+        if volume is None:
+            volume = np.zeros_like(open_)
+        super().__init__(
+            data={
+                "open": open_,
+                "high": np.asarray(high, dtype=float),
+                "low": np.asarray(low, dtype=float),
+                "close": np.asarray(close, dtype=float),
+                "volume": np.asarray(volume, dtype=float),
+            },
+            index=_to_utc_index(time),
+        )

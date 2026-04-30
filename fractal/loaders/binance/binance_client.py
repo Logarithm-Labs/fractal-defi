@@ -1,55 +1,28 @@
-from dataclasses import dataclass
+"""Binance USDT-M futures REST wrapper used by the funding/kline loaders.
+
+This is a thin adapter around the shared :class:`fractal.loaders._http.HttpClient`
+so we don't have to duplicate retry/backoff logic per call site.
+"""
 from typing import Any, Dict, Optional
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
+from fractal.loaders._http import HttpClient
 
-FUTURES_SECTION = 'futures'
-SPOT_SECTION = 'spot'
+FUTURES_SECTION = "futures"
+SPOT_SECTION = "spot"
 
-@dataclass
-class HttpConfig:
-    futures_base_url: str = "https://fapi.binance.com"
-    timeout: int = 15
-    max_retries: int = 5
-    backoff_factor: float = 0.5
+_BASES = {
+    FUTURES_SECTION: "https://fapi.binance.com",
+}
 
 
 class BinanceHttp:
+    """Issue GETs against Binance public REST endpoints."""
 
-    def __init__(self, cfg: Optional[HttpConfig] = None) -> None:
-        self.cfg = cfg or HttpConfig()
-        self.session = requests.Session()
-
-        retry = Retry(
-            total=self.cfg.max_retries,
-            read=self.cfg.max_retries,
-            connect=self.cfg.max_retries,
-            status=self.cfg.max_retries,
-            status_forcelist=(429, 500, 502, 503, 504),
-            allowed_methods=("GET",),
-            backoff_factor=self.cfg.backoff_factor,
-            raise_on_status=False,
-            respect_retry_after_header=True,
-        )
-        adapter = HTTPAdapter(max_retries=retry)
-        self.session.mount("http://", adapter)
-        self.session.mount("https://", adapter)
+    def __init__(self, http: Optional[HttpClient] = None) -> None:
+        self._http = http or HttpClient()
 
     def get(self, section: str, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
-        if section.lower() == FUTURES_SECTION:
-            base_url: str = self.cfg.futures_base_url
-        else:
+        if section.lower() not in _BASES:
             raise ValueError(f"Unknown section {section} for Binance API")
-
-        url = f"{base_url}{path}"
-        resp = self.session.get(url, params=params or {}, timeout=self.cfg.timeout)
-        try:
-            resp.raise_for_status()
-        except requests.HTTPError as e:
-            # Attach response text for easier debugging while keeping the original error
-            raise requests.HTTPError(
-            f"HTTP {resp.status_code} for {url} with params={params}: {resp.text[:300]}"
-            ) from e
-        return resp.json()
+        url = f"{_BASES[section.lower()]}{path}"
+        return self._http.get(url, params=params)

@@ -1,22 +1,33 @@
+"""Hyperliquid public-info API loaders.
+
+Endpoints:
+  POST https://api.hyperliquid.xyz/info  with body ``{"type": ..., ...}``
+
+We use three request types:
+  - ``fundingHistory`` — paginated by ``startTime``; up to 500 rows per call.
+  - ``candleSnapshot`` — bounded by ``[startTime, endTime]`` and a candle
+    cap of 5000 per call; we paginate forward when the window is larger.
+
+All loaders return one of the typed structures from ``loaders.structs``,
+indexed by a UTC-aware ``DatetimeIndex``.
+"""
 import time
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
-import requests
 
+from fractal.loaders._dt import to_ms, to_utc, utcnow
+from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
-# Module-level constants for defaults
-DEFAULT_START_TIME = datetime(2025, 1, 1, tzinfo=UTC)
-DEFAULT_URL = 'https://api.hyperliquid.xyz/info'
+DEFAULT_URL = "https://api.hyperliquid.xyz/info"
+_REQUEST_SLEEP_SECONDS = 0.2  # be nice to the public endpoint
 
 
 class HyperliquidBaseLoader(Loader):
-    """
-    Base loader for Hyperliquid API that provides common functionality.
-    """
+    """Common transport, time handling and cache-key logic."""
 
     def __init__(
         self,
@@ -24,100 +35,117 @@ class HyperliquidBaseLoader(Loader):
         loader_type: LoaderType = LoaderType.CSV,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-    ):
+        url: str = DEFAULT_URL,
+    ) -> None:
         super().__init__(loader_type)
-        start_time = start_time or DEFAULT_START_TIME
-        end_time = end_time or datetime.now(UTC)
-
-        self._start_time: int = int(start_time.timestamp() * 1000)
-        self._end_time: int = int(end_time.timestamp() * 1000)
-        self._url: str = DEFAULT_URL
         self._ticker: str = ticker
+        self._start_dt = to_utc(start_time) if start_time is not None else None
+        self._end_dt = to_utc(end_time) if end_time is not None else utcnow()
+        # ms epochs, kept as ints so we can use them as API params unchanged
+        self._start_ms: Optional[int] = to_ms(self._start_dt)
+        self._end_ms: int = to_ms(self._end_dt)
+        self._url: str = url
+        self._http = HttpClient()
 
-    def _make_request(self, params: Dict[str, Any]) -> Any:
-        """
-        Makes a POST request to the Hyperliquid API with the given parameters.
-        """
-        headers = {"Content-Type": "application/json"}
-        response = requests.post(self._url, headers=headers, json=params)
-        if response.status_code == 200:
-            return response.json()
-        raise Exception(
-            f"Failed to make request to {self._url}: "
-            f"status code: {response.status_code} ({response.text})"
-        )
+    # -------------------------------------------------------------- helpers
+    def _post(self, body: Dict[str, Any]) -> Any:
+        return self._http.post(self._url, json=body)
 
+    def _cache_key(self) -> str:
+        # Include ticker + window so different windows do not collide on disk.
+        # ``-`` because Hyperliquid tickers are alphanumeric only.
+        start_part = self._start_ms if self._start_ms is not None else "open"
+        return f"{self._ticker}-{start_part}-{self._end_ms}"
+
+    # ------------------------------------------------------------ lifecycle
     def load(self) -> None:
-        """
-        Trigger the load process using the inherited _load method.
-        """
-        self._load(self._ticker)
+        self._load(self._cache_key())
+
+    @property
+    def ticker(self) -> str:
+        return self._ticker
 
 
 class HyperliquidFundingRatesLoader(HyperliquidBaseLoader):
-    """
-    Loader for fetching funding rate history from Hyperliquid.
-    """
+    """Funding-rate history → :class:`FundingHistory`."""
+
+    _BATCH_LIMIT = 500  # API hard cap
 
     def extract(self) -> None:
-        """
-        Extract funding rate data in batches until the end time is reached.
-        """
-        all_data: List[Dict[str, Any]] = self._extract_batch()
-        if not all_data:
-            raise Exception("No data returned from the initial request.")
+        # Funding history requires startTime; if user did not provide one,
+        # use a conservative default (1 year ago).
+        if self._start_ms is None:
+            from datetime import timedelta
+            self._start_dt = utcnow() - timedelta(days=365)
+            self._start_ms = to_ms(self._start_dt)
 
-        last_time: int = all_data[-1]["time"]
-        while last_time < self._end_time:
-            self._start_time = last_time
-            batch: List[Dict[str, Any]] = self._extract_batch()
-            if len(batch) <= 1:
+        cursor = self._start_ms
+        all_rows: List[Dict[str, Any]] = []
+        seen: set = set()
+        while True:
+            batch = self._post(
+                {
+                    "type": "fundingHistory",
+                    "coin": self._ticker,
+                    "startTime": cursor,
+                    "endTime": self._end_ms,
+                }
+            )
+            if not batch:
                 break
-            all_data.extend(batch)
+            new_rows = [row for row in batch if row["time"] not in seen]
+            for row in new_rows:
+                seen.add(row["time"])
+            all_rows.extend(new_rows)
+
             last_time = batch[-1]["time"]
-            time.sleep(1)
+            if last_time >= self._end_ms or len(batch) < self._BATCH_LIMIT:
+                break
+            # Advance past last_time to avoid an infinite loop on duplicates.
+            cursor = last_time + 1
+            time.sleep(_REQUEST_SLEEP_SECONDS)
 
-        self._data = pd.DataFrame(all_data)
-
-    def _extract_batch(self) -> List[Dict[str, Any]]:
-        """
-        Extract a single batch of funding history data.
-        """
-        params = {
-            "type": "fundingHistory",
-            "coin": self._ticker,
-            "startTime": self._start_time,
-            "endTime": self._end_time,
-        }
-        return self._make_request(params)
+        self._data = pd.DataFrame(all_rows)
 
     def transform(self) -> None:
-        """
-        Transform the raw funding history data into proper types.
-        """
-        self._data["time"] = (
-            pd.to_datetime(self._data["time"], unit="ms", origin="unix", utc=True).dt.floor("s")
-        )
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=["time", "fundingRate", "coin"])
+            return
+        self._data["time"] = pd.to_datetime(
+            self._data["time"], unit="ms", origin="unix", utc=True
+        ).dt.floor("s")
         self._data["fundingRate"] = self._data["fundingRate"].astype(float)
+        self._data = self._data.sort_values("time").reset_index(drop=True)
+        self._data = self._data.drop_duplicates(subset=["time"])
 
     def read(self, with_run: bool = False) -> FundingHistory:
-        """
-        Read and return the funding history as a FundingHistory structure.
-        """
         if with_run:
             self.run()
         else:
-            self._read(self._ticker)
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return FundingHistory(rates=[], time=[])
         return FundingHistory(
-            rates=self._data["fundingRate"].values,
-            time=pd.to_datetime(self._data["time"], utc=True),
+            rates=self._data["fundingRate"].astype(float).values,
+            time=pd.to_datetime(self._data["time"], utc=True).values,
         )
 
 
 class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
-    """
-    Loader for fetching perpetual prices from Hyperliquid.
-    """
+    """Perp candle snapshots → :class:`PriceHistory` of open prices."""
+
+    _BATCH_LIMIT = 5000  # candleSnapshot hard cap
+    _INTERVAL_MS = {
+        "1m": 60_000,
+        "3m": 3 * 60_000,
+        "5m": 5 * 60_000,
+        "15m": 15 * 60_000,
+        "30m": 30 * 60_000,
+        "1h": 60 * 60_000,
+        "4h": 4 * 60 * 60_000,
+        "12h": 12 * 60 * 60_000,
+        "1d": 24 * 60 * 60_000,
+    }
 
     def __init__(
         self,
@@ -126,67 +154,103 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
         loader_type: LoaderType = LoaderType.CSV,
         start_time: Optional[datetime] = None,
         end_time: Optional[datetime] = None,
-    ):
-        super().__init__(ticker, loader_type, start_time, end_time)
+        url: str = DEFAULT_URL,
+    ) -> None:
+        super().__init__(ticker, loader_type, start_time, end_time, url)
+        if interval not in self._INTERVAL_MS:
+            raise ValueError(
+                f"Unsupported interval {interval!r}. Allowed: {sorted(self._INTERVAL_MS)}"
+            )
         self._interval: str = interval
 
+    def _cache_key(self) -> str:
+        start_part = self._start_ms if self._start_ms is not None else "open"
+        return f"{self._ticker}-{self._interval}-{start_part}-{self._end_ms}"
+
     def extract(self) -> None:
-        """
-        Extract candle snapshot data for perpetual prices.
-        """
-        params = {
-            "type": "candleSnapshot",
-            "req": {
-                "coin": self._ticker,
-                "interval": self._interval,
-                "startTime": self._start_time,
-                "endTime": self._end_time,
-            },
-        }
-        self._data = pd.DataFrame(self._make_request(params))
+        if self._start_ms is None:
+            # Default to 30 days back to keep the request bounded.
+            from datetime import timedelta
+            self._start_dt = utcnow() - timedelta(days=30)
+            self._start_ms = to_ms(self._start_dt)
+
+        candle_ms = self._INTERVAL_MS[self._interval]
+        cursor = self._start_ms
+        all_rows: List[Dict[str, Any]] = []
+        seen_t: set = set()
+        while cursor < self._end_ms:
+            window_end = min(self._end_ms, cursor + candle_ms * self._BATCH_LIMIT)
+            batch = self._post(
+                {
+                    "type": "candleSnapshot",
+                    "req": {
+                        "coin": self._ticker,
+                        "interval": self._interval,
+                        "startTime": cursor,
+                        "endTime": window_end,
+                    },
+                }
+            )
+            if not batch:
+                break
+            new_rows = [row for row in batch if row["t"] not in seen_t]
+            for row in new_rows:
+                seen_t.add(row["t"])
+            all_rows.extend(new_rows)
+            last_open = batch[-1]["t"]
+            if last_open + candle_ms >= self._end_ms:
+                break
+            cursor = last_open + candle_ms
+            time.sleep(_REQUEST_SLEEP_SECONDS)
+
+        self._data = pd.DataFrame(all_rows)
 
     def transform(self) -> None:
-        """
-        Transform the raw candle snapshot data.
-        """
-        self._data["open_time"] = (
-            pd.to_datetime(self._data["t"], unit="ms", origin="unix", utc=True).dt.floor("s")
-        )
-        self._data["open_price"] = self._data["o"].astype(float)
-        self._data["high_price"] = self._data["h"].astype(float)
-        self._data["low_price"] = self._data["l"].astype(float)
-        self._data["close_price"] = self._data["c"].astype(float)
-        self._data["volume"] = self._data["v"].astype(float)
+        cols = ["open_time", "open_price", "high_price", "low_price", "close_price", "volume"]
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=cols)
+            return
+        df = self._data
+        df["open_time"] = pd.to_datetime(
+            df["t"], unit="ms", origin="unix", utc=True
+        ).dt.floor("s")
+        df["open_price"] = df["o"].astype(float)
+        df["high_price"] = df["h"].astype(float)
+        df["low_price"] = df["l"].astype(float)
+        df["close_price"] = df["c"].astype(float)
+        df["volume"] = df["v"].astype(float)
+        df = df[cols].sort_values("open_time").drop_duplicates("open_time").reset_index(drop=True)
+        self._data = df
 
     def read(self, with_run: bool = False) -> PriceHistory:
-        """
-        Read and return the price history as a PriceHistory structure.
-        """
         if with_run:
             self.run()
         else:
-            self._read(self._ticker)
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return PriceHistory(prices=[], time=[])
         return PriceHistory(
-            prices=self._data["open_price"].values,
-            time=pd.to_datetime(self._data["open_time"], utc=True),
+            prices=self._data["open_price"].astype(float).values,
+            time=pd.to_datetime(self._data["open_time"], utc=True).values,
         )
 
 
 class HyperliquidPerpsKlinesLoader(HyperLiquidPerpsPricesLoader):
+    """Same extract+transform as :class:`HyperLiquidPerpsPricesLoader` but
+    returns full OHLCV rows as :class:`KlinesHistory`."""
 
     def read(self, with_run: bool = False) -> KlinesHistory:
-        """
-        Read and return the price history as a KlinesHistory structure.
-        """
         if with_run:
             self.run()
         else:
-            self._read(self._ticker)
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return KlinesHistory(time=[], open=[], high=[], low=[], close=[], volume=[])
         return KlinesHistory(
-            open=self._data["open_price"].values,
-            high=self._data["high_price"].values,
-            low=self._data["low_price"].values,
-            close=self._data["close_price"].values,
-            volume=self._data["volume"].values,
-            time=pd.to_datetime(self._data["open_time"], utc=True),
+            time=pd.to_datetime(self._data["open_time"], utc=True).values,
+            open=self._data["open_price"].astype(float).values,
+            high=self._data["high_price"].astype(float).values,
+            low=self._data["low_price"].astype(float).values,
+            close=self._data["close_price"].astype(float).values,
+            volume=self._data["volume"].astype(float).values,
         )
