@@ -177,3 +177,4 @@ catboost_info
 *.db
 REVIEW.md
 entities_review.md
+strategies_review.md
