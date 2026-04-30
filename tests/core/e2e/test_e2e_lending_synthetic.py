@@ -5,21 +5,15 @@ accrual and price moves; verify high-level invariants hold over the full
 trajectory: balance finite, debt monotone-modulo-rate, liquidation
 handled correctly, deposit/borrow/repay/withdraw cycle maintainable.
 """
-from __future__ import annotations
-
 import random
-from typing import List
 
 import pytest
 
-from fractal.core.base.entity import EntityException
 from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState)
 from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingException,
                                                   SimpleLendingGlobalState)
 
 
-# ============================================================ data
 def _bars(seed: int = 17, n: int = 30, p_n: float = 1.0, p_p: float = 1.0,
           lend_apy: float = 0.02, borrow_apy: float = 0.05, sigma: float = 0.0):
     """Synthetic lending bars: prices walk, rates per-day from APY."""
@@ -41,7 +35,6 @@ def _bars(seed: int = 17, n: int = 30, p_n: float = 1.0, p_p: float = 1.0,
     return bars
 
 
-# ============================================================ Aave walks
 @pytest.mark.core
 def test_aave_balance_finite_through_walk():
     e = AaveEntity()
@@ -101,7 +94,6 @@ def test_aave_repay_to_target_ltv():
     assert e.ltv == pytest.approx(target, abs=1e-9)
 
 
-# ============================================================ SimpleLending walks
 @pytest.mark.core
 def test_simple_lending_balance_finite_through_walk():
     e = SimpleLendingEntity()
@@ -134,7 +126,6 @@ def test_aave_simple_lending_walks_match_under_canonical_inputs():
         assert a._internal_state.borrowed == pytest.approx(s._internal_state.borrowed)
 
 
-# ============================================================ Cycle reuse
 @pytest.mark.core
 def test_aave_borrow_repay_cycle_works_multiple_times():
     e = AaveEntity()

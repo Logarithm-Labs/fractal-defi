@@ -8,6 +8,7 @@ from core.hodler import Hodler, HodlerParams, HodlerStrategy
 def hodler() -> Hodler:
     return Hodler()
 
+
 @pytest.fixture(scope='function', autouse=True)
 def hodler_strategy() -> HodlerStrategy:
     # Function-scoped: each test gets a fresh strategy. Shared scope was
@@ -15,6 +16,7 @@ def hodler_strategy() -> HodlerStrategy:
     # leaked into test_step under STRICT_OBSERVATIONS).
     strategy = HodlerStrategy(debug=True, params=HodlerParams())
     return strategy
+
 
 @pytest.fixture(scope='module', autouse=False)
 def THE_GRAPH_API_KEY() -> str:

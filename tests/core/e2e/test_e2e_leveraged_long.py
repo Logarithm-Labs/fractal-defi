@@ -12,15 +12,13 @@ positions of various sizes. Tests cover:
 * conservation invariants — every borrow+inject and inject+deposit pair
   must preserve ``total_balance`` (zero-equity moves).
 """
-from __future__ import annotations
-
 import random
 
 import pytest
 
 from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotGlobalState)
+                                                             UniswapV3SpotGlobalState)
 
 
 def _eth_walk(seed: int = 5, n: int = 30, p0: float = 3000.0, drift: float = 0.001,
@@ -35,7 +33,6 @@ def _eth_walk(seed: int = 5, n: int = 30, p0: float = 3000.0, drift: float = 0.0
     return out
 
 
-# ============================================================ baseline (1x long)
 @pytest.mark.core
 def test_baseline_1x_long_eth_via_spot_only():
     """Baseline: hold ETH at spot, no leverage, no debt."""
@@ -50,7 +47,6 @@ def test_baseline_1x_long_eth_via_spot_only():
     assert spot.balance == pytest.approx(11_000)
 
 
-# ============================================================ leveraged-long via Aave + Spot
 @pytest.mark.core
 def test_leveraged_long_eth_via_aave_volatile_collateral():
     """Synthetic 1.5x long ETH via deposit-ETH/borrow-USDC.
@@ -114,7 +110,6 @@ def test_leveraged_long_liquidates_on_sharp_drop():
     assert aave.balance == 0  # full equity wiped
 
 
-# ============================================================ walk through a price series
 @pytest.mark.core
 def test_leveraged_long_walks_through_price_series_without_liquidation():
     """30-bar walk with moderate sigma; verify position remains finite."""
@@ -131,7 +126,6 @@ def test_leveraged_long_walks_through_price_series_without_liquidation():
         assert aave.health_factor > 1.0  # not liquidatable on each bar
 
 
-# ============================================================ leverage characteristic check
 @pytest.mark.core
 @pytest.mark.parametrize("price_pct_move,expected_leverage", [
     (0.01, 2.0),   # 1% ETH up → 2% equity up
@@ -155,7 +149,6 @@ def test_leveraged_long_constant_factor_2x(price_pct_move, expected_leverage):
     assert actual_leverage == pytest.approx(expected_leverage, rel=1e-9)
 
 
-# ============================================================ Conservation: cross-entity transfers
 @pytest.mark.core
 def test_borrow_plus_cash_inject_preserves_total_balance():
     """``aave.borrow(X)`` then ``spot.deposit(X)`` is a zero-equity move.
@@ -220,7 +213,6 @@ def test_aave_withdraw_plus_inject_preserves_total_balance():
     assert total_after == pytest.approx(total_before)
 
 
-# ============================================================ Real 3x looped leverage
 @pytest.mark.core
 def test_real_looped_leverage_starting_from_usdc_zero_fee():
     """Build leveraged ETH long via composition: 10k USDC → ~2.4x ETH long.
@@ -264,8 +256,9 @@ def test_real_looped_leverage_starting_from_usdc_zero_fee():
         spot.action_deposit(room_to_borrow)
         # Conservation check at every loop iteration
         equity_now = aave.balance + spot.balance
-        assert equity_now == pytest.approx(initial_equity, abs=1e-6), \
+        assert equity_now == pytest.approx(initial_equity, abs=1e-6), (
             f"equity drifted: {equity_now} vs {initial_equity}"
+        )
 
     # After loops: ETH exposure = collateral; equity = initial; leverage = exposure / equity
     eth_exposure_usd = aave.collateral_value + spot._internal_state.amount * spot.current_price
@@ -346,7 +339,6 @@ def test_loop_with_fees_loses_only_fee_amount():
     assert loss == pytest.approx(10.0, rel=1e-3)
 
 
-# ============================================================ Loop conservation under price moves
 @pytest.mark.core
 def test_loop_preserves_total_balance_under_price_walk():
     """After loop, walk price; equity changes by leverage × price_move.

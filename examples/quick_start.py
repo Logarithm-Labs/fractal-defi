@@ -79,11 +79,14 @@ if __name__ == '__main__':
     start_time = datetime(2025, 1, 1, tzinfo=UTC)
     end_time = datetime(2025, 3, 1, tzinfo=UTC)
     experiment_name = f'hl_basis_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
+    # Per-asset Hyperliquid margin cap (entity config — distinct from the
+    # ``MAX_LEVERAGE`` rebalance trigger inside ``params_grid``). 45 is
+    # within Hyperliquid's BTC tier; default is 10 if you omit this line.
     HyperliquidBasis.MAX_LEVERAGE = 45
-    
+
     # Mlflow setup
     mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:8080',
+        mlflow_uri='http://127.0.0.1:8080',
         experiment_name=experiment_name,
     )
 

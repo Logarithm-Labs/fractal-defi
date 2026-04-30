@@ -11,21 +11,18 @@ Data is generated deterministically (seeded RNG) so CI is reproducible
 and offline; the *shape* of the data — daily ETH/USDC-like bars over
 30 days — mirrors what a real loader would return.
 """
-from __future__ import annotations
-
 import random
 
 import pytest
 
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState)
 
 
-# ============================================================ data generation
 def _bars(seed: int = 42, n: int = 30, p0: float = 3000.0,
           tvl0: float = 10_000_000.0, liq: float = 10_000_000.0,
           daily_fees: float = 10_000.0, sigma: float = 0.02):
@@ -55,7 +52,6 @@ def _bars(seed: int = 42, n: int = 30, p0: float = 3000.0,
     return bars
 
 
-# ============================================================ V2 walk
 @pytest.mark.core
 def test_v2_full_lifecycle_balance_strictly_positive():
     """Across a 30-day price walk, balance never goes negative or NaN."""
@@ -125,7 +121,6 @@ def test_v2_round_trip_over_walk_loses_fee_plus_il():
     )
 
 
-# ============================================================ V3 walk
 @pytest.mark.core
 def test_v3_in_range_lifecycle_accrues_fees():
     """V3 with range that stays in price → fees accumulate."""
@@ -222,7 +217,6 @@ def test_v3_rebalance_strategy_lifecycle_runs():
     assert e._internal_state.cash >= 0
 
 
-# ============================================================ V2 vs V3 comparison
 @pytest.mark.core
 def test_v2_vs_v3_same_data_v3_concentrated_outperforms_on_fees():
     """V3 with a concentrated range earns more fee yield than V2 50/50
@@ -254,7 +248,6 @@ def test_v2_vs_v3_same_data_v3_concentrated_outperforms_on_fees():
     )
 
 
-# ============================================================ Stress: fees + price moves simultaneously
 @pytest.mark.core
 def test_v2_terminal_balance_decomposition():
     """Final balance ≈ initial - round_trip_cost - IL_at_close + collected_fees."""

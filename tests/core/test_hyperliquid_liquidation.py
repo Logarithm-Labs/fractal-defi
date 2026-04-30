@@ -28,7 +28,6 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState)
 
 
-# ============================================================ helpers
 def _make(collateral: float, size: float, entry: float, max_leverage: float = 50.0):
     """Build an entity with a single position at known parameters."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=max_leverage)
@@ -43,7 +42,6 @@ def _set_mark(entity: HyperliquidEntity, mark: float):
     entity._global_state.mark_price = mark
 
 
-# ============================================================ closed-form liquidation_price
 @pytest.mark.core
 def test_liquidation_price_long_at_max_leverage_default():
     """Long 1 ETH at $3000 with $1000 collateral, MAX_LEVERAGE=50.
@@ -92,7 +90,6 @@ def test_liquidation_price_fully_collateralized_long_is_nonpositive():
     assert e.liquidation_price <= 0.0
 
 
-# ============================================================ trigger boundaries
 @pytest.mark.core
 def test_liquidation_triggers_at_exact_liq_price_clean_fp():
     """Boundary case with clean-fp numbers (no rounding error).
@@ -141,7 +138,6 @@ def test_liquidation_triggers_just_above_liq_price_short():
     assert e._check_liquidation() is True
 
 
-# ============================================================ price moves do NOT prematurely liquidate
 @pytest.mark.core
 def test_long_with_strong_collateral_does_not_liquidate_on_50pct_drop():
     """Pre-fix bug demonstration: at $2500 with collateral=$2500, our old
@@ -163,7 +159,6 @@ def test_short_does_not_liquidate_on_small_price_rise():
     assert e._check_liquidation() is False
 
 
-# ============================================================ regression: original red test
 @pytest.mark.core
 def test_leverage_change_red_test_now_green():
     """Original P0-0.1 regression. Build position, then withdraw collateral
@@ -184,7 +179,6 @@ def test_leverage_change_red_test_now_green():
     assert e._check_liquidation() is True
 
 
-# ============================================================ liquidation through update_state (integration)
 @pytest.mark.core
 def test_update_state_wipes_position_on_short_squeeze():
     """Original ``test_check_liquidation`` scenario."""
@@ -209,7 +203,6 @@ def test_update_state_does_not_liquidate_long_in_safe_band():
     assert e._internal_state.collateral > 0
 
 
-# ============================================================ withdraw uses mark-based MM
 @pytest.mark.core
 def test_action_withdraw_blocked_by_current_maintenance_margin_after_drawdown():
     """After price drops, withdrawal limit shrinks because MM is computed
@@ -228,7 +221,6 @@ def test_action_withdraw_blocked_by_current_maintenance_margin_after_drawdown():
         e.action_withdraw(0.01)
 
 
-# ============================================================ maintenance_margin property
 @pytest.mark.core
 def test_maintenance_margin_zero_when_no_position():
     e = HyperliquidEntity()
@@ -247,7 +239,6 @@ def test_maintenance_margin_uses_current_mark_price():
     assert e.maintenance_margin == pytest.approx(40)
 
 
-# ============================================================ leverage tiers (different MAX_LEVERAGE)
 @pytest.mark.core
 @pytest.mark.parametrize("max_lev,expected_mmr", [
     (50.0, 0.01),    # BTC/ETH 50x tier
@@ -255,7 +246,7 @@ def test_maintenance_margin_uses_current_mark_price():
     (25.0, 0.02),
     (20.0, 0.025),
     (10.0, 0.05),
-    (3.0, 1/6),
+    (3.0, 1 / 6),
 ])
 def test_mmr_matches_doc_formula_per_tier(max_lev, expected_mmr):
     """MMR = 1/(2×max_leverage) — matches Hyperliquid docs."""

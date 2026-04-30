@@ -175,6 +175,7 @@ def test_single_spot_exchange_states_alias_to_new_classes():
         SingleSpotExchangeInternalState,
     )
     assert SingleSpotExchangeGlobalState is SimpleSpotExchangeGlobalState
-    from fractal.core.entities.simple.spot import \
-        SimpleSpotExchangeInternalState as NewInternal
+    from fractal.core.entities.simple.spot import (
+        SimpleSpotExchangeInternalState as NewInternal,
+    )
     assert SingleSpotExchangeInternalState is NewInternal

@@ -10,17 +10,17 @@ Pool fee model (post-2026 refactor):
 import pytest
 
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 
 
 @pytest.fixture
 def uniswap_lp_entity():
     config = UniswapV2LPConfig(pool_fee_rate=0.003, slippage_pct=0.0,
-                                token0_decimals=6, token1_decimals=18)
+                               token0_decimals=6, token1_decimals=18)
     entity = UniswapV2LPEntity(config=config)
     entity.update_state(UniswapV2LPGlobalState(tvl=10_000, liquidity=10_000,
-                                                fees=0, price=1000, volume=0))
+                                               fees=0, price=1000, volume=0))
     return entity
 
 

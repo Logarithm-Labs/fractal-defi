@@ -15,7 +15,6 @@ from fractal.core.entities.models.uniswap_v3_fees import (Q96,
                                                           get_sqrt_price_x96)
 
 
-# ============================================================ expand_decimals
 @pytest.mark.core
 @pytest.mark.parametrize("amount,decimals,expected", [
     (1.0, 18, 10**18),
@@ -46,7 +45,6 @@ def test_expand_decimals_rejects_negative_decimals():
         expand_decimals(1.0, -1)
 
 
-# ============================================================ get_sqrt_price_x96
 @pytest.mark.core
 def test_sqrt_price_x96_at_unity_gives_q96():
     """At price=1 with equal decimals: √1 × 2^96 = Q96."""
@@ -94,7 +92,6 @@ def test_sqrt_price_x96_rejects_negative_decimals():
         get_sqrt_price_x96(1.0, -1, 18)
 
 
-# ============================================================ get_liquidity_for_amount0
 @pytest.mark.core
 def test_liquidity_for_amount0_zero_amount_yields_zero():
     sqrt_a = get_sqrt_price_x96(0.9, 18, 18)
@@ -127,7 +124,6 @@ def test_liquidity_for_amount0_rejects_equal_bounds():
         get_liquidity_for_amount0(sqrt, sqrt, amount0=10**18)
 
 
-# ============================================================ get_liquidity_for_amount1
 @pytest.mark.core
 def test_liquidity_for_amount1_zero_amount_yields_zero():
     sqrt_a = get_sqrt_price_x96(0.9, 18, 18)
@@ -152,7 +148,6 @@ def test_liquidity_for_amount1_rejects_inverted_bounds():
         get_liquidity_for_amount1(sqrt_a, sqrt_b, amount1=10**18)
 
 
-# ============================================================ get_liquidity_delta
 @pytest.mark.core
 def test_liquidity_delta_in_range_takes_min_of_both_sides():
     """In range, L = min(L_from_amount0, L_from_amount1). With balanced
@@ -227,7 +222,6 @@ def test_liquidity_delta_rejects_negative_lower():
         )
 
 
-# ============================================================ estimate_fee
 @pytest.mark.core
 def test_estimate_fee_zero_position_yields_zero():
     assert estimate_fee(liquidity_delta=0, liquidity=10**18, fees=100.0) == 0
@@ -271,7 +265,6 @@ def test_estimate_fee_zero_fees_yields_zero():
     assert estimate_fee(liquidity_delta=10**18, liquidity=10**18, fees=0.0) == 0
 
 
-# ============================================================ end-to-end integration
 @pytest.mark.core
 def test_full_pipeline_realistic_eth_usdc_position():
     """Realistic USDC/WETH position: 10k USDC + 3 WETH at $3000/ETH,

@@ -12,7 +12,7 @@ All loaders return one of the typed structures from ``loaders.structs``,
 indexed by a UTC-aware ``DatetimeIndex``.
 """
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -75,7 +75,6 @@ class HyperliquidFundingRatesLoader(HyperliquidBaseLoader):
         # Funding history requires startTime; if user did not provide one,
         # use a conservative default (1 year ago).
         if self._start_ms is None:
-            from datetime import timedelta
             self._start_dt = utcnow() - timedelta(days=365)
             self._start_ms = to_ms(self._start_dt)
 
@@ -170,7 +169,6 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
     def extract(self) -> None:
         if self._start_ms is None:
             # Default to 30 days back to keep the request bounded.
-            from datetime import timedelta
             self._start_dt = utcnow() - timedelta(days=30)
             self._start_ms = to_ms(self._start_dt)
 

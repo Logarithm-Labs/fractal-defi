@@ -4,19 +4,17 @@ from dataclasses import dataclass
 
 import pytest
 
-from fractal.core.base import (Action, BaseEntity, BaseStrategy,
-                               BaseStrategyParams, EntityException,
-                               GlobalState, NamedEntity, Observation)
+from fractal.core.base import (Action, BaseStrategy, BaseStrategyParams,
+                               EntityException, GlobalState,
+                               NamedEntity, Observation)
 from fractal.core.base.observations import SQLiteObservationsStorage
 from fractal.core.entities import (SimpleLendingEntity, SimplePerpEntity,
-                                   SimplePerpGlobalState, SimpleSpotExchange,
-                                   SimpleSpotExchangeGlobalState)
+                                   SimpleSpotExchange, SimpleSpotExchangeGlobalState)
 from fractal.core.entities.simple.lending import SimpleLendingException
 
 UTC = timezone.utc
 
 
-# ============================================================ B2 — Observation.__eq__
 @dataclass
 class _S(GlobalState):
     price: float = 0.0
@@ -39,7 +37,6 @@ def test_observation_eq_compares_two_observations_by_payload():
     assert a == b
 
 
-# ============================================================ B3 — execute error message
 @pytest.mark.core
 def test_execute_unavailable_action_error_message_clean():
     e = SimpleSpotExchange(trading_fee=0.0)
@@ -53,7 +50,6 @@ def test_execute_unavailable_action_error_message_clean():
     assert "SimpleSpotExchange" in msg
 
 
-# ============================================================ B4 — params is a copy
 class _ParamsTestStrategy(BaseStrategy):
     def set_up(self):
         pass
@@ -71,7 +67,6 @@ def test_params_property_returns_a_copy():
     assert p2["FOO"] == 1, "params property should return an isolated copy"
 
 
-# ============================================================ B5 — _validate_observation overridable
 class _CustomValidatingStrategy(BaseStrategy):
     STRICT_OBSERVATIONS = False
 
@@ -101,7 +96,6 @@ def test_validate_observation_can_be_overridden_in_subclass():
     assert s.calls == 1
 
 
-# ============================================================ B6 — global_state deepcopied
 class _SnapshotStrategy(BaseStrategy):
     STRICT_OBSERVATIONS = False
 
@@ -129,7 +123,6 @@ def test_run_snapshots_global_state_independently_of_later_mutation():
     assert result.global_states[0]["X"].close == snap_close
 
 
-# ============================================================ B7 — set_up after logger
 class _SetUpUsesDebugStrategy(BaseStrategy):
     STRICT_OBSERVATIONS = False
 
@@ -151,7 +144,6 @@ def test_set_up_can_use_debug_when_logger_initialized_first(tmp_path, monkeypatc
     assert "X" in s.get_all_available_entities()
 
 
-# ============================================================ B9 — no leftover None
 @pytest.mark.core
 def test_base_entity_init_does_not_set_none_states():
     """``_initialize_states`` populates states; the parent init no longer
@@ -161,7 +153,6 @@ def test_base_entity_init_does_not_set_none_states():
     assert e._global_state is not None
 
 
-# ============================================================ B10 — abstract sigs
 @pytest.mark.core
 def test_abstract_set_up_and_predict_take_no_args_only_self():
     import inspect
@@ -169,7 +160,6 @@ def test_abstract_set_up_and_predict_take_no_args_only_self():
     assert list(inspect.signature(BaseStrategy.predict).parameters) == ["self"]
 
 
-# ============================================================ B11 — _create_logger no extra param
 @pytest.mark.core
 def test_create_logger_signature_only_self():
     import inspect
@@ -177,7 +167,6 @@ def test_create_logger_signature_only_self():
     assert params == ["self"]
 
 
-# ============================================================ B12 — _debug single check
 class _DebugTrackerStrategy(BaseStrategy):
     STRICT_OBSERVATIONS = False
 
@@ -195,7 +184,6 @@ def test_debug_when_logger_disabled_is_noop():
     s._debug("anything")  # must not raise
 
 
-# ============================================================ B13 — no redundant local annotations
 @pytest.mark.core
 def test_simple_perp_initialize_states_no_local_annotations():
     """``_initialize_states`` body should not redeclare the field type."""
@@ -205,7 +193,6 @@ def test_simple_perp_initialize_states_no_local_annotations():
     assert "self._global_state: SimplePerpGlobalState" not in src
 
 
-# ============================================================ B14 — SimplePerp init order
 @pytest.mark.core
 def test_simple_perp_config_attrs_set_before_initialize_states():
     """Override ``_initialize_states`` in a subclass and rely on trading_fee.
@@ -222,7 +209,6 @@ def test_simple_perp_config_attrs_set_before_initialize_states():
     assert seen["trading_fee_at_init_states"] == pytest.approx(0.0007)
 
 
-# ============================================================ B15 — BaseStrategyParams no @dataclass
 @pytest.mark.core
 def test_base_strategy_params_is_not_a_dataclass():
     from dataclasses import is_dataclass
@@ -237,7 +223,6 @@ def test_base_strategy_params_dict_form_still_works():
     assert p.FOO == 1 and p.BAR == "x"
 
 
-# ============================================================ B17 — SQLite default uses tempfile
 @pytest.mark.core
 def test_sqlite_storage_default_db_path_under_tempfile():
     import tempfile
@@ -249,7 +234,6 @@ def test_sqlite_storage_default_db_path_under_tempfile():
         storage.close()
 
 
-# ============================================================ B18 — context manager
 @pytest.mark.core
 def test_sqlite_storage_context_manager_closes_connection(tmp_path):
     db = str(tmp_path / "obs.db")
@@ -266,7 +250,6 @@ def test_sqlite_storage_close_is_idempotent(tmp_path):
     storage.close()  # must not raise
 
 
-# ============================================================ B19 — calculate_repay inf guard
 @pytest.mark.core
 def test_calculate_repay_raises_when_ltv_is_inf():
     e = SimpleLendingEntity()

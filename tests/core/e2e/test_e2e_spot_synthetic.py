@@ -4,8 +4,6 @@ Walk a spot/LST entity through 30+ daily bars with realistic price walks
 (and rebasing for LSTs); verify high-level invariants over the full
 trajectory.
 """
-from __future__ import annotations
-
 import random
 
 import pytest
@@ -13,10 +11,9 @@ import pytest
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
                                                    StakedETHGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotGlobalState)
+                                                             UniswapV3SpotGlobalState)
 
 
-# ============================================================ data
 def _price_walk(seed: int = 7, n: int = 30, p0: float = 2000.0, sigma: float = 0.02):
     rng = random.Random(seed)
     p = p0
@@ -27,7 +24,6 @@ def _price_walk(seed: int = 7, n: int = 30, p0: float = 2000.0, sigma: float = 0
     return series
 
 
-# ============================================================ UniV3 Spot walks
 @pytest.mark.core
 def test_univ3_spot_balance_finite_through_walk():
     e = UniswapV3SpotEntity(trading_fee=0.003)
@@ -54,7 +50,6 @@ def test_univ3_spot_balance_tracks_price_move():
     assert e.balance == pytest.approx(15_000)
 
 
-# ============================================================ stETH walks
 @pytest.mark.core
 def test_steth_amount_grows_through_walk_with_positive_rate():
     """LST rebases on every update_state; amount grows with positive rate."""
@@ -94,7 +89,6 @@ def test_steth_balance_combines_price_walk_and_rebasing():
     assert e._internal_state.amount > 5.0
 
 
-# ============================================================ Spot vs LST comparison
 @pytest.mark.core
 def test_lst_outperforms_plain_spot_on_same_price_walk_with_rebasing():
     """At identical fees + price walk, an LST with positive staking_rate
@@ -118,7 +112,6 @@ def test_lst_outperforms_plain_spot_on_same_price_walk_with_rebasing():
     assert lst.balance > spot.balance
 
 
-# ============================================================ Lifecycle
 @pytest.mark.core
 def test_univ3_spot_buy_sell_cycle_through_walk():
     """Repeatedly enter and exit the spot position over a price walk;

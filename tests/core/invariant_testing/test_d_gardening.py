@@ -13,23 +13,16 @@ import warnings
 import pytest
 
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState)
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotGlobalState)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity
+from fractal.core.entities.protocols.steth import StakedETHEntity
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
 from fractal.core.entities.simple.lending import (SimpleLendingEntity,
                                                   SimpleLendingGlobalState)
-from fractal.core.entities.simple.liquid_staking import (SimpleLiquidStakingToken,
-                                                          SimpleLiquidStakingTokenGlobalState)
-from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                SimplePerpGlobalState)
-from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                                SimpleSpotExchangeGlobalState)
+from fractal.core.entities.simple.liquid_staking import SimpleLiquidStakingToken
+from fractal.core.entities.simple.perp import SimplePerpEntity
+from fractal.core.entities.simple.spot import SimpleSpotExchange
 
 
-# ============================================================ D-2: effective_fee_rate
 @pytest.mark.core
 @pytest.mark.parametrize("factory,fee", [
     (lambda f: UniswapV3SpotEntity(trading_fee=f), 0.003),
@@ -52,7 +45,6 @@ def test_effective_fee_rate_changes_when_trading_fee_changes():
     assert e.effective_fee_rate == 0.0005
 
 
-# ============================================================ D-3: Aave max_borrow_amount
 @pytest.mark.core
 def test_aave_max_borrow_amount_zero_when_no_collateral():
     e = AaveEntity()
@@ -98,7 +90,6 @@ def test_aave_max_borrow_amount_with_volatile_collateral():
     assert e.max_borrow_amount == pytest.approx(2250)
 
 
-# ============================================================ D-3: Aave liquidation_price
 @pytest.mark.core
 def test_aave_liquidation_price_nan_when_no_debt():
     e = AaveEntity()
@@ -167,7 +158,6 @@ def test_simple_lending_max_borrow_and_liquidation_price_match_aave():
     assert a.liquidation_price == pytest.approx(s.liquidation_price)
 
 
-# ============================================================ D-5: lowercase rename + deprecated aliases
 @pytest.mark.core
 def test_hl_lowercase_attrs_present():
     """Hyperliquid uses lowercase ``trading_fee`` / ``max_leverage`` post-D5."""

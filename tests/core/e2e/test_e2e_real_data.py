@@ -10,16 +10,14 @@ shape data (real fee/TVL/liquidity series and real price walks) — they
 catch bugs that synthetic data can't, e.g. unusual TVL crashes, liquidity
 spikes, or edge-case dates where one of the subgraph fields is null.
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
 
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState)
 from fractal.loaders import (LoaderType,
                              UniswapV3EthereumPoolDayDataLoader,
                              UniswapV3EthereumPricesLoader)

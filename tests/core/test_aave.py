@@ -1,7 +1,7 @@
 import pytest
 
 from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState,
-                                        EntityException)
+                                                  EntityException)
 
 
 @pytest.fixture

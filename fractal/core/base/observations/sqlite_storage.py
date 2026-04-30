@@ -106,5 +106,5 @@ class SQLiteObservationsStorage(ObservationsStorage):
         # interpreter shutdown.
         try:
             self.close()
-        except Exception:  # pragma: no cover
+        except Exception:  # pragma: no cover  # pylint: disable=broad-exception-caught
             pass

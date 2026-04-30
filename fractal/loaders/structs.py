@@ -105,7 +105,7 @@ class KlinesHistory(pd.DataFrame):
     for loaders that pre-date PR #27).
     """
 
-    def __init__(
+    def __init__(  # pylint: disable=redefined-builtin
         self,
         time: np.ndarray,
         open: np.ndarray,  # noqa: A002 - shadowing built-in is the natural OHLCV name

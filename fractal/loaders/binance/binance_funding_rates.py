@@ -70,7 +70,7 @@ class BinanceFundingLoader(Loader):
         cursor = to_ms(local.start_time) if local.start_time is not None else None
         end_ms = to_ms(local.end_time) if local.end_time is not None else None
         while True:
-            data = local._fetch(cursor, end_ms)
+            data = local._fetch(cursor, end_ms)  # pylint: disable=protected-access
             if not data:
                 break
             for item in data:

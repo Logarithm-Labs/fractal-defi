@@ -38,6 +38,7 @@ def test_total_balance_zero_when_no_entities():
     class _Empty(BaseStrategy):
         def set_up(self):
             pass
+
         def predict(self):
             return []
     s = _Empty(debug=False, params=BaseStrategyParams())

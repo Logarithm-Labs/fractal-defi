@@ -18,7 +18,6 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidPosition)
 
 
-# ============================================================ B6 — amount=0 short-circuit
 @pytest.mark.core
 def test_action_open_zero_amount_is_no_op():
     e = HyperliquidEntity(trading_fee=0.001)
@@ -57,7 +56,6 @@ def test_action_open_zero_amount_after_existing_position_does_not_disturb():
     assert e.size == 1.0
 
 
-# ============================================================ B5 — leverage edge cases
 @pytest.mark.core
 def test_leverage_zero_when_no_position():
     e = HyperliquidEntity()
@@ -117,7 +115,6 @@ def test_leverage_finite_when_balance_positive():
     assert math.isfinite(e.leverage)
 
 
-# ============================================================ B4 — _clearing preserves max_leverage on flip
 @pytest.mark.core
 def test_clearing_preserves_incoming_max_leverage_on_full_flip():
     """Open long with one max_leverage, then a larger short with a different
@@ -177,7 +174,6 @@ def test_clearing_uses_default_max_leverage_when_no_per_position_override():
     assert e._internal_state.positions[0].max_leverage == 50.0
 
 
-# ============================================================ B4 — integration with maintenance_margin
 @pytest.mark.core
 def test_clearing_flipped_position_uses_remainder_max_leverage_for_mm():
     """After flip, ``maintenance_margin`` reflects the new (incoming)

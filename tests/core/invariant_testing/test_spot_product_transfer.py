@@ -19,18 +19,15 @@ import pytest
 
 from fractal.core.base.entity import EntityException
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException,
                                                    StakedETHGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotEntityException,
-                                                              UniswapV3SpotGlobalState)
+                                                             UniswapV3SpotGlobalState)
 from fractal.core.entities.simple.liquid_staking import (SimpleLiquidStakingToken,
-                                                          SimpleLiquidStakingTokenGlobalState)
+                                                         SimpleLiquidStakingTokenGlobalState)
 from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                                SimpleSpotExchangeGlobalState)
+                                               SimpleSpotExchangeGlobalState)
 
 
-# ============================================================ helpers
 def _univ3_spot():
     e = UniswapV3SpotEntity(trading_fee=0.0)
     e.update_state(UniswapV3SpotGlobalState(price=2000.0))
@@ -58,7 +55,6 @@ def _simple_lst():
 SPOT_FACTORIES = [_univ3_spot, _steth, _simple_spot, _simple_lst]
 
 
-# ============================================================ basic semantics
 @pytest.mark.core
 @pytest.mark.parametrize("factory", SPOT_FACTORIES)
 def test_inject_product_increases_amount_only(factory):
@@ -88,7 +84,6 @@ def test_inject_remove_round_trip_is_identity(factory):
     assert e._internal_state.cash == 0
 
 
-# ============================================================ validation
 @pytest.mark.core
 @pytest.mark.parametrize("factory", SPOT_FACTORIES)
 def test_inject_product_rejects_negative(factory):
@@ -131,7 +126,6 @@ def test_remove_zero_is_noop(factory):
     assert e._internal_state.amount == 1.0
 
 
-# ============================================================ no fee — distinct from buy/sell
 @pytest.mark.core
 def test_inject_no_fee_vs_buy_with_fee():
     """``action_inject_product`` must NOT charge a trading fee, unlike ``action_buy``."""
@@ -168,7 +162,6 @@ def test_remove_no_fee_vs_sell_with_fee():
     assert sell._internal_state.cash < 0.5 * 2000  # less than gross due to fee
 
 
-# ============================================================ subclass-specific exception
 @pytest.mark.core
 def test_steth_inject_remove_uses_base_exception():
     """Subclass-specific exception classes don't override the base default."""

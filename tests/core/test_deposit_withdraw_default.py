@@ -10,7 +10,7 @@ from dataclasses import dataclass
 import pytest
 
 from fractal.core.base import (Action, BaseEntity, GlobalState,
-                               InternalState, Observation)
+                               InternalState)
 
 
 @dataclass

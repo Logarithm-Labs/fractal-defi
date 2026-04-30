@@ -30,7 +30,7 @@ class LoaderType(Enum):
 
 
 class Loader(ABC):
-    def __init__(self, loader_type: LoaderType = LoaderType.CSV, *args, **kwargs) -> None:
+    def __init__(self, *args, loader_type: LoaderType = LoaderType.CSV, **kwargs) -> None:
         if not isinstance(loader_type, LoaderType):
             raise ValueError(f"Loader type {loader_type} not supported")
         self.loader_type: LoaderType = loader_type

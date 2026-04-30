@@ -113,11 +113,14 @@ if __name__ == '__main__':
     start_time = datetime(2025, 1, 1, tzinfo=UTC)
     end_time = datetime(2025, 3, 1, tzinfo=UTC)
     experiment_name = f'hl_basis_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
-    HyperliquidBasis.MAX_LEVERAGE = 45
-    
+    # Hyperliquid per-asset margin cap. Defaults to 10 (covers most majors);
+    # raise it for assets with higher leverage tiers — distinct from
+    # ``params.MAX_LEVERAGE`` (rebalance-trigger upper bound).
+    HyperliquidBasis.MAX_LEVERAGE = 25
+
     # Mlflow setup
     mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:8080',
+        mlflow_uri='http://127.0.0.1:8080',
         experiment_name=experiment_name,
     )
 
@@ -145,14 +148,14 @@ if __name__ == '__main__':
 Run your pipeline:
 ```bash
 ╰─➤  python3 fractal_basis.py
-🏃 View run whimsical-sheep-752 at: http://127.0.01:8080/#/experiments/743858278487100844/runs/eeb3db5833b54f38aa9eb4b31990f6e2
-🧪 View experiment at: http://127.0.01:8080/#/experiments/743858278487100844
-🏃 View run useful-crab-883 at: http://127.0.01:8080/#/experiments/743858278487100844/runs/d728d6f94b1d4f708e96e628111f215e
-🧪 View experiment at: http://127.0.01:8080/#/experiments/743858278487100844
-🏃 View run bittersweet-goat-277 at: http://127.0.01:8080/#/experiments/743858278487100844/runs/31fc73bfef6d47e296dea8880f161821
-🧪 View experiment at: http://127.0.01:8080/#/experiments/743858278487100844
-🏃 View run gifted-gnu-901 at: http://127.0.01:8080/#/experiments/743858278487100844/runs/c88004f211c74be8964e992a168addf6
-🧪 View experiment at: http://127.0.01:8080/#/experiments/743858278487100844
+🏃 View run whimsical-sheep-752 at: http://127.0.0.1:8080/#/experiments/743858278487100844/runs/eeb3db5833b54f38aa9eb4b31990f6e2
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/743858278487100844
+🏃 View run useful-crab-883 at: http://127.0.0.1:8080/#/experiments/743858278487100844/runs/d728d6f94b1d4f708e96e628111f215e
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/743858278487100844
+🏃 View run bittersweet-goat-277 at: http://127.0.0.1:8080/#/experiments/743858278487100844/runs/31fc73bfef6d47e296dea8880f161821
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/743858278487100844
+🏃 View run gifted-gnu-901 at: http://127.0.0.1:8080/#/experiments/743858278487100844/runs/c88004f211c74be8964e992a168addf6
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/743858278487100844
 ```
 
 ## Pricing convention

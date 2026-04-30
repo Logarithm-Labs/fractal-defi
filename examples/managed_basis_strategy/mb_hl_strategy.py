@@ -90,6 +90,9 @@ if __name__ == '__main__':
     MIN_LVG = 1
     TARGET_LVG = 3
     MAX_LVG = 5
+    # Hyperliquid per-asset margin cap (entity config). Default after
+    # HB-1 is also 10 — this line is for explicitness; remove it to
+    # use the default.
     HyperliquidBasis.MAX_LEVERAGE = 10
 
     # Init the strategy

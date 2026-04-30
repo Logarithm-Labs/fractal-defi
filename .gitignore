@@ -169,7 +169,6 @@ catboost_info
 
 # mlflow and artifacts
 /runs
-*loader
 /mlruns
 /mlartifact
 /fractal_data

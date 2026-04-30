@@ -15,14 +15,13 @@ import pytest
 
 from fractal.core.base.entity import EntityException
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState)
 
 
-# ============================================================ V2: validation
 @pytest.mark.core
 def test_v2_invalid_notional_side_rejected():
     with pytest.raises(EntityException, match="notional_side must be"):
@@ -35,7 +34,6 @@ def test_v3_invalid_notional_side_rejected():
         UniswapV3LPEntity(UniswapV3LPConfig(notional_side="weth"))
 
 
-# ============================================================ V2: equivalence under flip
 def _open_v2(notional_side):
     cfg = UniswapV2LPConfig(notional_side=notional_side)
     e = UniswapV2LPEntity(cfg)
@@ -100,7 +98,6 @@ def test_v2_close_position_invariant_under_flip():
     assert e0._internal_state.cash == pytest.approx(e1._internal_state.cash)
 
 
-# ============================================================ V3: equivalence under flip
 def _open_v3(notional_side):
     cfg = UniswapV3LPConfig(notional_side=notional_side)
     e = UniswapV3LPEntity(cfg)
@@ -152,7 +149,8 @@ def test_v3_is_in_range_invariant_under_flip():
     assert e0.is_in_range == e1.is_in_range
     e0.update_state(UniswapV3LPGlobalState(price=0.85))
     e1.update_state(UniswapV3LPGlobalState(price=0.85))
-    assert e0.is_in_range == e1.is_in_range == False
+    assert e0.is_in_range is False
+    assert e1.is_in_range is False
 
 
 @pytest.mark.core
@@ -164,7 +162,6 @@ def test_v3_close_position_invariant_under_flip():
     assert e0._internal_state.cash == pytest.approx(e1._internal_state.cash)
 
 
-# ============================================================ Out-of-range V3 still flips correctly
 @pytest.mark.core
 def test_v3_below_range_volatile_in_correct_slot_token0_mode():
     """Below range: position holds 100% volatile, 0% stable."""

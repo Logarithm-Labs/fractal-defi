@@ -14,9 +14,9 @@ from fractal.core.entities.protocols.aave import AaveEntity
 from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity
 from fractal.core.entities.protocols.steth import StakedETHEntity
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity)
+                                                           UniswapV2LPEntity)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity)
+                                                           UniswapV3LPEntity)
 from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
 
 

@@ -24,7 +24,6 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState)
 
 
-# ============================================================ X-2 lock-in: funding saves short
 @pytest.mark.core
 def test_positive_funding_saves_short_from_would_be_liquidation():
     """X-2: with funding-first ordering, a positive-funding tick on a short
@@ -45,7 +44,6 @@ def test_positive_funding_saves_short_from_would_be_liquidation():
     assert e.balance == pytest.approx(60.7)
 
 
-# ============================================================ Funding tips long into liquidation
 @pytest.mark.core
 def test_positive_funding_tips_long_into_liquidation_same_bar():
     """A long that would survive the price tick alone gets liquidated by
@@ -64,7 +62,6 @@ def test_positive_funding_tips_long_into_liquidation_same_bar():
     assert e.size == 0, "long should have been liquidated by funding tick"
 
 
-# ============================================================ Funding direction sign — all four quadrants
 @pytest.mark.core
 def test_long_pays_positive_funding():
     """Long with rate=+0.01 → collateral decreases by size×price×rate."""
@@ -113,7 +110,6 @@ def test_short_pays_negative_funding():
     assert e._internal_state.collateral == pytest.approx(10_000 - 30)
 
 
-# ============================================================ No position → no funding
 @pytest.mark.core
 def test_no_funding_settle_when_flat():
     """No position → funding term skipped, collateral unchanged regardless of rate."""
@@ -123,7 +119,6 @@ def test_no_funding_settle_when_flat():
     assert e._internal_state.collateral == 1000
 
 
-# ============================================================ Idempotence with rate=0
 @pytest.mark.core
 def test_zero_funding_rate_no_collateral_change():
     """rate=0 → funding term is 0, even with a position."""
@@ -137,7 +132,6 @@ def test_zero_funding_rate_no_collateral_change():
     assert e._internal_state.collateral == coll_before
 
 
-# ============================================================ Multi-bar funding accumulation
 @pytest.mark.core
 def test_funding_accumulates_over_multiple_bars():
     """Apply same positive rate over 5 bars on a long → collateral down by 5× per-bar payment."""
@@ -152,7 +146,6 @@ def test_funding_accumulates_over_multiple_bars():
     assert e._internal_state.collateral == pytest.approx(coll_before - 15)
 
 
-# ============================================================ H-9: funding settled on alive size, not post-wipe
 @pytest.mark.core
 def test_funding_uses_alive_size_before_potential_liquidation():
     """If a long is about to be liquidated by price drop, funding settles
@@ -179,7 +172,6 @@ def test_funding_uses_alive_size_before_potential_liquidation():
     assert e._internal_state.collateral == 0
 
 
-# ============================================================ Funding rate sign sanity (parametrized)
 @pytest.mark.core
 @pytest.mark.parametrize("size,rate,expected_collateral_delta", [
     (1.0, 0.01, -30),    # long pays positive funding → -30
@@ -199,7 +191,6 @@ def test_funding_payment_matches_quadrant(size, rate, expected_collateral_delta)
     assert e._internal_state.collateral == pytest.approx(coll_before + expected_collateral_delta)
 
 
-# ============================================================ SimplePerpEntity parity (X-2 cross-cutting)
 @pytest.mark.core
 def test_hyperliquid_matches_simple_perp_funding_order():
     """Both entities apply funding before liquidation check.
@@ -209,7 +200,7 @@ def test_hyperliquid_matches_simple_perp_funding_order():
     triggers liquidation in the same bar.
     """
     from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                    SimplePerpGlobalState)
+                                                   SimplePerpGlobalState)
 
     hl = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
     hl.update_state(HyperLiquidGlobalState(mark_price=3000))

@@ -13,14 +13,12 @@ appropriately) and that the helper accessors (``collateral_value``,
 """
 import pytest
 
-from fractal.core.base.entity import EntityException
 from fractal.core.entities.protocols.aave import (AaveEntity,
                                                   AaveGlobalState)
 from fractal.core.entities.simple.lending import (SimpleLendingEntity,
                                                   SimpleLendingGlobalState)
 
 
-# ============================================================ flag plumbing
 @pytest.mark.core
 def test_aave_default_is_stable_collateral():
     e = AaveEntity()
@@ -45,7 +43,6 @@ def test_simple_lending_volatile_collateral_flag_set():
     assert e.collateral_is_volatile is True
 
 
-# ============================================================ math symmetry
 @pytest.mark.core
 def test_aave_math_identical_under_direction_flip():
     """Same scenario set up two ways — same balance/LTV/health.
@@ -77,7 +74,6 @@ def test_aave_math_identical_under_direction_flip():
     assert a_vol.ltv == pytest.approx(6_000 / (10 * 3000))           # 0.2
 
 
-# ============================================================ helper properties
 @pytest.mark.core
 def test_aave_collateral_value_in_stable_mode():
     e = AaveEntity()
@@ -156,7 +152,6 @@ def test_simple_lending_helper_properties_match_aave():
     assert a.health_factor == s.health_factor
 
 
-# ============================================================ leveraged-long math
 @pytest.mark.core
 def test_aave_volatile_collateral_borrows_stable_against_eth():
     """Volatile-collateral mode: deposit ETH, borrow USDC.

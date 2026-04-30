@@ -80,12 +80,16 @@ if __name__ == '__main__':
     token0_decimals, token1_decimals = EthereumUniswapV3Loader(
         THE_GRAPH_API_KEY, loader_type=LoaderType.CSV).get_pool_decimals(pool_address)
 
-    # Init the strategy
+    # Init the strategy. Pool config flows through constructor kwargs
+    # (T-1) — instance state, parallel-safe; preferred over the legacy
+    # class-level mutation pattern.
     params: TauResetParams = TauResetParams(TAU=90, INITIAL_BALANCE=1_000_000)
-    TauResetStrategy.token0_decimals = token0_decimals
-    TauResetStrategy.token1_decimals = token1_decimals
-    TauResetStrategy.tick_spacing = 60
-    strategy: TauResetStrategy = TauResetStrategy(debug=True, params=params)
+    strategy: TauResetStrategy = TauResetStrategy(
+        debug=True, params=params,
+        token0_decimals=token0_decimals,
+        token1_decimals=token1_decimals,
+        tick_spacing=60,
+    )
 
     # Build observations
     entities = strategy.get_all_available_entities().keys()

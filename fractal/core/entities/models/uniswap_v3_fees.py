@@ -12,8 +12,6 @@ for on-chain transaction simulation.
 All functions assume **standard V3 convention**: ``P = token1 / token0``,
 amounts in their respective on-chain decimals.
 """
-from __future__ import annotations
-
 Q96 = 1 << 96  # 2**96, used as Q96 fixed-point scale
 
 

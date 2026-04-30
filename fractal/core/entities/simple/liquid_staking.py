@@ -36,7 +36,6 @@ class SimpleLiquidStakingTokenGlobalState(GlobalState):
 @dataclass
 class SimpleLiquidStakingTokenInternalState(BaseSpotInternalState):
     """Inherits ``amount`` (LST tokens held) and ``cash`` (notional)."""
-    pass
 
 
 class SimpleLiquidStakingToken(BaseLiquidStakingToken):

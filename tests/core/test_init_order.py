@@ -21,16 +21,16 @@ from fractal.core.entities.protocols.steth import (StakedETHEntity,
                                                    StakedETHGlobalState,
                                                    StakedETHInternalState)
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState,
-                                                            UniswapV2LPInternalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState,
+                                                           UniswapV2LPInternalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState,
-                                                            UniswapV3LPInternalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState,
+                                                           UniswapV3LPInternalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotGlobalState,
-                                                              UniswapV3SpotInternalState)
+                                                             UniswapV3SpotGlobalState,
+                                                             UniswapV3SpotInternalState)
 
 
 @pytest.mark.core

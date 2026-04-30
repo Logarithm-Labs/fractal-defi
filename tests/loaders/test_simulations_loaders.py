@@ -29,7 +29,6 @@ def _toy_price_history(n: int = 100, seed: int = 42, sigma: float = 0.01) -> Pri
     return PriceHistory(prices=prices, time=times.values)
 
 
-# ============================================================ legacy alias
 @pytest.mark.core
 def test_monte_carlo_loader_returns_list_of_price_histories():
     history = _toy_price_history(n=200)
@@ -100,7 +99,6 @@ def test_legacy_loader_emits_deprecation_warning():
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
 
 
-# ============================================================ GBM properties
 @pytest.mark.core
 def test_gbm_first_value_equals_historical_first_price():
     history = _toy_price_history(n=50)
@@ -184,7 +182,6 @@ def test_gbm_explicit_sigma_overrides_calibration():
     assert loader.calibrated_sigma == 0.123
 
 
-# ============================================================ Bootstrap mode
 @pytest.mark.core
 def test_bootstrap_mode_paths_are_strictly_positive():
     history = _toy_price_history(n=200, sigma=0.05)
@@ -229,7 +226,6 @@ def test_unknown_mode_raises():
         MonteCarloPriceLoader(history, mode="garch")  # type: ignore[arg-type]
 
 
-# ============================================================ Loader contract
 @pytest.mark.core
 def test_trajectory_bundle_alias_is_list_of_price_history():
     """``TrajectoryBundle`` is the documented return type for simulators."""
@@ -322,7 +318,6 @@ def test_window_outside_history_returns_empty():
     assert out == []
 
 
-# ============================================================ Constant fundings
 @pytest.mark.core
 def test_constant_fundings_loader_basic():
     start = datetime(2024, 1, 1, tzinfo=UTC)

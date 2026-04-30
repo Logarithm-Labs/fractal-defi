@@ -1,6 +1,5 @@
 """Synthetic loader: emit a constant funding-rate series for a given period."""
 from datetime import datetime
-from typing import Optional
 
 import pandas as pd
 

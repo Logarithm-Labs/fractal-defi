@@ -61,7 +61,6 @@ def test_gmx_v1_funding_loader_empty_returns_empty_history():
     loader = GMXV1FundingLoader(token_address=WETH)
     loader._data = None
     loader.transform()
-    data = loader.read(with_run=False) if False else None  # avoid touching cache
     # Reach the same code path without hitting the network:
     out = FundingHistory(rates=[], time=[])
     assert len(out) == 0

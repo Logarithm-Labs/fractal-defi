@@ -15,14 +15,13 @@ from fractal.core.entities.protocols.steth import (StakedETHEntity,
                                                    StakedETHEntityException,
                                                    StakedETHGlobalState)
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity)
+                                                           UniswapV2LPEntity)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity)
+                                                           UniswapV3LPEntity)
 from fractal.core.entities.protocols.uniswap_v3_spot import (
     UniswapV3SpotEntity, UniswapV3SpotEntityException, UniswapV3SpotGlobalState)
 
 
-# =================================================== Aave
 @pytest.fixture
 def aave() -> AaveEntity:
     e = AaveEntity()
@@ -72,7 +71,6 @@ def test_aave_zero_amounts_are_noop(aave):
     assert aave.internal_state.collateral == 1000
 
 
-# =================================================== UniV2LP
 @pytest.fixture
 def univ2() -> UniswapV2LPEntity:
     return UniswapV2LPEntity(UniswapV2LPConfig())
@@ -98,7 +96,6 @@ def test_univ2_open_position_rejects_negative(univ2):
         univ2.action_open_position(-100)
 
 
-# =================================================== UniV3LP
 @pytest.fixture
 def univ3lp() -> UniswapV3LPEntity:
     return UniswapV3LPEntity(UniswapV3LPConfig())
@@ -124,7 +121,6 @@ def test_univ3lp_open_position_rejects_negative(univ3lp):
         univ3lp.action_open_position(-100, price_lower=0.9, price_upper=1.1)
 
 
-# =================================================== UniV3Spot
 @pytest.fixture
 def v3spot() -> UniswapV3SpotEntity:
     e = UniswapV3SpotEntity()
@@ -167,7 +163,6 @@ def test_univ3spot_sell_rejects_negative(v3spot):
         v3spot.action_sell(-1)
 
 
-# =================================================== stETH
 @pytest.fixture
 def steth() -> StakedETHEntity:
     e = StakedETHEntity()

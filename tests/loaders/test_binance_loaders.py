@@ -104,7 +104,8 @@ def test_funding_btcusdt_bounds_2020_2025():
     start = datetime(2020, 1, 1, tzinfo=UTC)
     end = datetime(2025, 1, 1, tzinfo=UTC)
     ldr = BinanceFundingLoader("BTCUSDT", start_time=start, end_time=end)
-    ldr.extract(); ldr.transform()
+    ldr.extract()
+    ldr.transform()
     df = ldr._data
     _assert_time_bounds(df, "fundingTime", start, end)
 
@@ -115,7 +116,8 @@ def test_funding_taousdt_bounds_2020_2025():
     start = datetime(2020, 3, 14, tzinfo=UTC)
     end = datetime(2025, 1, 1, tzinfo=UTC)
     ldr = BinanceFundingLoader("TAOUSDT", start_time=start, end_time=end)
-    ldr.extract(); ldr.transform()
+    ldr.extract()
+    ldr.transform()
     df = ldr._data
     _assert_time_bounds(df, "fundingTime", start, end)
 
@@ -137,7 +139,8 @@ def test_klines_btcusdt_1h_bounds_2024_2025():
     start = datetime(2024, 1, 1, tzinfo=UTC)
     end = datetime(2025, 1, 1, tzinfo=UTC)
     ldr = BinanceHourPriceLoader("BTCUSDT", start_time=start, end_time=end)
-    ldr.extract(); ldr.transform()
+    ldr.extract()
+    ldr.transform()
     df = ldr._data
     _assert_time_bounds(df, "openTime", start, end)
 
@@ -148,7 +151,8 @@ def test_klines_ethusdt_1h_bounds_2024_2025():
     start = datetime(2024, 1, 1, tzinfo=UTC)
     end = datetime(2025, 1, 1, tzinfo=UTC)
     ldr = BinanceHourPriceLoader("ETHUSDT", start_time=start, end_time=end)
-    ldr.extract(); ldr.transform()
+    ldr.extract()
+    ldr.transform()
     df = ldr._data
     _assert_time_bounds(df, "openTime", start, end)
 
@@ -167,7 +171,8 @@ def test_klines_empty_range_returns_empty_df():
     start = datetime(2024, 1, 1, tzinfo=UTC)
     end = datetime(2024, 1, 1, tzinfo=UTC)
     ldr = BinanceHourPriceLoader("BTCUSDT", start_time=start, end_time=end)
-    ldr.extract(); ldr.transform()
+    ldr.extract()
+    ldr.transform()
     df = ldr._data
     assert len(df) <= 1
     assert list(df.columns) == ["openTime", "open", "high", "low", "close", "volume"]

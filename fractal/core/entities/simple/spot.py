@@ -38,7 +38,6 @@ class SimpleSpotExchangeGlobalState(GlobalState):
 @dataclass
 class SimpleSpotExchangeInternalState(BaseSpotInternalState):
     """Spot account: inherits ``amount`` (product) and ``cash`` (notional)."""
-    pass
 
 
 class SimpleSpotExchange(BaseSpotEntity):

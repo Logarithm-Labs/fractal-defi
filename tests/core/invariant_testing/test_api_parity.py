@@ -10,13 +10,13 @@ import pytest
 
 from fractal.core.entities.base.pool import BasePoolGlobalState
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState,
-                                                            UniswapV2LPInternalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState,
+                                                           UniswapV2LPInternalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState,
-                                                            UniswapV3LPInternalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState,
+                                                           UniswapV3LPInternalState)
 
 
 # Methods/properties that BOTH V2 and V3 must expose with the same name.
@@ -73,7 +73,6 @@ def _public_members(cls):
     return {m for m in dir(instance) if not m.startswith("_") and not m.isupper()}
 
 
-# ============================================================ entity API parity
 @pytest.mark.core
 def test_v2_exposes_all_shared_public_api():
     members = _public_members(UniswapV2LPEntity)
@@ -127,7 +126,6 @@ def test_no_unexpected_public_api_members_v3():
     )
 
 
-# ============================================================ config field parity
 @pytest.mark.core
 def test_v2_v3_configs_have_same_fields():
     """Both configs must expose identical field names. V3 may have extras
@@ -153,7 +151,6 @@ def test_configs_have_same_defaults():
         )
 
 
-# ============================================================ internal state parity
 SHARED_INTERNAL_FIELDS = {
     "token0_amount",
     "token1_amount",
@@ -191,7 +188,6 @@ def test_v3_internal_state_fields_match_shared_plus_range():
     )
 
 
-# ============================================================ global state parity
 @pytest.mark.core
 def test_global_states_inherit_from_base():
     assert issubclass(UniswapV2LPGlobalState, BasePoolGlobalState)
@@ -206,7 +202,6 @@ def test_v2_v3_global_states_have_same_fields():
     assert v2_fields == v3_fields
 
 
-# ============================================================ behavioural API parity
 @pytest.mark.core
 def test_both_entities_produce_same_balance_for_zero_position():
     """Just-deposited entities should return identical balance (cash only)."""
@@ -242,7 +237,6 @@ def test_both_entities_effective_fee_rate_combines_pool_and_slippage():
     assert v3.effective_fee_rate == 0.005
 
 
-# ============================================================ private helpers parity
 @pytest.mark.core
 def test_both_entities_have_pair_helpers():
     """Both expose ``_open_from_pair`` and ``_close_to_pair`` for advanced use."""

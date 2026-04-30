@@ -30,7 +30,6 @@ class StakedETHGlobalState(GlobalState):
 @dataclass
 class StakedETHInternalState(BaseSpotInternalState):
     """Internal state of the StakedETH entity (inherits ``amount``, ``cash``)."""
-    pass
 
 
 class StakedETHEntity(BaseLiquidStakingToken):

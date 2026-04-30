@@ -5,8 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from fractal.core.base import (Action, ActionToTake, BaseStrategy,
-                               BaseStrategyParams, NamedEntity, Observation)
+from fractal.core.base import (BaseStrategy, BaseStrategyParams, NamedEntity,
+                               Observation)
 from fractal.core.entities import (SimpleSpotExchange,
                                    SimpleSpotExchangeGlobalState)
 
@@ -92,8 +92,9 @@ class _DelegateTransferStrategy(_TransferStrategy):
     """Move ALL of A's cash to B in a single step using a delegate."""
 
     def predict(self):
-        if (self.get_entity("A").internal_state.cash > 0
-                and self.get_entity("B").internal_state.cash == 0):
+        a_cash = self.get_entity("A").internal_state.cash
+        b_cash = self.get_entity("B").internal_state.cash
+        if a_cash > 0 and b_cash == 0:
             return self.transfer(
                 "A", "B",
                 amount_in_notional=lambda obj: obj.get_entity("A").internal_state.cash,

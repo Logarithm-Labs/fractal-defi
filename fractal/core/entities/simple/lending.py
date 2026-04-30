@@ -238,7 +238,6 @@ class SimpleLendingEntity(BaseLendingEntity):
                 is outside ``[0, self.ltv]``.
         """
         current = self.ltv
-        import math
         if not math.isfinite(current):
             raise SimpleLendingException(
                 "calculate_repay is undefined when current LTV is non-finite "

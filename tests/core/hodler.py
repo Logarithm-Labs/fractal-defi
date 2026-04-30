@@ -1,6 +1,5 @@
 from dataclasses import dataclass
 
-import pytest
 
 from fractal.core.base import (Action, ActionToTake, BaseEntity, BaseStrategy,
                                BaseStrategyParams, GlobalState, InternalState,
@@ -26,7 +25,7 @@ class HodlerInternalState(InternalState):
 class Hodler(BaseEntity):
     """
     Testing entity. Simple asset that holds an amount of money.
-    """    
+    """
     def _initialize_states(self):
         self._global_state = HodlerGlobalState()
         self._internal_state = HodlerInternalState()
@@ -43,7 +42,6 @@ class Hodler(BaseEntity):
 
     def action_sell(self, amount: float) -> None:
         self._internal_state.amount -= amount
-
 
 
 @dataclass

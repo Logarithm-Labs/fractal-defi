@@ -16,8 +16,8 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState,
                                                          HyperLiquidInternalState)
 from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                SimplePerpGlobalState,
-                                                SimplePerpInternalState)
+                                               SimplePerpGlobalState,
+                                               SimplePerpInternalState)
 
 
 # Methods/properties that BOTH perp entities must expose with the same name.
@@ -63,7 +63,6 @@ def _public_members(cls) -> set[str]:
     return {m for m in dir(instance) if not m.startswith("_") and not m.isupper()}
 
 
-# ============================================================ public API parity
 @pytest.mark.core
 def test_hl_exposes_all_shared_public_api():
     members = _public_members(HyperliquidEntity)
@@ -98,7 +97,6 @@ def test_no_unexpected_public_members_sp():
     )
 
 
-# ============================================================ subclass relations
 @pytest.mark.core
 def test_both_subclass_base_perp_entity():
     from fractal.core.entities import BasePerpEntity
@@ -106,7 +104,6 @@ def test_both_subclass_base_perp_entity():
     assert issubclass(SimplePerpEntity, BasePerpEntity)
 
 
-# ============================================================ internal-state shared base fields
 @pytest.mark.core
 def test_internal_states_share_collateral_field():
     """Both internal states inherit ``collateral`` from BasePerpInternalState."""
@@ -125,7 +122,6 @@ def test_internal_states_have_distinct_position_models():
     assert "size" in sp_fields and "entry_price" in sp_fields
 
 
-# ============================================================ global-state shared fields
 @pytest.mark.core
 def test_global_states_share_mark_price_and_funding_rate():
     hl_fields = {f.name for f in fields(HyperLiquidGlobalState)}
@@ -136,7 +132,6 @@ def test_global_states_share_mark_price_and_funding_rate():
     assert "funding_rate" in sp_fields
 
 
-# ============================================================ behavioural API parity
 @pytest.mark.core
 def test_both_perps_have_zero_initial_state():
     hl = HyperliquidEntity()
@@ -180,7 +175,6 @@ def test_both_perps_init_validate_max_leverage():
         SimplePerpEntity(max_leverage=-5)
 
 
-# ============================================================ liquidation_price contract: long below entry, short above
 @pytest.mark.core
 def test_both_perps_long_liquidation_below_entry():
     hl = HyperliquidEntity(trading_fee=0.0)
@@ -209,7 +203,6 @@ def test_both_perps_short_liquidation_above_entry():
     assert sp.liquidation_price > 3000
 
 
-# ============================================================ MM scaling with mark_price
 @pytest.mark.core
 def test_both_perps_maintenance_margin_scales_with_mark_price():
     """MM is mark-price-based on both entities."""

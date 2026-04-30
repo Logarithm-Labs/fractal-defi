@@ -26,10 +26,9 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState,
                                                          HyperLiquidPosition)
 from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                SimplePerpGlobalState)
+                                               SimplePerpGlobalState)
 
 
-# ============================================================ helpers
 def _hl(collateral=1000.0, mark=3000.0, fee=0.0, max_lev=50.0):
     e = HyperliquidEntity(trading_fee=fee, max_leverage=max_lev)
     e.update_state(HyperLiquidGlobalState(mark_price=mark))
@@ -47,7 +46,6 @@ def _sp(collateral=1000.0, mark=3000.0, fee=0.0, max_lev=50.0):
 PERP_FACTORIES = [_hl, _sp]
 
 
-# ============================================================ API parity
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_perp_inherits_base_perp_entity(factory):
@@ -73,7 +71,6 @@ def test_perp_exposes_required_properties(factory):
         assert isinstance(val, (int, float))
 
 
-# ============================================================ Initial state
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_perp_initial_state_clean(factory):
@@ -84,7 +81,6 @@ def test_perp_initial_state_clean(factory):
     assert e.balance == 1000.0  # what we deposited
 
 
-# ============================================================ Conservation: balance = collateral + pnl
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_balance_equals_collateral_plus_pnl(factory):
@@ -95,7 +91,6 @@ def test_balance_equals_collateral_plus_pnl(factory):
     assert e.balance == pytest.approx(e._internal_state.collateral)
 
 
-# ============================================================ PnL sign for long / short
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_long_pnl_positive_when_price_up(factory):
@@ -138,7 +133,6 @@ def test_short_pnl_negative_when_price_up(factory):
     assert e.pnl < 0
 
 
-# ============================================================ Open + close round-trip (zero-fee)
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_zero_fee_round_trip_with_no_price_move_preserves_balance(factory):
@@ -167,10 +161,9 @@ def test_long_close_with_price_up_realizes_profit(factory):
     assert e._internal_state.collateral == pytest.approx(coll_before + 100)
 
 
-# ============================================================ Funding direction (X-2 paradigm)
 @pytest.mark.core
 @pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
-                                          (_sp, SimplePerpGlobalState)])
+                                         (_sp, SimplePerpGlobalState)])
 def test_long_pays_positive_funding(factory, cls):
     e = factory(fee=0.0)
     e.action_open_position(1.0)
@@ -182,7 +175,7 @@ def test_long_pays_positive_funding(factory, cls):
 
 @pytest.mark.core
 @pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
-                                          (_sp, SimplePerpGlobalState)])
+                                         (_sp, SimplePerpGlobalState)])
 def test_short_receives_positive_funding(factory, cls):
     e = factory(fee=0.0)
     e.action_open_position(-1.0)
@@ -191,10 +184,9 @@ def test_short_receives_positive_funding(factory, cls):
     assert e._internal_state.collateral == pytest.approx(coll_before + 30)
 
 
-# ============================================================ Funding-before-liquidation (X-2 cross-cutting)
 @pytest.mark.core
 @pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
-                                          (_sp, SimplePerpGlobalState)])
+                                         (_sp, SimplePerpGlobalState)])
 def test_funding_settled_before_liquidation_check(factory, cls):
     """Both entities apply funding BEFORE liquidation check.
 
@@ -213,7 +205,6 @@ def test_funding_settled_before_liquidation_check(factory, cls):
     assert e._internal_state.collateral == pytest.approx(970)
 
 
-# ============================================================ Lifecycle: action_close_position is no-op when flat
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_close_when_flat_is_noop(factory):
@@ -222,10 +213,9 @@ def test_close_when_flat_is_noop(factory):
     assert e.size == 0
 
 
-# ============================================================ Liquidation wipes state
 @pytest.mark.core
 @pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
-                                          (_sp, SimplePerpGlobalState)])
+                                         (_sp, SimplePerpGlobalState)])
 def test_liquidation_wipes_position(factory, cls):
     """Sharp move past liq → both entities wipe collateral and clear position."""
     e = factory(fee=0.0, collateral=100.0, max_lev=10.0)
@@ -236,7 +226,6 @@ def test_liquidation_wipes_position(factory, cls):
     assert e._internal_state.collateral == 0
 
 
-# ============================================================ Hyperliquid-specific: closed-form liquidation_price
 @pytest.mark.core
 def test_hl_liquidation_price_long_matches_closed_form():
     """Long 1 ETH @ $3000, $1000 coll, MAX_LEV=50 → liq = 2000/0.99 ≈ 2020.2."""
@@ -269,7 +258,6 @@ def test_hl_maintenance_margin_uses_current_mark():
     assert e.maintenance_margin == pytest.approx(40)  # 1×4000×0.01
 
 
-# ============================================================ Position model differences
 @pytest.mark.core
 def test_hl_position_is_dataclass():
     """Phase 4 (H-8): HyperLiquidPosition uses @dataclass — equality and
@@ -303,7 +291,6 @@ def test_sp_uses_scalar_size_and_entry_price_state():
     assert e._internal_state.entry_price == 3000.0
 
 
-# ============================================================ Validation: negative on open is short, not error
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_perp_negative_amount_on_open_is_short_not_rejected(factory):
@@ -313,7 +300,6 @@ def test_perp_negative_amount_on_open_is_short_not_rejected(factory):
     assert e.size == pytest.approx(-0.3)
 
 
-# ============================================================ Cycle reuse: open / close repeatedly
 @pytest.mark.core
 @pytest.mark.parametrize("factory", PERP_FACTORIES)
 def test_multiple_open_close_cycles(factory):

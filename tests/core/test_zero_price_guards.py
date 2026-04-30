@@ -11,21 +11,19 @@ import pytest
 from fractal.core.base import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
 from fractal.core.entities.protocols.hyperliquid import (
-    HyperliquidEntity, HyperliquidEntityException, HyperLiquidGlobalState)
+    HyperliquidEntity, HyperliquidEntityException)
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException,
-                                                   StakedETHGlobalState)
+                                                   StakedETHEntityException)
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (
-    UniswapV3SpotEntity, UniswapV3SpotEntityException, UniswapV3SpotGlobalState)
+    UniswapV3SpotEntity, UniswapV3SpotEntityException)
 
 
-# ===================================================== Aave: borrow / withdraw / ltv / calculate_repay
 @pytest.mark.core
 def test_aave_borrow_rejects_zero_collateral_price():
     e = AaveEntity()
@@ -94,7 +92,6 @@ def test_aave_calculate_repay_raises_when_ltv_inf():
         e.calculate_repay(0.5)
 
 
-# ===================================================== Hyperliquid: open_position
 @pytest.mark.core
 def test_hyperliquid_open_position_rejects_zero_mark_price():
     e = HyperliquidEntity()
@@ -104,7 +101,6 @@ def test_hyperliquid_open_position_rejects_zero_mark_price():
         e.action_open_position(1.0)
 
 
-# ===================================================== UniV2 LP: open_position
 @pytest.mark.core
 def test_univ2_open_position_rejects_zero_price():
     e = UniswapV2LPEntity(UniswapV2LPConfig())
@@ -114,7 +110,6 @@ def test_univ2_open_position_rejects_zero_price():
         e.action_open_position(500)
 
 
-# ===================================================== UniV3 LP: calculate_fees short-circuits
 @pytest.mark.core
 def test_univ3lp_calculate_fees_returns_zero_when_price_zero():
     """Used to ZeroDivisionError on 1/p; now silently 0."""
@@ -127,7 +122,6 @@ def test_univ3lp_calculate_fees_returns_zero_when_price_zero():
     assert e.calculate_fees() == 0
 
 
-# ===================================================== UniV3Spot: buy
 @pytest.mark.core
 def test_univ3spot_buy_rejects_zero_price():
     e = UniswapV3SpotEntity()
@@ -136,7 +130,6 @@ def test_univ3spot_buy_rejects_zero_price():
         e.action_buy(100)
 
 
-# ===================================================== stETH: buy
 @pytest.mark.core
 def test_steth_buy_rejects_zero_price():
     e = StakedETHEntity()

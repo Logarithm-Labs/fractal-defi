@@ -38,6 +38,7 @@ def test_action_args_each_dataclass_gets_own_default():
 @pytest.mark.core
 def test_action_supports_callable_args():
     """``args`` may carry callables; framework resolves them at execute time."""
-    delegate = lambda obj: 42  # noqa: E731
+    def delegate(obj):  # pylint: disable=unused-argument
+        return 42
     a = Action("withdraw", {"amount_in_notional": delegate})
     assert callable(a.args["amount_in_notional"])

@@ -1,0 +1,55 @@
+# Pylint config for the tests/ tree only.
+# Inherits the project root config, plus disables idiomatic-in-pytest
+# warnings:
+#   - protected-access: tests routinely poke ``entity._internal_state.x``
+#     to set up specific scenarios.
+#   - redefined-outer-name: pytest fixtures are matched by parameter name,
+#     so each test function ``def test_x(fixture)`` shadows the module-level
+#     fixture function — by design.
+#   - import-outside-toplevel: lazy imports inside tests keep cross-test
+#     fixtures local and avoid circular-import surprises.
+#   - disallowed-name (C0104): single-letter math vars (``e`` for entity)
+#     are clearer than long names in arithmetic-heavy tests.
+#   - wrong-import-position: ``pytest.importorskip`` requires the conditional
+#     import to follow the skip guard.
+#   - unspecified-encoding: tests open scratch files where encoding is
+#     irrelevant.
+#   - useless-return / unnecessary-comparison-with-itself / no-else-return:
+#     occasional symmetry these checks flag is intentional in test bodies.
+
+[MASTER]
+ignore=CVS
+load-plugins=
+jobs=1
+
+[MESSAGES CONTROL]
+disable=
+    super-on-old-class,arguments-differ,signature-differs,method-hidden,
+    abstract-method,no-member,relative-import,no-init,import-error,
+    attribute-defined-outside-init,abstract-class-not-used,unused-argument,
+    unused-variable,invalid-name,duplicate-code,abstract-class-little-used,
+    too-few-public-methods,too-many-instance-attributes,too-many-ancestors,
+    too-many-return-statements,too-many-lines,too-many-locals,
+    too-many-function-args,too-many-public-methods,too-many-arguments,
+    too-many-positional-arguments,too-many-statements,too-many-branches,
+    bad-continuation,no-self-use,missing-docstring,fixme,star-args,
+    locally-disabled,locally-enabled,bad-option-value,
+    protected-access,
+    redefined-outer-name,
+    import-outside-toplevel,
+    disallowed-name,
+    wrong-import-position,
+    unspecified-encoding,
+    useless-return,
+    no-else-return,
+    comparison-with-itself,
+    unexpected-keyword-arg,
+    broad-exception-caught,
+    cyclic-import
+
+[FORMAT]
+max-line-length=120
+
+[REPORTS]
+output-format=text
+reports=no

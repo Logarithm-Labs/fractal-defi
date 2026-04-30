@@ -2,8 +2,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-import numpy as np
-import pandas as pd
 import pytest
 
 from fractal.core.base import GlobalState, InternalState

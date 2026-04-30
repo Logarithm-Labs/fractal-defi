@@ -19,7 +19,7 @@ def observation():
     return Observation(
         timestamp=datetime.now(),
         states={
-            'exchange':  SomeState(price=100.0, volume=1000.0),
+            'exchange': SomeState(price=100.0, volume=1000.0),
         }
     )
 

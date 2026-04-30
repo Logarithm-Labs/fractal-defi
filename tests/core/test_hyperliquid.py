@@ -2,8 +2,8 @@ import numpy as np
 import pytest
 
 from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                               HyperLiquidGlobalState,
-                                               HyperLiquidPosition)
+                                                         HyperLiquidGlobalState,
+                                                         HyperLiquidPosition)
 
 
 @pytest.fixture
@@ -81,7 +81,7 @@ def test_leverage(hyperliquid_entity):
     hyperliquid_entity.action_open_position(0.5)
     assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee))
 
-    
+
 @pytest.mark.core
 def test_check_liquidation(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
@@ -91,7 +91,7 @@ def test_check_liquidation(hyperliquid_entity):
     # liquidation was triggered
     assert hyperliquid_entity.size == 0
 
-    
+
 @pytest.mark.core
 def test_leverage_change(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
@@ -165,14 +165,16 @@ def test_pnl_property_polymorphic(hyperliquid_entity):
 @pytest.mark.core
 def test_clearing(hyperliquid_entity):
     hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
-    hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquid_entity._global_state.mark_price,
-                                                                           max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.trading_fee * hyperliquid_entity._global_state.mark_price)
-    hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquid_entity._global_state.mark_price,
-                                                                           max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.trading_fee * hyperliquid_entity._global_state.mark_price)
+    mark = hyperliquid_entity._global_state.mark_price
+    fee = hyperliquid_entity.trading_fee
+    hyperliquid_entity._internal_state.positions.append(
+        HyperLiquidPosition(amount=0.5, entry_price=mark, max_leverage=50)
+    )
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * fee * mark)
+    hyperliquid_entity._internal_state.positions.append(
+        HyperLiquidPosition(amount=0.5, entry_price=mark, max_leverage=50)
+    )
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * fee * mark)
     leverage_before_clearing = hyperliquid_entity.leverage
     balance_before_clearing = hyperliquid_entity.balance
     hyperliquid_entity._clearing()

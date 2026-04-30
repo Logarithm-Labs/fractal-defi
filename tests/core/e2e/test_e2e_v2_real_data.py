@@ -12,16 +12,14 @@ prices stream for the same ETH/USDC pair (V3 gives a clean tick-derived
 ETH price). Pool data drives the entity's pool-share math; price drives
 mark-to-market.
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
 
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 from fractal.loaders import (EthereumUniswapV2PoolDataLoader, LoaderType,
                              UniswapV3EthereumPricesLoader)
 

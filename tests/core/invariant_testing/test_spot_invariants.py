@@ -12,24 +12,22 @@ All four expose ``action_buy / sell / deposit / withdraw``, ``balance``,
 """
 import pytest
 
-from fractal.core.base.entity import EntityException
 from fractal.core.entities.base.liquid_staking import BaseLiquidStakingToken
 from fractal.core.entities.base.spot import BaseSpotEntity, BaseSpotInternalState
 from fractal.core.entities.protocols.steth import (StakedETHEntity,
                                                    StakedETHEntityException,
                                                    StakedETHGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                              UniswapV3SpotEntityException,
-                                                              UniswapV3SpotGlobalState)
+                                                             UniswapV3SpotEntityException,
+                                                             UniswapV3SpotGlobalState)
 from fractal.core.entities.simple.liquid_staking import (SimpleLiquidStakingToken,
-                                                          SimpleLiquidStakingTokenException,
-                                                          SimpleLiquidStakingTokenGlobalState)
+                                                         SimpleLiquidStakingTokenException,
+                                                         SimpleLiquidStakingTokenGlobalState)
 from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                                SimpleSpotExchangeException,
-                                                SimpleSpotExchangeGlobalState)
+                                               SimpleSpotExchangeException,
+                                               SimpleSpotExchangeGlobalState)
 
 
-# ============================================================ helpers
 def _univ3_spot():
     e = UniswapV3SpotEntity()
     e.update_state(UniswapV3SpotGlobalState(price=2000.0))
@@ -64,7 +62,6 @@ SPOT_FACTORIES = [
 LST_FACTORIES = [_steth, _simple_lst]
 
 
-# ============================================================ API parity
 @pytest.mark.core
 @pytest.mark.parametrize("factory,_exc", SPOT_FACTORIES)
 def test_spot_inherits_base(factory, _exc):
@@ -113,7 +110,6 @@ def test_lst_exposes_staking_rate(factory):
     assert isinstance(e.staking_rate, (int, float))
 
 
-# ============================================================ Initial state
 @pytest.mark.core
 @pytest.mark.parametrize("factory,_exc", SPOT_FACTORIES)
 def test_spot_initial_state_is_clean(factory, _exc):
@@ -123,7 +119,6 @@ def test_spot_initial_state_is_clean(factory, _exc):
     assert e.balance == 0
 
 
-# ============================================================ Validation parity
 @pytest.mark.core
 @pytest.mark.parametrize("factory,exc", SPOT_FACTORIES)
 def test_spot_negative_buy_rejected(factory, exc):
@@ -184,7 +179,6 @@ def test_spot_withdraw_overdraft_rejected(factory, exc):
         e.action_withdraw(200)
 
 
-# ============================================================ Zero-price guards
 @pytest.mark.core
 def test_univ3_spot_buy_rejects_zero_price():
     e = UniswapV3SpotEntity()
@@ -234,7 +228,6 @@ def test_steth_sell_rejects_zero_price():
         e.action_sell(0.5)
 
 
-# ============================================================ State invariants
 @pytest.mark.core
 @pytest.mark.parametrize("factory,_exc", SPOT_FACTORIES)
 def test_spot_amount_and_cash_non_negative_through_lifecycle(factory, _exc):
@@ -273,7 +266,6 @@ def test_spot_round_trip_loses_two_trading_fees(factory, _exc):
     assert e._internal_state.cash > 980  # at most ~2% loss for default fees
 
 
-# ============================================================ LST rebasing
 @pytest.mark.core
 @pytest.mark.parametrize("factory", LST_FACTORIES)
 def test_lst_amount_rebases_on_positive_rate(factory):
@@ -303,7 +295,6 @@ def test_lst_rate_below_minus_one_rejected_simple():
         e.update_state(SimpleLiquidStakingTokenGlobalState(price=2000, staking_rate=-2.0))
 
 
-# ============================================================ Round-trip math (no fee)
 @pytest.mark.core
 def test_univ3_spot_zero_fee_round_trip_preserves_notional():
     """With trading_fee=0, buy → sell at same price → cash unchanged."""
@@ -345,7 +336,6 @@ def test_simple_lst_zero_fee_round_trip_preserves_notional():
     assert e._internal_state.cash == pytest.approx(1000)
 
 
-# ============================================================ Subclass relationship
 @pytest.mark.core
 def test_lst_is_a_spot_entity():
     """LSTs are spot-tradeable; ``BaseLiquidStakingToken`` extends ``BaseSpotEntity``."""

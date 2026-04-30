@@ -9,8 +9,6 @@ through it. Combines with a synthetic price walk (since the Lido loader
 returns rate-only). Verifies amount rebases monotonically and balance
 stays finite throughout.
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd

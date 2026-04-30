@@ -9,8 +9,6 @@ public API and walks ``HyperliquidEntity`` through the merged stream.
 Verifies balance stays finite, PnL tracks price moves, funding accumulates
 correctly.
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd

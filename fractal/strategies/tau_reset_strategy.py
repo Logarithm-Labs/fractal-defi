@@ -60,8 +60,8 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
     def __init__(
         self,
         params: TauResetParams,
-        debug: bool = False,
         *args,
+        debug: bool = False,
         token0_decimals: Optional[int] = None,
         token1_decimals: Optional[int] = None,
         tick_spacing: Optional[int] = None,

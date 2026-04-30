@@ -16,17 +16,16 @@ import pytest
 
 from fractal.core.entities.base.pool import BasePoolGlobalState
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState,
-                                                            UniswapV2LPInternalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState,
+                                                           UniswapV2LPInternalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState,
-                                                            UniswapV3LPInternalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState,
+                                                           UniswapV3LPInternalState)
 from fractal.core.entities.simple.pool import SimplePoolGlobalState
 
 
-# ============================================================ shared GlobalState
 @pytest.mark.core
 @pytest.mark.parametrize("cls", [UniswapV2LPGlobalState,
                                  UniswapV3LPGlobalState,
@@ -39,7 +38,6 @@ def test_pool_global_states_inherit_from_base(cls):
         assert hasattr(s, f), f"{cls.__name__} missing common field {f}"
 
 
-# ============================================================ V2: hodl & IL
 @pytest.fixture
 def v2_open_at_1000():
     cfg = UniswapV2LPConfig(pool_fee_rate=0.003, slippage_pct=0.0,
@@ -82,7 +80,6 @@ def test_v2_hodl_returns_cash_with_no_position():
     assert e.impermanent_loss == 0
 
 
-# ============================================================ V3: hodl, IL, is_in_range
 @pytest.fixture
 def v3_open_at_1():
     e = UniswapV3LPEntity(UniswapV3LPConfig())
@@ -131,7 +128,6 @@ def test_v3_is_in_range_false_with_no_position():
     assert e.is_in_range is False
 
 
-# ============================================================ is_position is property
 @pytest.mark.core
 def test_v2_is_position_is_property():
     """is_position should derive from liquidity, not be a settable attr."""
@@ -149,7 +145,6 @@ def test_v3_is_position_is_property():
         e.is_position = True
 
 
-# ============================================================ close mutates, doesn't replace
 @pytest.mark.core
 def test_v2_close_position_preserves_subclass_fields():
     """Lock-in for V2-4: ``action_close_position`` must mutate, not replace,

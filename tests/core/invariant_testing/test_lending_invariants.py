@@ -20,7 +20,6 @@ from fractal.core.entities.simple.lending import (SimpleLendingEntity,
                                                   SimpleLendingGlobalState)
 
 
-# ============================================================ helpers
 def _aave():
     e = AaveEntity()
     e.update_state(AaveGlobalState(collateral_price=1.0, debt_price=1.0))
@@ -33,7 +32,6 @@ def _simple():
     return e
 
 
-# ============================================================ Initial state
 @pytest.mark.core
 def test_aave_initial_state_clean():
     e = AaveEntity()
@@ -52,7 +50,6 @@ def test_simple_lending_initial_state_clean():
     assert e.ltv == 0
 
 
-# ============================================================ Validation parity
 @pytest.mark.core
 @pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
 def test_lending_negative_deposit_rejected(factory, exc):
@@ -130,7 +127,6 @@ def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
         e.action_withdraw(200)
 
 
-# ============================================================ Config validation
 @pytest.mark.core
 def test_aave_rejects_liq_thr_below_max_ltv():
     """A-6: ``liq_thr >= max_ltv`` invariant validated at construction."""
@@ -170,7 +166,6 @@ def test_simple_lending_rejects_borrowing_rate_below_minus_one():
                                                 lending_rate=0, borrowing_rate=-2))
 
 
-# ============================================================ State-machine invariants
 @pytest.mark.core
 @pytest.mark.parametrize("factory", [_aave, _simple])
 def test_lending_collateral_never_negative_through_lifecycle(factory):
@@ -211,7 +206,6 @@ def test_lending_full_repay_reduces_borrowed_to_zero(factory):
     assert e.ltv == 0
 
 
-# ============================================================ LTV math
 @pytest.mark.core
 def test_ltv_zero_when_no_debt_aave():
     e = _aave()
@@ -255,7 +249,6 @@ def test_aave_ltv_inf_when_collateral_zero_with_debt():
         e.calculate_repay(0.5)
 
 
-# ============================================================ Liquidation
 @pytest.mark.core
 def test_aave_liquidation_wipes_position_when_ltv_exceeds_threshold():
     e = _aave()
@@ -274,12 +267,11 @@ def test_simple_lending_liquidation_wipes_position():
     e.action_deposit(1000)
     e.action_borrow(700)
     e.update_state(SimpleLendingGlobalState(collateral_price=1, debt_price=2,
-                                             lending_rate=0, borrowing_rate=0))
+                                            lending_rate=0, borrowing_rate=0))
     assert e._internal_state.collateral == 0
     assert e._internal_state.borrowed == 0
 
 
-# ============================================================ Math parity
 @pytest.mark.core
 def test_aave_simple_lending_match_balance_under_canonical_inputs():
     """At collateral_price=1, debt_price=1, lending_rate=0, borrowing_rate=0,
@@ -305,7 +297,6 @@ def test_aave_simple_lending_match_calculate_repay():
     assert a.calculate_repay(0.3) == pytest.approx(s.calculate_repay(0.3))
 
 
-# ============================================================ Deprecated alias
 @pytest.mark.core
 def test_aave_check_liquidation_deprecated_alias_still_works():
     """``check_liquidation`` is deprecated public alias of ``_check_liquidation``."""

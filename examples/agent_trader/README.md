@@ -202,7 +202,7 @@ def build_grid() -> ParameterGrid:
 
 # Define MLFlow and Experiment configurations
 mlflow_config: MLFlowConfig = MLFlowConfig(
-    mlflow_uri='http://127.0.01:8080',
+    mlflow_uri='http://127.0.0.1:8080',
     experiment_name=f'agent_trader_btc_v0.1-2024'
 )
 experiment_config: ExperimentConfig = ExperimentConfig(
@@ -227,13 +227,13 @@ mlflow server --host 127.0.0.1 --port 8080
 Run grid search with MLFlow logging:
 ```bash
 python agent_pipeline.py
-🏃 View run upset-quail-538 at: http://127.0.01:8080/#/experiments/322037600437979899/runs/0b62ce154e8740feb18ed8af9ec69dda
-🧪 View experiment at: http://127.0.01:8080/#/experiments/322037600437979899
+🏃 View run upset-quail-538 at: http://127.0.0.1:8080/#/experiments/322037600437979899/runs/0b62ce154e8740feb18ed8af9ec69dda
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/322037600437979899
 [non-fatal] Tracing: request failed: _ssl.c:983: The handshake operation timed out
-🏃 View run fortunate-zebra-449 at: http://127.0.01:8080/#/experiments/322037600437979899/runs/e7cb3a4fbc004eaf8ebe6ee9821237e6
-🧪 View experiment at: http://127.0.01:8080/#/experiments/322037600437979899
-🏃 View run unequaled-fly-865 at: http://127.0.01:8080/#/experiments/322037600437979899/runs/637aaaacd21e4964beda27fdf6fcf8e8
-🧪 View experiment at: http://127.0.01:8080/#/experiments/322037600437979899
+🏃 View run fortunate-zebra-449 at: http://127.0.0.1:8080/#/experiments/322037600437979899/runs/e7cb3a4fbc004eaf8ebe6ee9821237e6
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/322037600437979899
+🏃 View run unequaled-fly-865 at: http://127.0.0.1:8080/#/experiments/322037600437979899/runs/637aaaacd21e4964beda27fdf6fcf8e8
+🧪 View experiment at: http://127.0.0.1:8080/#/experiments/322037600437979899
 ```
 
 ---

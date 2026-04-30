@@ -8,8 +8,6 @@ Pulls a real ~30-day window of WETH supply/borrow rates from Aave V3 on
 Ethereum and walks ``AaveEntity`` through them. Verifies balance stays
 finite and interest accrual matches the rate stream.
 """
-from __future__ import annotations
-
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd

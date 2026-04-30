@@ -30,21 +30,20 @@ Invariants covered:
 import pytest
 
 from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                            UniswapV2LPEntity,
-                                                            UniswapV2LPGlobalState)
+                                                           UniswapV2LPEntity,
+                                                           UniswapV2LPGlobalState)
 from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                            UniswapV3LPEntity,
-                                                            UniswapV3LPGlobalState)
+                                                           UniswapV3LPEntity,
+                                                           UniswapV3LPGlobalState)
 
 
-# ============================================================ shared fixtures
 def _v2(pool_fee_rate=0.003, slippage_pct=0.0, notional_side="token0"):
     cfg = UniswapV2LPConfig(pool_fee_rate=pool_fee_rate,
                             slippage_pct=slippage_pct,
                             notional_side=notional_side)
     e = UniswapV2LPEntity(cfg)
     e.update_state(UniswapV2LPGlobalState(tvl=10_000, liquidity=10_000,
-                                           price=1000, fees=0, volume=0))
+                                          price=1000, fees=0, volume=0))
     return e
 
 
@@ -54,11 +53,10 @@ def _v3(pool_fee_rate=0.003, slippage_pct=0.0, notional_side="token0"):
                             notional_side=notional_side)
     e = UniswapV3LPEntity(cfg)
     e.update_state(UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
-                                           price=1.0, fees=0, volume=0))
+                                          price=1.0, fees=0, volume=0))
     return e
 
 
-# ============================================================ Conservation
 @pytest.mark.core
 def test_v2_balance_decomposes_into_stable_volatile_cash():
     """``balance == stable_amount + volatile_amount × price + cash`` must hold
@@ -87,7 +85,6 @@ def test_v3_balance_decomposes_into_stable_volatile_cash():
     assert e.balance == pytest.approx(expected)
 
 
-# ============================================================ Hodl identity
 @pytest.mark.core
 def test_v2_hodl_equals_balance_at_entry():
     """At position open with no price move, hodl == balance and IL == 0."""
@@ -107,7 +104,6 @@ def test_v3_hodl_equals_balance_at_entry():
     assert e.impermanent_loss == pytest.approx(0.0, abs=1e-9)
 
 
-# ============================================================ No-fee idempotence
 @pytest.mark.core
 def test_v2_zero_fee_round_trip_preserves_notional():
     """With pool_fee_rate=0, slippage_pct=0: deposit → open → close → all back to cash."""
@@ -127,7 +123,6 @@ def test_v3_zero_fee_round_trip_preserves_notional():
     assert e._internal_state.cash == pytest.approx(1000.0)
 
 
-# ============================================================ Fee proportionality
 @pytest.mark.core
 @pytest.mark.parametrize("pool_fee", [0.001, 0.003, 0.01, 0.03])
 def test_v2_round_trip_cost_equals_pool_fee_times_deposit(pool_fee):
@@ -164,7 +159,6 @@ def test_v2_slippage_stacks_with_pool_fee():
     assert e_slip.balance < e_no_slip.balance
 
 
-# ============================================================ V3 narrower range → higher L
 @pytest.mark.core
 def test_v3_narrower_range_yields_higher_liquidity():
     """At the same notional deposit and same current price, a tighter range
@@ -192,13 +186,12 @@ def test_v3_narrower_range_earns_more_fees_per_bar():
     narrow.action_open_position(500, 0.95, 1.05)
 
     bar = UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
-                                  price=1.0, fees=100, volume=0)
+                                 price=1.0, fees=100, volume=0)
     wide.update_state(bar)
     narrow.update_state(bar)
     assert narrow.calculate_fees() > wide.calculate_fees()
 
 
-# ============================================================ V3 out-of-range fees zero
 @pytest.mark.core
 def test_v3_fees_zero_when_price_below_range():
     e = _v3()
@@ -206,7 +199,7 @@ def test_v3_fees_zero_when_price_below_range():
     e.action_open_position(500, 0.9, 1.1)
     # Price exits below the range
     e.update_state(UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
-                                           price=0.85, fees=100, volume=0))
+                                          price=0.85, fees=100, volume=0))
     assert e.calculate_fees() == 0
 
 
@@ -216,7 +209,7 @@ def test_v3_fees_zero_when_price_above_range():
     e.action_deposit(1000)
     e.action_open_position(500, 0.9, 1.1)
     e.update_state(UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
-                                           price=1.15, fees=100, volume=0))
+                                          price=1.15, fees=100, volume=0))
     assert e.calculate_fees() == 0
 
 
@@ -228,12 +221,11 @@ def test_v3_is_in_range_matches_calculate_fees_zero_check():
     e.action_open_position(500, 0.9, 1.1)
     for price in [0.85, 0.9, 1.1, 1.15]:
         e.update_state(UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
-                                               price=price, fees=100, volume=0))
+                                              price=price, fees=100, volume=0))
         if not e.is_in_range:
             assert e.calculate_fees() == 0
 
 
-# ============================================================ V3 zap-in edge cases
 @pytest.mark.core
 def test_v3_zap_in_above_range_holds_only_volatile():
     """When current price < price_lower (range above current), zap-in swaps
@@ -244,10 +236,8 @@ def test_v3_zap_in_above_range_holds_only_volatile():
     e.action_open_position(500, 1.5, 2.0)
     assert e.stable_amount == 0
     assert e.volatile_amount > 0
-    # Effective cost = full × fee (entire amount swapped)
+    # Effective cost = full × fee (entire amount swapped); balance ≈ 1000 - 500*fee
     expected_cost = 500 * e.effective_fee_rate
-    actual_cost = 500 - (e.balance - 500)  # 500 deposited into position, rest is cash
-    # balance ≈ 1000 - 500*fee
     assert e.balance == pytest.approx(1000 - expected_cost, rel=1e-4)
 
 
@@ -265,7 +255,6 @@ def test_v3_zap_in_below_range_holds_only_stable_no_fee():
     assert e.balance == pytest.approx(1000.0)
 
 
-# ============================================================ Round-trip consistency
 @pytest.mark.core
 def test_v2_open_close_at_same_state_is_pool_fee_round_trip():
     """Opening then immediately closing at the same global state yields the
@@ -303,7 +292,6 @@ def test_v2_open_close_with_no_position_amount_no_fee():
     assert e.balance == 0
 
 
-# ============================================================ Pair-level invariants
 @pytest.mark.core
 def test_v2_open_from_pair_no_fee():
     """``_open_from_pair`` mints LP without applying any swap fee — pair
@@ -350,7 +338,6 @@ def test_v3_open_from_pair_above_range_returns_stable_as_leftover():
     assert leftover1 == pytest.approx(0.0, abs=1e-9)
 
 
-# ============================================================ Notional-side flip invariance
 @pytest.mark.core
 def test_v2_round_trip_cost_invariant_under_notional_flip():
     """Same pool data + same deposit → same round-trip cost regardless

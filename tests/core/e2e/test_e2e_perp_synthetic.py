@@ -10,8 +10,6 @@ trajectory:
 * multiple open/close cycles work with state consistent
 * Hyperliquid and SimplePerp behave consistently on the shared paradigm
 """
-from __future__ import annotations
-
 import random
 
 import pytest
@@ -19,7 +17,7 @@ import pytest
 from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
                                                          HyperLiquidGlobalState)
 from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                SimplePerpGlobalState)
+                                               SimplePerpGlobalState)
 
 
 def _price_walk(seed=11, n=30, p0=3000.0, sigma=0.01):
@@ -32,7 +30,6 @@ def _price_walk(seed=11, n=30, p0=3000.0, sigma=0.01):
     return out
 
 
-# ============================================================ Hyperliquid walks
 @pytest.mark.core
 def test_hl_long_survives_gentle_walk():
     """Conservative leverage + gentle walk → no liquidation, balance finite."""
@@ -92,7 +89,6 @@ def test_hl_short_funding_grows_collateral_over_time():
         assert coll_history[i] > coll_history[i - 1]
 
 
-# ============================================================ Multi-cycle scenarios
 @pytest.mark.core
 def test_hl_open_close_cycle_through_walk():
     """Open and close repeatedly through a walk — entity stays consistent."""
@@ -128,7 +124,6 @@ def test_hl_position_flip_through_walk():
     assert len(e._internal_state.positions) == 1
 
 
-# ============================================================ Hyperliquid vs SimplePerp parity in shared scenario
 @pytest.mark.core
 def test_hl_and_sp_match_pnl_through_walk():
     """Same setup, same walk, same PnL on every bar (modulo MMR/funding details)."""
@@ -156,7 +151,6 @@ def test_hl_and_sp_match_pnl_through_walk():
         assert ph == pytest.approx(ps)
 
 
-# ============================================================ Stress: liquidation timing
 @pytest.mark.core
 def test_hl_liquidation_at_predicted_price():
     """At the moment mark_price crosses ``liquidation_price``, position is
@@ -172,7 +166,6 @@ def test_hl_liquidation_at_predicted_price():
     assert e.size == 0
 
 
-# ============================================================ SimplePerp synthetic walk parity
 @pytest.mark.core
 def test_sp_long_survives_gentle_walk():
     e = SimplePerpEntity(trading_fee=0.0)
