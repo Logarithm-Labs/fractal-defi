@@ -27,7 +27,7 @@ notional value), compute the inverse using
 from abc import abstractmethod
 from dataclasses import dataclass
 
-from fractal.core.base.entity import BaseEntity, InternalState
+from fractal.core.base.entity import BaseEntity, EntityException, InternalState
 
 
 @dataclass
@@ -87,3 +87,56 @@ class BaseSpotEntity(BaseEntity):
             EntityException: If there is not enough product.
         """
         raise NotImplementedError
+
+    # --------------------------------------------------------- cross-entity transfer
+    # The two primitives below are **strategy-level** helpers for moving
+    # the product token between entities WITHOUT a swap (no fee, no price
+    # impact). Useful when the strategy holds product that arrived from
+    # outside the spot entity — for example, when Aave returns collateral
+    # to the user, or when one spot entity transfers product to another.
+    #
+    # They are NOT a substitute for buy/sell — those go through the market;
+    # these bypass it entirely. Strategies are responsible for ensuring
+    # the product accounting is consistent across entities (the
+    # framework can't enforce it because product token identity isn't
+    # represented at the entity level).
+
+    def action_inject_product(self, amount: float) -> None:
+        """Add ``amount`` of product directly to ``internal_state.amount``.
+
+        No swap, no trading fee. Used when product arrives from outside —
+        e.g. as a withdrawal of collateral from a lending protocol that
+        the strategy is now holding in this spot entity.
+
+        Subclasses can override to layer protocol-specific behaviour.
+
+        Raises:
+            EntityException: If ``amount < 0``.
+        """
+        if amount < 0:
+            raise EntityException(
+                f"inject_product amount must be >= 0, got {amount}"
+            )
+        self._internal_state.amount += amount
+
+    def action_remove_product(self, amount: float) -> None:
+        """Remove ``amount`` of product directly from ``internal_state.amount``.
+
+        No swap, no trading fee. Used when product leaves the entity —
+        e.g. being deposited into a lending protocol as collateral, or
+        transferred to another spot entity.
+
+        Subclasses can override to layer protocol-specific behaviour.
+
+        Raises:
+            EntityException: If ``amount < 0`` or exceeds the current holding.
+        """
+        if amount < 0:
+            raise EntityException(
+                f"remove_product amount must be >= 0, got {amount}"
+            )
+        if amount > self._internal_state.amount:
+            raise EntityException(
+                f"remove_product exceeds holding: {amount} > {self._internal_state.amount}"
+            )
+        self._internal_state.amount -= amount

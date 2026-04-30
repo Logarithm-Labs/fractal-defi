@@ -87,12 +87,12 @@ def test_steth_config_available_in_initialize_states():
 
     class _Sub(StakedETHEntity):
         def _initialize_states(self):
-            captured["TRADING_FEE"] = self.TRADING_FEE
+            captured["trading_fee"] = self.trading_fee
             self._internal_state = StakedETHInternalState()
             self._global_state = StakedETHGlobalState()
 
     _Sub(trading_fee=0.005)
-    assert captured == {"TRADING_FEE": 0.005}
+    assert captured == {"trading_fee": 0.005}
 
 
 @pytest.mark.core
@@ -149,9 +149,9 @@ def test_uniswap_v3_spot_config_available_in_initialize_states():
 
     class _Sub(UniswapV3SpotEntity):
         def _initialize_states(self):
-            captured["TRADING_FEE"] = self.TRADING_FEE
+            captured["trading_fee"] = self.trading_fee
             self._internal_state = UniswapV3SpotInternalState()
             self._global_state = UniswapV3SpotGlobalState()
 
     _Sub(trading_fee=0.005)
-    assert captured == {"TRADING_FEE": 0.005}
+    assert captured == {"trading_fee": 0.005}

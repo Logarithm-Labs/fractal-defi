@@ -272,7 +272,7 @@ def test_calculate_repay_raises_when_ltv_is_inf():
     e = SimpleLendingEntity()
     e.update_state(__import__(
         "fractal.core.entities.simple.lending", fromlist=["SimpleLendingGlobalState"],
-    ).SimpleLendingGlobalState(notional_price=1, product_price=1))
+    ).SimpleLendingGlobalState(collateral_price=1, debt_price=1))
     e._internal_state.collateral = 0.0
     e._internal_state.borrowed = 100.0  # debt with no collateral → LTV = inf
     with pytest.raises(SimpleLendingException, match="non-finite"):

@@ -30,7 +30,7 @@ from fractal.core.entities.protocols.uniswap_v3_spot import (
 def aave() -> AaveEntity:
     e = AaveEntity()
     e.update_state(AaveGlobalState(
-        notional_price=1.0, product_price=1.0,
+        collateral_price=1.0, debt_price=1.0,
         lending_rate=0.0, borrowing_rate=0.0,
     ))
     return e
@@ -197,7 +197,7 @@ def test_univ3spot_sell_rejects_negative(v3spot):
 @pytest.fixture
 def steth() -> StakedETHEntity:
     e = StakedETHEntity()
-    e.update_state(StakedETHGlobalState(price=2000.0, rate=0.0))
+    e.update_state(StakedETHGlobalState(price=2000.0, staking_rate=0.0))
     return e
 
 

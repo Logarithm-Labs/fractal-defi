@@ -208,6 +208,23 @@ class BaseStrategy(ABC, Generic[PT]):
         """
         return self._entities
 
+    @property
+    def total_balance(self) -> float:
+        """Sum of all registered entities' ``balance`` properties.
+
+        Predicate: every entity reports its balance in the **same**
+        accounting unit (typically USD). Fractal entities are
+        unit-agnostic — they accept whatever prices you pass to
+        ``update_state`` — so the strategy author is responsible for
+        keeping units consistent across entities. See the README's
+        "Pricing convention" section for the recommended pattern
+        (USD-denominated by default; ETH/BTC as opt-in if every entity
+        in the strategy is configured in that unit).
+
+        Returns ``0.0`` when no entities are registered.
+        """
+        return sum(entity.balance for entity in self._entities.values())
+
     def transfer(
         self,
         from_entity: str,

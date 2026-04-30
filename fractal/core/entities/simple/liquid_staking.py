@@ -144,7 +144,13 @@ class SimpleLiquidStakingToken(BaseLiquidStakingToken):
         """Apply market state and rebase the held balance.
 
         ``amount`` grows by ``(1 + staking_rate)`` each step. A negative
-        ``staking_rate`` (modelling slashing or downtime) shrinks it.
+        ``staking_rate`` (modelling slashing or downtime) shrinks it,
+        but values below ``-1`` would flip ``amount`` negative and are
+        rejected loudly.
         """
+        if state.staking_rate < -1:
+            raise SimpleLiquidStakingTokenException(
+                f"staking_rate must be >= -1, got {state.staking_rate}"
+            )
         self._global_state = state
         self._internal_state.amount *= 1.0 + state.staking_rate

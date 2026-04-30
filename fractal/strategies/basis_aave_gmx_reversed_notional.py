@@ -303,7 +303,7 @@ class BasisAaveGmxReversedNotional(BaseStrategy[BasisAaveGmxReversedNotionalPara
 
         product_to_hedge_lambda = lambda obj: -obj.get_entity("SPOT").internal_state.amount
 
-        borrowed_balance = self._params.INITIAL_BALANCE * self._params.TARGET_LTV * lending.global_state.notional_price
+        borrowed_balance = self._params.INITIAL_BALANCE * self._params.TARGET_LTV * lending.global_state.collateral_price
 
         return [
             ActionToTake(

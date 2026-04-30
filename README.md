@@ -155,6 +155,70 @@ Run your pipeline:
 🧪 View experiment at: http://127.0.01:8080/#/experiments/743858278487100844
 ```
 
+## Pricing convention
+
+Fractal entities are **unit-agnostic** — each entity accepts whatever prices
+you pass to its `update_state` and computes `balance` in the same unit.
+This gives maximum flexibility (USD-denominated, ETH-denominated, anything
+else) but means **the strategy author is responsible** for keeping units
+**consistent across all entities** in a single strategy.
+
+### Recommended: USD-denominated strategies (default)
+
+Pass every entity prices in `<asset>/USD`. Then every `entity.balance` is
+USD, and `BaseStrategy.total_balance` aggregates correctly across the
+portfolio.
+
+```python
+# All in USD: USDC = $1, ETH = $3000.
+aave.update_state(AaveGlobalState(notional_price=1.0, product_price=3000.0))
+spot.update_state(UniswapV3SpotGlobalState(price=3000.0))
+hl.update_state(HyperLiquidGlobalState(mark_price=3000.0))
+
+usd_total = strategy.total_balance  # USD-denominated portfolio P&L
+```
+
+### ETH-denominated strategies (opt-in)
+
+Some basis or LST-loop strategies prefer ETH-denomination. Same rule —
+keep it consistent across **every** entity:
+
+```python
+# All in ETH: USDC ≈ 0.000333 ETH, ETH = 1.0 ETH.
+aave.update_state(AaveGlobalState(notional_price=0.000333, product_price=1.0))
+spot.update_state(UniswapV3SpotGlobalState(price=1.0))
+
+eth_total = strategy.total_balance  # ETH-denominated portfolio P&L
+```
+
+### Direction flag for lending entities
+
+`AaveEntity` and `SimpleLendingEntity` accept a `collateral_is_volatile`
+flag to label which side of the loan is the volatile asset:
+
+* `False` (default) — stable collateral (USDC), volatile debt (ETH).
+  Synthetic short ETH.
+* `True` — volatile collateral (ETH), stable debt (USDC). Setup for
+  leveraged-long ETH when paired with a spot/swap entity.
+
+The flag is informational; the math is symmetric. It only affects how
+strategies read the position. See `tests/core/e2e/test_e2e_leveraged_long.py`
+for a concrete leveraged-long example.
+
+### Common pitfalls
+
+* **Inverted price**: passing `price=1/3000` instead of `price=3000` —
+  silent breakage, all downstream balances corrupt. Always re-derive
+  the convention from your data source (subgraph token0Price vs
+  token1Price, oracle quote currency, etc).
+* **Mixed units**: deposit-side in USD but borrow-side in ETH — math
+  still runs but `entity.balance` becomes meaningless. Verify by
+  computing a known scenario and checking `entity.balance` against the
+  expected USD/ETH value.
+* **`total_balance` without consistent units**: aggregates whatever
+  `balance` returns. If one entity is USD-denominated and another is
+  ETH-denominated, the sum is garbage.
+
 ## Examples
 
 Explore our example strategies to jumpstart your DeFi research:

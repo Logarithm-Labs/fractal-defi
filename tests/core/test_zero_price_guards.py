@@ -4,7 +4,7 @@ Convention: ``if price <= 0: raise <EntityException>(f"... price must be > 0, go
 
 This catches the realistic bug of running ``action_*`` against a freshly
 constructed entity whose ``GlobalState`` defaults to ``price=0`` /
-``mark_price=0`` / ``notional_price=0`` / ``product_price=0``.
+``mark_price=0`` / ``collateral_price=0`` / ``debt_price=0``.
 """
 import pytest
 
@@ -30,20 +30,20 @@ from fractal.core.entities.protocols.uniswap_v3_spot import (
 
 # ===================================================== Aave: borrow / withdraw / ltv / calculate_repay
 @pytest.mark.core
-def test_aave_borrow_rejects_zero_notional_price():
+def test_aave_borrow_rejects_zero_collateral_price():
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=0.0, product_price=1.0))
+    e.update_state(AaveGlobalState(collateral_price=0.0, debt_price=1.0))
     e.action_deposit(1000)
-    with pytest.raises(EntityException, match="notional_price must be > 0"):
+    with pytest.raises(EntityException, match="collateral_price must be > 0"):
         e.action_borrow(100)
 
 
 @pytest.mark.core
-def test_aave_borrow_rejects_zero_product_price():
+def test_aave_borrow_rejects_zero_debt_price():
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=1.0, product_price=0.0))
+    e.update_state(AaveGlobalState(collateral_price=1.0, debt_price=0.0))
     e.action_deposit(1000)
-    with pytest.raises(EntityException, match="product_price must be > 0"):
+    with pytest.raises(EntityException, match="debt_price must be > 0"):
         e.action_borrow(100)
 
 
@@ -51,7 +51,7 @@ def test_aave_borrow_rejects_zero_product_price():
 def test_aave_withdraw_with_full_collateral_and_debt_raises_clearly():
     """Used to raise ZeroDivisionError; now explicit message."""
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=1.0, product_price=1.0))
+    e.update_state(AaveGlobalState(collateral_price=1.0, debt_price=1.0))
     e.action_deposit(1000)
     e.action_borrow(500)
     with pytest.raises(EntityException, match="cannot withdraw all collateral"):
@@ -62,7 +62,7 @@ def test_aave_withdraw_with_full_collateral_and_debt_raises_clearly():
 def test_aave_withdraw_no_debt_zero_prices_ok():
     """No debt → no LTV check needed → zero prices don't matter."""
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=0.0, product_price=0.0))
+    e.update_state(AaveGlobalState(collateral_price=0.0, debt_price=0.0))
     e.action_deposit(1000)
     e.action_withdraw(500)  # must not raise
     assert e.internal_state.collateral == 500
@@ -72,16 +72,16 @@ def test_aave_withdraw_no_debt_zero_prices_ok():
 def test_aave_ltv_returns_inf_when_collateral_zero_with_debt():
     """Used to ZeroDivisionError; now explicit ``+inf``."""
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=1.0, product_price=1.0))
+    e.update_state(AaveGlobalState(collateral_price=1.0, debt_price=1.0))
     e._internal_state.collateral = 0.0
     e._internal_state.borrowed = 100.0
     assert e.ltv == float("inf")
 
 
 @pytest.mark.core
-def test_aave_ltv_returns_inf_when_notional_price_zero_with_debt():
+def test_aave_ltv_returns_inf_when_collateral_price_zero_with_debt():
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=0.0, product_price=1.0))
+    e.update_state(AaveGlobalState(collateral_price=0.0, debt_price=1.0))
     e._internal_state.collateral = 1000.0
     e._internal_state.borrowed = 100.0
     assert e.ltv == float("inf")
@@ -90,7 +90,7 @@ def test_aave_ltv_returns_inf_when_notional_price_zero_with_debt():
 @pytest.mark.core
 def test_aave_calculate_repay_raises_when_ltv_inf():
     e = AaveEntity()
-    e.update_state(AaveGlobalState(notional_price=1.0, product_price=1.0))
+    e.update_state(AaveGlobalState(collateral_price=1.0, debt_price=1.0))
     e._internal_state.collateral = 0.0
     e._internal_state.borrowed = 100.0
     with pytest.raises(EntityException, match="non-finite"):

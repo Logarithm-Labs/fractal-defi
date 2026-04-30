@@ -1,3 +1,4 @@
+import warnings
 from dataclasses import dataclass
 
 from fractal.core.base.entity import EntityException, GlobalState
@@ -13,15 +14,17 @@ class StakedETHEntityException(EntityException):
 
 @dataclass
 class StakedETHGlobalState(GlobalState):
-    """
-    Represents the global state of any LST ETH token.
+    """Market state for a stETH-like LST.
 
     Attributes:
-        price (float): The price of the stETH.
-        rate (float): The rate of the .
+        price: Spot price of the LST in notional units (USD).
+        staking_rate: Per-step underlying-balance accrual rate. Renamed
+            from legacy ``rate`` for parity with
+            :class:`SimpleLiquidStakingTokenGlobalState` and the
+            polymorphic :attr:`BaseLiquidStakingToken.staking_rate`.
     """
     price: float = 0.0
-    rate: float = 0.0
+    staking_rate: float = 0.0
 
 
 @dataclass
@@ -44,10 +47,28 @@ class StakedETHEntity(BaseLiquidStakingToken):
     _global_state: StakedETHGlobalState
 
     def __init__(self, *args, trading_fee: float = 0.003, **kwargs):
+        if trading_fee < 0:
+            raise StakedETHEntityException(
+                f"trading_fee must be >= 0, got {trading_fee}"
+            )
         # Set config BEFORE super so any subclass override of
-        # ``_initialize_states`` can rely on ``self.TRADING_FEE``.
-        self.TRADING_FEE: float = trading_fee
+        # ``_initialize_states`` can rely on ``self.trading_fee``.
+        self.trading_fee: float = trading_fee
         super().__init__(*args, **kwargs)
+
+    @property
+    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+        """Deprecated alias for :attr:`trading_fee`.
+
+        Python convention reserves UPPERCASE for module/class constants;
+        instance attributes should be lowercase. Use ``trading_fee`` instead.
+        """
+        warnings.warn(
+            "StakedETHEntity.TRADING_FEE is deprecated; use trading_fee (lowercase).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return self.trading_fee
 
     def _initialize_states(self):
         self._internal_state = StakedETHInternalState()
@@ -63,8 +84,8 @@ class StakedETHEntity(BaseLiquidStakingToken):
 
     @property
     def staking_rate(self) -> float:
-        """Polymorphic LST contract — delegates to legacy ``global_state.rate``."""
-        return self._global_state.rate
+        """Polymorphic LST contract — delegates to ``global_state.staking_rate``."""
+        return self._global_state.staking_rate
 
     def action_buy(self, amount_in_notional: float):
         """
@@ -88,7 +109,7 @@ class StakedETHEntity(BaseLiquidStakingToken):
             raise StakedETHEntityException(
                 f"Not enough cash to buy: {amount_in_notional} > {self._internal_state.cash}")
         self._internal_state.cash -= amount_in_notional
-        self._internal_state.amount += amount_in_notional * (1 - self.TRADING_FEE) / self._global_state.price
+        self._internal_state.amount += amount_in_notional * (1 - self.trading_fee) / self._global_state.price
 
     def action_sell(self, amount_in_product: float):
         """
@@ -104,11 +125,15 @@ class StakedETHEntity(BaseLiquidStakingToken):
             raise StakedETHEntityException(
                 f"sell amount must be >= 0, got {amount_in_product}"
             )
+        if self._global_state.price <= 0:
+            raise StakedETHEntityException(
+                f"price must be > 0, got {self._global_state.price}"
+            )
         if amount_in_product > self._internal_state.amount:
             raise StakedETHEntityException(
                 f"Not enough product to sell: {amount_in_product} > {self._internal_state.amount}")
         self._internal_state.amount -= amount_in_product
-        self._internal_state.cash += amount_in_product * (1 - self.TRADING_FEE) * self._global_state.price
+        self._internal_state.cash += amount_in_product * (1 - self.trading_fee) * self._global_state.price
 
     def action_withdraw(self, amount_in_notional: float):
         """
@@ -143,16 +168,21 @@ class StakedETHEntity(BaseLiquidStakingToken):
         self._internal_state.cash += amount_in_notional
 
     def update_state(self, state: StakedETHGlobalState) -> None:
-        """
-        Updates the global state of the StakedETH protocol.
-        1. Updates the global state.
-        2. Add staking rewards to the internal state.
+        """Apply market state and rebase the held balance.
+
+        ``amount`` grows by ``(1 + staking_rate)`` per step.
+        ``staking_rate < -1`` would flip ``amount`` negative —
+        physically meaningless and likely corrupt input — so rejected loudly.
 
         Args:
-            state (StakedETHGlobalState): The new global state.
+            state: The new global state.
         """
-        self._global_state: StakedETHGlobalState = state
-        self._internal_state.amount *= (self._global_state.rate + 1)
+        if state.staking_rate < -1:
+            raise StakedETHEntityException(
+                f"staking_rate must be >= -1 (cannot rebase to negative balance), got {state.staking_rate}"
+            )
+        self._global_state = state
+        self._internal_state.amount *= (self._global_state.staking_rate + 1)
 
     @property
     def current_price(self) -> float:

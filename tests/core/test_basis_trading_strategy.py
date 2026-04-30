@@ -47,7 +47,7 @@ def test_run(strategy: GMXV2UniswapV3Basis):
     hedge = strategy.get_entity("HEDGE")
     spot = strategy.get_entity("SPOT")
     assert hedge.size == -spot.internal_state.amount
-    assert spot.internal_state.amount == 250 * (1 - spot.TRADING_FEE)
+    assert spot.internal_state.amount == 250 * (1 - spot.trading_fee)
     assert hedge.balance == (1e6 / 4) - spot.internal_state.amount * hedge.TRADING_FEE * 3000 - spot.internal_state.amount * (3100 - 3000)
     assert spot.balance == spot.internal_state.amount * 3100
 

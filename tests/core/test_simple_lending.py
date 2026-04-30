@@ -10,8 +10,8 @@ from fractal.core.entities.simple.lending import (SimpleLendingEntity,
 def lending() -> SimpleLendingEntity:
     e = SimpleLendingEntity(max_ltv=0.8, liq_thr=0.85)
     e.update_state(SimpleLendingGlobalState(
-        notional_price=1.0,    # collateral asset (USDC) priced at $1
-        product_price=1.0,     # borrowed asset (DAI) priced at $1
+        collateral_price=1.0,    # collateral asset (USDC) priced at $1
+        debt_price=1.0,     # borrowed asset (DAI) priced at $1
         lending_rate=0.0,
         borrowing_rate=0.0,
     ))
@@ -152,7 +152,7 @@ def test_interest_accrued_on_collateral_and_debt(lending):
     lending.action_deposit(1000)
     lending.action_borrow(500)
     lending.update_state(SimpleLendingGlobalState(
-        notional_price=1.0, product_price=1.0,
+        collateral_price=1.0, debt_price=1.0,
         lending_rate=0.01, borrowing_rate=0.02,
     ))
     assert lending.internal_state.collateral == pytest.approx(1010)
@@ -164,13 +164,13 @@ def test_interest_accrued_on_collateral_and_debt(lending):
 def test_liquidation_wipes_when_ltv_crosses_threshold():
     e = SimpleLendingEntity(max_ltv=0.8, liq_thr=0.85)
     e.update_state(SimpleLendingGlobalState(
-        notional_price=1, product_price=1, lending_rate=0, borrowing_rate=0,
+        collateral_price=1, debt_price=1, lending_rate=0, borrowing_rate=0,
     ))
     e.action_deposit(1000)
     e.action_borrow(800)  # ltv = 0.8 (exactly at max)
     # Product price moves up — pushes ltv over liq_thr.
     e.update_state(SimpleLendingGlobalState(
-        notional_price=1, product_price=1.1,  # debt now worth 880, ltv=0.88
+        collateral_price=1, debt_price=1.1,  # debt now worth 880, ltv=0.88
         lending_rate=0, borrowing_rate=0,
     ))
     assert e.internal_state.collateral == 0
@@ -182,7 +182,7 @@ def test_liquidation_does_not_fire_below_threshold(lending):
     lending.action_deposit(1000)
     lending.action_borrow(700)  # ltv = 0.7 < 0.85
     lending.update_state(SimpleLendingGlobalState(
-        notional_price=1, product_price=1.05,  # ltv ≈ 0.735
+        collateral_price=1, debt_price=1.05,  # ltv ≈ 0.735
         lending_rate=0, borrowing_rate=0,
     ))
     assert lending.internal_state.collateral > 0

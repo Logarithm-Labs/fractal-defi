@@ -7,6 +7,7 @@ liquidation threshold. Use it for tests, examples and as the simplest
 concrete lending entity. For Aave-specific behaviour use
 :class:`fractal.core.entities.protocols.aave.AaveEntity`.
 """
+import math
 from dataclasses import dataclass
 
 from fractal.core.base.entity import EntityException, GlobalState, InternalState
@@ -22,13 +23,13 @@ class SimpleLendingGlobalState(GlobalState):
     """Market state.
 
     Attributes:
-        notional_price: USD price of the collateral asset.
-        product_price: USD price of the borrowed asset.
+        collateral_price: USD price of the collateral asset.
+        debt_price: USD price of the borrowed asset.
         lending_rate: Per-step interest credited to collateral.
         borrowing_rate: Per-step interest charged on borrowed amount.
     """
-    notional_price: float = 0.0
-    product_price: float = 0.0
+    collateral_price: float = 0.0
+    debt_price: float = 0.0
     lending_rate: float = 0.0
     borrowing_rate: float = 0.0
 
@@ -48,12 +49,18 @@ class SimpleLendingInternalState(InternalState):
 class SimpleLendingEntity(BaseLendingEntity):
     """Generic lending entity with LTV-based liquidation.
 
-    LTV is computed as ``borrowed · product_price / (collateral · notional_price)``.
+    LTV is computed as ``borrowed · debt_price / (collateral · collateral_price)``.
     When LTV crosses ``liq_thr`` after interest accrual, both balances are wiped
     (loud and irreversible — model the worst case rather than partial liquidations).
     """
 
-    def __init__(self, *, max_ltv: float = 0.8, liq_thr: float = 0.85) -> None:
+    def __init__(
+        self,
+        *,
+        max_ltv: float = 0.8,
+        liq_thr: float = 0.85,
+        collateral_is_volatile: bool = False,
+    ) -> None:
         if not 0 < max_ltv <= 1:
             raise SimpleLendingException(f"max_ltv must be in (0, 1], got {max_ltv}")
         if not 0 < liq_thr <= 1:
@@ -64,6 +71,7 @@ class SimpleLendingEntity(BaseLendingEntity):
             )
         self.max_ltv: float = float(max_ltv)
         self.liq_thr: float = float(liq_thr)
+        self.collateral_is_volatile: bool = collateral_is_volatile
         super().__init__()
 
     _internal_state: SimpleLendingInternalState
@@ -106,8 +114,8 @@ class SimpleLendingEntity(BaseLendingEntity):
             )
         if post > 0:
             new_ltv = (
-                self._internal_state.borrowed * self._global_state.product_price
-                / (post * self._global_state.notional_price)
+                self._internal_state.borrowed * self._global_state.debt_price
+                / (post * self._global_state.collateral_price)
             )
             if new_ltv > self.max_ltv:
                 raise SimpleLendingException(
@@ -125,8 +133,8 @@ class SimpleLendingEntity(BaseLendingEntity):
             raise SimpleLendingException("no collateral available to borrow against")
         new_debt = self._internal_state.borrowed + amount_in_product
         new_ltv = (
-            new_debt * self._global_state.product_price
-            / (self._internal_state.collateral * self._global_state.notional_price)
+            new_debt * self._global_state.debt_price
+            / (self._internal_state.collateral * self._global_state.collateral_price)
         )
         if new_ltv > self.max_ltv:
             raise SimpleLendingException(
@@ -151,8 +159,8 @@ class SimpleLendingEntity(BaseLendingEntity):
     def balance(self) -> float:
         """Equity in notional units."""
         return (
-            self._internal_state.collateral * self._global_state.notional_price
-            - self._internal_state.borrowed * self._global_state.product_price
+            self._internal_state.collateral * self._global_state.collateral_price
+            - self._internal_state.borrowed * self._global_state.debt_price
         )
 
     @property
@@ -163,9 +171,32 @@ class SimpleLendingEntity(BaseLendingEntity):
         if self._internal_state.collateral == 0:
             return float("inf")
         return (
-            self._internal_state.borrowed * self._global_state.product_price
-            / (self._internal_state.collateral * self._global_state.notional_price)
+            self._internal_state.borrowed * self._global_state.debt_price
+            / (self._internal_state.collateral * self._global_state.collateral_price)
         )
+
+    @property
+    def collateral_value(self) -> float:
+        """Collateral value in the accounting unit (``collateral × collateral_price``)."""
+        return self._internal_state.collateral * self._global_state.collateral_price
+
+    @property
+    def debt_value(self) -> float:
+        """Debt value in the accounting unit (``borrowed × debt_price``)."""
+        return self._internal_state.borrowed * self._global_state.debt_price
+
+    @property
+    def health_factor(self) -> float:
+        """Margin against liquidation: ``liq_thr / ltv``.
+
+        ``+inf`` when no debt; ``0`` when LTV is non-finite (already liquidatable).
+        """
+        ltv = self.ltv
+        if ltv == 0:
+            return float("inf")
+        if not math.isfinite(ltv):
+            return 0.0
+        return self.liq_thr / ltv
 
     def calculate_repay(self, target_ltv: float) -> float:
         """Amount of product to repay to drive LTV down to ``target_ltv``.
@@ -188,9 +219,9 @@ class SimpleLendingEntity(BaseLendingEntity):
             )
         return (
             self._internal_state.collateral
-            * self._global_state.notional_price
+            * self._global_state.collateral_price
             * (current - target_ltv)
-            / self._global_state.product_price
+            / self._global_state.debt_price
         )
 
     # --------------------------------------------------------- lifecycle
@@ -200,7 +231,18 @@ class SimpleLendingEntity(BaseLendingEntity):
             self._internal_state.borrowed = 0.0
 
     def update_state(self, state: SimpleLendingGlobalState) -> None:
-        """Apply prices and accrue per-step interest, then check liquidation."""
+        """Apply prices and accrue per-step interest, then check liquidation.
+
+        Rates below ``-1`` would flip the balances negative; rejected loudly.
+        """
+        if state.lending_rate < -1:
+            raise SimpleLendingException(
+                f"lending_rate must be >= -1, got {state.lending_rate}"
+            )
+        if state.borrowing_rate < -1:
+            raise SimpleLendingException(
+                f"borrowing_rate must be >= -1, got {state.borrowing_rate}"
+            )
         self._global_state = state
         self._internal_state.collateral *= 1.0 + state.lending_rate
         self._internal_state.borrowed *= 1.0 + state.borrowing_rate
