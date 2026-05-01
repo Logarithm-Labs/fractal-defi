@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Tuple
+from typing import Literal, Tuple
 
 from fractal.core.base.entity import EntityException, InternalState
 from fractal.core.entities.base.pool import BasePoolEntity, BasePoolGlobalState
@@ -31,6 +31,13 @@ class UniswapV2LPInternalState(InternalState):
         price_init (float): Pool price at position open.
         liquidity (float): Position LP-token count.
         cash (float): Free notional cash held by the entity.
+        cumulative_position_fees (float): Total USD value of pool fees
+            attributed to this position since open. Used in ``"cash"``
+            mode to keep position-token amounts purely price-divergence-
+            driven (subtracting the cumulative from ``share * tvl``
+            removes prior bars' fees that are otherwise baked into
+            ``state.tvl``). Resets to 0 on ``action_close_position``.
+            Always 0 in ``"compound"`` mode (not used there).
     """
 
     token0_amount: float = 0.0
@@ -40,6 +47,7 @@ class UniswapV2LPInternalState(InternalState):
     price_init: float = 0.0
     liquidity: float = 0.0
     cash: float = 0.0
+    cumulative_position_fees: float = 0.0
 
 
 @dataclass
@@ -63,6 +71,28 @@ class UniswapV2LPConfig:
             ``"token0"``. Together with ``GlobalState.price`` (notional
             per non-notional unit) tells the entity how to map the on-chain
             pair onto the (stable, volatile) abstraction internally.
+        fees_compounding_model (str): How per-bar pool fees flow through
+            the position. Default ``"cash"`` (backward-compatible).
+
+            * ``"cash"`` — fees are added to ``InternalState.cash`` each
+              bar; ``liquidity`` and token amounts reflect pure
+              price-divergence. ``impermanent_loss`` is the textbook
+              hodl-vs-LP gap and useful for IL modelling in isolation.
+            * ``"compound"`` — fees are implicitly reinvested into the
+              position by growing ``token0/token1`` amounts (no swap
+              fee, no growth in ``liquidity`` LP-token count — mirrors
+              on-chain V2 where reserves grow but LP supply does not).
+              ``balance`` matches the ``"cash"`` total but
+              ``impermanent_loss`` becomes a fee-adjusted gap (pool
+              yield offsets price-divergence cost).
+
+            Both modes assume the loader contract:
+            ``GlobalState.tvl + GlobalState.fees == post-fee reserveUSD``
+            for the bar (= the on-chain reserves USD at end of bar). In
+            other words ``tvl`` is "pool value excluding the bar's own
+            fees" and ``fees`` is the absolute USD fees accrued during
+            the bar. This is what :class:`EthereumUniswapV2PoolDataLoader`
+            emits.
     """
 
     pool_fee_rate: float = 0.003
@@ -70,6 +100,7 @@ class UniswapV2LPConfig:
     token0_decimals: int = 18
     token1_decimals: int = 18
     notional_side: str = "token0"
+    fees_compounding_model: Literal["cash", "compound"] = "cash"
 
 
 class UniswapV2LPEntity(BasePoolEntity):
@@ -110,6 +141,11 @@ class UniswapV2LPEntity(BasePoolEntity):
             raise EntityException(
                 f"slippage_pct must be >= 0, got {config.slippage_pct}"
             )
+        if config.fees_compounding_model not in ("cash", "compound"):
+            raise EntityException(
+                f"fees_compounding_model must be 'cash' or 'compound', "
+                f"got {config.fees_compounding_model!r}"
+            )
         # Set config BEFORE super so any subclass override of
         # ``_initialize_states`` can rely on these.
         self.pool_fee_rate: float = config.pool_fee_rate
@@ -117,6 +153,7 @@ class UniswapV2LPEntity(BasePoolEntity):
         self.token0_decimals: int = config.token0_decimals
         self.token1_decimals: int = config.token1_decimals
         self.notional_side: str = config.notional_side
+        self.fees_compounding_model: str = config.fees_compounding_model
         super().__init__(*args, **kwargs)
 
     def _initialize_states(self):
@@ -285,6 +322,7 @@ class UniswapV2LPEntity(BasePoolEntity):
         self._internal_state.entry_token1_amount = 0.0
         self._internal_state.price_init = 0.0
         self._internal_state.liquidity = 0.0
+        self._internal_state.cumulative_position_fees = 0.0
 
         return token0_back, token1_back
 
@@ -365,22 +403,69 @@ class UniswapV2LPEntity(BasePoolEntity):
         self._internal_state.cash += stable_back + volatile_proceeds
 
     def update_state(self, state: UniswapV2LPGlobalState) -> None:
-        """Apply pool snapshot, rebalance position amounts, accrue pool fees."""
+        """Apply pool snapshot, rebalance position amounts, route this-bar
+        fees per :attr:`fees_compounding_model`.
+
+        Loader contract:
+        ``state.tvl + state.fees == post-fee reserveUSD`` for the bar.
+        That is, ``state.tvl`` is the pool's USD value EXCLUDING this
+        bar's fees (so ``tvl`` carries every PRIOR bar's fees but not
+        the current one), and ``state.fees`` is the absolute USD fees
+        accrued during this bar.
+
+        Naive ``position = share * tvl + cash += share * fees`` thus
+        double-counts every prior bar's fees (they appear once in
+        ``tvl`` and again as the cumulative running cash). Both modes
+        below correct for this:
+
+        * **cash**: ``position = share * tvl - cumulative_position_fees``.
+          Subtracting the cumulative removes the prior fees baked into
+          ``tvl``, so position amounts purely reflect price-divergence;
+          ``cash`` accumulates the lifetime fee yield. ``balance`` lands
+          on the true on-chain claim ``share * (tvl + fees)``.
+        * **compound**: ``position = share * (tvl + fees)`` directly.
+          No cumulative tracking needed because the next bar's
+          ``state.tvl`` will already incorporate this bar's fees.
+
+        Both modes give identical ``balance`` (it's the on-chain truth);
+        they differ only in WHERE the fee yield lives — separately in
+        ``cash`` vs implicitly inside the position.
+        """
         self._global_state = state
 
-        if self.is_position:
-            if self._global_state.price == 0:
-                raise EntityException("Price is 0.")
-            if self._global_state.liquidity == 0:
-                raise EntityException("Pool liquidity is 0.")
+        if not self.is_position:
+            return
 
-            share = self._internal_state.liquidity / self._global_state.liquidity
-            stable_reserve = self._global_state.tvl / 2
-            volatile_reserve = stable_reserve / self._global_state.price
+        if self._global_state.price == 0:
+            raise EntityException("Price is 0.")
+        if self._global_state.liquidity == 0:
+            raise EntityException("Pool liquidity is 0.")
 
-            self._set_position_amounts(share * stable_reserve, share * volatile_reserve)
+        share = self._internal_state.liquidity / self._global_state.liquidity
 
-        self._internal_state.cash += self.calculate_fees()
+        if self.fees_compounding_model == "compound":
+            # Position = share * post-fee tvl. Per-bar; no cumulative
+            # state — next bar's ``state.tvl`` already incorporates this
+            # bar's fees by the loader contract.
+            position_value = share * (self._global_state.tvl + self._global_state.fees)
+        else:  # "cash"
+            # Position = share * tvl − cumulative_position_fees. The
+            # subtraction strips out prior bars' fees (already in tvl)
+            # so position amounts move only with price changes.
+            position_value = (
+                share * self._global_state.tvl
+                - self._internal_state.cumulative_position_fees
+            )
+            # Accrue this bar's fees: cash gets paid, cumulative tracks
+            # what we've subtracted from position over the lifetime.
+            bar_fee_value = self.calculate_fees()      # = share * state.fees in $
+            self._internal_state.cumulative_position_fees += bar_fee_value
+            self._internal_state.cash += bar_fee_value
+
+        # 50/50 split by value at the current pool ratio.
+        stable_amount = position_value / 2
+        volatile_amount = stable_amount / self._global_state.price
+        self._set_position_amounts(stable_amount, volatile_amount)
 
     @property
     def balance(self) -> float:

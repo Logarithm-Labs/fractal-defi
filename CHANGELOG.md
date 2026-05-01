@@ -4,6 +4,63 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [v1.3.1] — 2026-05-01
+
+Dependency floors aligned with the actually-tested matrix, Uniswap V2
+LP fee modelling corrected (had a long-standing double-count drift on
+real-data backtests), and a couple of quality-of-life additions.
+Default behaviour for existing strategies is unchanged; `"cash"`-mode
+V2 real-data backtests will report slightly lower (more accurate)
+cumulative balance.
+
+### Added
+
+- **`fractal.__version__`** — top-level version attribute, read via
+  `importlib.metadata`. Matches the numpy / pandas / mlflow convention.
+- **`UniswapV2LPConfig.fees_compounding_model`** — opt-in `"cash"`
+  (default) / `"compound"` flag controlling how per-bar pool fees flow
+  through the position. `"cash"` keeps fee yield in `cash` so position
+  amounts purely reflect price-divergence (clean IL isolation);
+  `"compound"` reinvests fees into the position implicitly (token
+  amounts grow, `liquidity` LP-token count stays constant — mirrors
+  on-chain V2 mechanics).
+
+### Changed
+
+- **Runtime floors raised** in `setup.py::install_requires`:
+  `numpy>=2.2.6` (was `>=1.26.0`, **major bump**),
+  `mlflow>=3.11.1` (was `>=2.14.1`, **major bump**),
+  `pandas>=2.3.3`, `scikit-learn>=1.7.2`,
+  `loguru>=0.7.3`, `requests>=2.33.1`. Migration: consumers pinned
+  to `numpy<2` or `mlflow<3` should stay on `fractal-defi==1.3.0`.
+- **Dev tooling floors raised** to match CI: pytest 9, pylint 4,
+  flake8 7.3, isort 8, pre-commit 4.6, sphinx 8.1.
+  `.pre-commit-config.yaml` synced with the new floors so local
+  hooks and CI now run the same toolchain.
+- **Release tooling moved into the `[dev]` extra** (`build>=1.2.0`,
+  `twine>=5.0.0`). `make build` / `make release` work after a plain
+  `pip install -e ".[dev]"`.
+
+### Fixed
+
+- **V2 LP cumulative-fee double-count.** Real-data V2 backtests
+  drifted upward by `share * sum_prior_fees` per bar — small per-bar
+  but ~2-5% inflation over a 90-day window on a typical USDC/WETH 30bps
+  run. Root cause: per-bar fees were counted both implicitly inside
+  `state.tvl` (which carries all prior bars' fees on-chain) and
+  explicitly via `cash += calculate_fees()`. The loader/entity
+  contract is now an explicit identity (`tvl + fees == post-fee
+  reserveUSD`), and `update_state` is rewritten in both modes to
+  match the on-chain claim exactly. Closed-form regression test
+  locks the invariant: `balance_after_N == balance_at_open +
+  N * share * bar_fees` (rel. 1e-9). Existing `"cash"` mode
+  backtests will produce slightly lower cumulative balance — the
+  corrected number.
+- **`AaveV3RatesLoader._request` return type** — was annotated
+  `List[Dict[str, Any]]` despite returning a single GraphQL `data`
+  object. Now correctly typed `Dict[str, Any]` with malformed-payload
+  guards (raises `RuntimeError` instead of silently degrading).
+
 ## [v1.3.0] — 2026-05-01
 
 First fully reviewed release. Refactors loaders/entities/strategies to a

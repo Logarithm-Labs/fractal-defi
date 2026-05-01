@@ -25,7 +25,7 @@ fixed in v1.4.0.
 """
 import warnings
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
@@ -101,7 +101,7 @@ class AaveV3RatesLoader(Loader):
         e = to_seconds(self.end_time) if self.end_time is not None else "now"
         return f"{self.chain_id}-{self.asset_address}-{s}-{e}-{self._resolution}"
 
-    def _request(self) -> List[Dict[str, Any]]:
+    def _request(self) -> Dict[str, Any]:
         window = _window_for(self.start_time, self.end_time)
         variables = {
             "req": {
@@ -118,9 +118,18 @@ class AaveV3RatesLoader(Loader):
             },
         }
         payload = self._http.post(self._url, json={"query": self._QUERY, "variables": variables})
-        if "errors" in (payload or {}):
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"Aave GraphQL: expected JSON object payload, got {type(payload).__name__}"
+            )
+        if "errors" in payload:
             raise RuntimeError(f"Aave GraphQL errors: {payload['errors']}")
-        return payload.get("data", {})
+        data = payload.get("data", {})
+        if not isinstance(data, dict):
+            raise RuntimeError(
+                f"Aave GraphQL: expected ``data`` to be an object, got {type(data).__name__}"
+            )
+        return data
 
     def extract(self) -> None:
         data = self._request()

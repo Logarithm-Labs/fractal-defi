@@ -10,7 +10,9 @@ from fractal.loaders.binance import (
     BinanceHourPriceLoader,
     BinanceKlinesLoader,
     BinancePriceLoader,
+    BinanceSpotPriceLoader,
 )
+from fractal.loaders.binance.binance_client import SPOT_SECTION
 from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
 UTC = timezone.utc
@@ -158,6 +160,52 @@ def test_klines_ethusdt_1h_bounds_2024_2025():
     ldr.transform()
     df = ldr._data
     _assert_time_bounds(df, "openTime", start, end)
+
+
+# ─────────────────────────────────────────── BinanceSpotPriceLoader
+
+def test_binance_spot_price_loader_uses_spot_endpoint():
+    """Offline lock-in: spot loader points at api.binance.com/api/v3/klines.
+
+    Doesn't hit the network — just verifies the class attrs that
+    determine which Binance API section/path the parent
+    ``BinancePriceLoader`` will hit. Catches accidental flips of the
+    section back to ``futures`` during refactors.
+    """
+    assert BinanceSpotPriceLoader._SECTION == SPOT_SECTION
+    assert BinanceSpotPriceLoader._KLINES_ENDPOINT == "/api/v3/klines"
+
+
+@pytest.mark.integration
+@pytest.mark.slow
+def test_binance_spot_price_loader():
+    end = datetime(2025, 2, 1, tzinfo=UTC)
+    start = end - timedelta(days=14)
+    loader = BinanceSpotPriceLoader(ticker="BTCUSDT", start_time=start, end_time=end)
+    data: PriceHistory = loader.read(with_run=True)
+    assert len(data) > 0
+    assert data["price"].dtype == "float64"
+    assert data.index.dtype == "datetime64[ns, UTC]"
+    # Cache round-trip — fresh instance against the same window must read
+    # the same series back without going to network.
+    fresh = BinanceSpotPriceLoader(ticker="BTCUSDT", start_time=start, end_time=end)
+    cached: PriceHistory = fresh.read()
+    assert len(cached) == len(data)
+
+
+@pytest.mark.integration
+def test_binance_spot_price_loader_with_time_ranges():
+    start_time = datetime(2025, 1, 1, tzinfo=UTC)
+    end_time = datetime(2025, 2, 1, tzinfo=UTC)
+    loader = BinanceSpotPriceLoader(
+        ticker="BTCUSDT", interval="1d",
+        start_time=start_time, end_time=end_time,
+    )
+    data: PriceHistory = loader.read(with_run=True)
+    assert len(data) > 0
+    assert data.index.min() >= start_time
+    assert data.index.max() <= end_time
+    assert data.index.is_monotonic_increasing
 
 
 @pytest.mark.integration
