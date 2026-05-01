@@ -6,6 +6,28 @@ from uuid import uuid4
 
 from loguru import logger
 
+# Loguru installs a default ``stderr`` sink at handler id 0 on import.
+# Without removing it, ``logger.debug`` from a strategy fans out to BOTH
+# our per-instance file sink AND the console — which surprises users
+# who set ``debug=True`` expecting a quiet file log.
+#
+# Strip the default sink ONCE per process, the first time a
+# ``DefaultLogger`` is instantiated. User-added sinks (id >= 1) are
+# left alone, so parallel strategy runs and host-app sinks survive.
+_DEFAULT_SINK_STRIPPED = False
+
+
+def _strip_default_sink_once() -> None:
+    global _DEFAULT_SINK_STRIPPED  # pylint: disable=global-statement
+    if _DEFAULT_SINK_STRIPPED:
+        return
+    try:
+        logger.remove(0)
+    except ValueError:
+        # Already removed by user code — fine.
+        pass
+    _DEFAULT_SINK_STRIPPED = True
+
 
 class BaseLogger(ABC):
 
@@ -48,27 +70,48 @@ class DefaultLogger(BaseLogger):
 
     def _init_base_path(self, base_artifacts_path: Optional[str] = None, class_name: str = None):
         if base_artifacts_path is None:
-            base_path: str = os.getenv('PYTHONAPTH', '')
-            if base_path == '':
-                base_path = os.getcwd()
+            # Honor an explicit run-output root if set; otherwise fall back
+            # to cwd. ``PYTHONPATH`` is a colon-separated import list,
+            # not a directory, so it is intentionally not consulted here.
+            base_path: str = os.getenv("FRACTAL_RUNS_PATH") or os.getcwd()
             path = Path(f'{base_path}/runs/{class_name}/{self._id}')
             path.mkdir(parents=True, exist_ok=True)
             base_artifacts_path = path.absolute().as_posix()
         self._base_artifacts_path = base_artifacts_path
 
     def _setup_logger(self):
+        """Add a per-instance loguru sink that writes only this run's logs.
+
+        Earlier versions called the process-wide ``logger.remove()`` here,
+        which wiped every other sink in the interpreter (parallel runs,
+        host-app sinks). We now strip ONLY loguru's pre-installed default
+        stderr sink (handler id 0, once per process) so ``debug=True``
+        doesn't double-print to the console — and store our own handler
+        id so :meth:`close` can drop only this instance's file sink.
         """
-        Create logger default logger for the strategy.
-        """
-        logger.remove()
+        _strip_default_sink_once()
         logs_base_path: str = self.logs_path
         loggformat = "{time:YYYY-MM-DD HH:mm:ss} | {message}"
-        logger.add(
+        run_id = self._id
+        self._handler_id: int = logger.add(
             f'{logs_base_path}/logs.log',
             format=loggformat,
             level="DEBUG",
+            filter=lambda record: record["extra"].get("strategy_run_id") == run_id,
         )
-        self._logger = logger
+        self._logger = logger.bind(strategy_run_id=self._id)
+
+    def close(self) -> None:
+        """Remove only this instance's sink. Idempotent."""
+        hid = getattr(self, "_handler_id", None)
+        if hid is None:
+            return
+        try:
+            logger.remove(hid)
+        except ValueError:
+            # Already removed (e.g. by a prior close()).
+            pass
+        self._handler_id = None
 
     @property
     def base_artifacts_path(self) -> str:

@@ -1,14 +1,17 @@
-from fractal.loaders.thegraph.base_graph_loader import (ArbitrumGraphLoader,
-                                                        BaseGraphLoader,
-                                                        GraphLoaderException)
+from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader, BaseGraphLoader, GraphLoaderException
 from fractal.loaders.thegraph.lido import StETHLoader
-from fractal.loaders.thegraph.uniswap_v2 import (
-    EthereumUniswapV2Loader, EthereumUniswapV2PoolDataLoader)
+from fractal.loaders.thegraph.uniswap_v2 import EthereumUniswapV2Loader, EthereumUniswapV2PoolDataLoader
 from fractal.loaders.thegraph.uniswap_v3 import (
-    ArbitrumUniswapV3Loader, EthereumUniswapV3Loader,
-    UniswapV3ArbitrumPoolDayDataLoader, UniswapV3ArbitrumPoolHourDataLoader,
-    UniswapV3ArbitrumPricesLoader, UniswapV3EthereumPoolDayDataLoader,
-    UniswapV3EthereumPoolHourDataLoader)
+    ArbitrumUniswapV3Loader,
+    EthereumUniswapV3Loader,
+    UniswapV3ArbitrumPoolDayDataLoader,
+    UniswapV3ArbitrumPoolHourDataLoader,
+    UniswapV3ArbitrumPricesLoader,
+    UniswapV3EthereumPoolDayDataLoader,
+    UniswapV3EthereumPoolHourDataLoader,
+    UniswapV3EthereumPoolMinuteDataLoader,
+    UniswapV3EthereumPricesLoader,
+)
 
 __all__ = [
     "BaseGraphLoader",
@@ -23,5 +26,7 @@ __all__ = [
     "UniswapV3EthereumPoolHourDataLoader",
     "UniswapV3ArbitrumPoolHourDataLoader",
     "UniswapV3ArbitrumPricesLoader",
+    "UniswapV3EthereumPricesLoader",
+    "UniswapV3EthereumPoolMinuteDataLoader",
     "StETHLoader",
 ]

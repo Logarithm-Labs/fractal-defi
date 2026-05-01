@@ -6,30 +6,47 @@ from fractal.core.base.entity import GlobalState
 
 
 class Observation:
-    """
-    Observation is a snapshot of the entities states at a given timestamp.
+    """A snapshot of all entity global-states at a single timestamp.
+
+    Validation is intentionally cheap: it confirms the structural
+    contract (non-empty dict, string keys, ``GlobalState`` values) but
+    does **not** introspect dataclass fields. Domain-specific validation
+    (e.g. positive prices, valid funding rates) belongs to each
+    entity's :meth:`update_state`.
     """
     def __init__(self, timestamp: datetime, states: Dict[str, GlobalState]):
         """
         Args:
-            timestamp (datetime): Timestamp of the observation.
-            states (Dict[str, GlobalState]): States of the entities
-             per each registered entity in strategy.
-             Key is the entity name in strategy entities registry.
+            timestamp: Timestamp of the observation.
+            states: Mapping ``entity_name -> GlobalState`` for every
+                entity that has a state at this step.
         """
         self.timestamp: datetime = timestamp
         self.states: Dict[str, GlobalState] = states
-        self.__validate_types()
+        self.__validate()
 
-    def __validate_types(self):
+    def __validate(self) -> None:
+        """Cheap structural check.
+
+        Catches the realistic mistakes:
+          * empty observation (almost certainly a bug);
+          * non-string entity keys;
+          * a value that is not a ``GlobalState`` (e.g. raw dict, str).
         """
-        Check if each field is of the correct type.
-        """
-        for entity_name, state in self.states.items():
-            for field, value in state.__dict__.items():
-                if not isinstance(value, type(getattr(self.states[entity_name], field))):
-                    raise ValueError(f"Field {field} of entity\
-                                     {entity_name} must be of type {type(value)}.")
+        if not isinstance(self.states, dict) or not self.states:
+            raise ValueError(
+                "Observation.states must be a non-empty Dict[str, GlobalState]"
+            )
+        for name, state in self.states.items():
+            if not isinstance(name, str) or not name:
+                raise ValueError(
+                    f"entity name must be a non-empty str, got {name!r}"
+                )
+            if not isinstance(state, GlobalState):
+                raise ValueError(
+                    f"state for {name!r} must be a GlobalState instance, "
+                    f"got {type(state).__name__}"
+                )
 
     def __repr__(self) -> str:
         return f"Observation(timestamp={self.timestamp}, states={self.states})"
@@ -42,7 +59,11 @@ class Observation:
         return self.__json__()
 
     def __hash__(self):
-        return hash(self.__json__())
+        # Include timestamp so two snapshots at different points in time
+        # do not collide in sets/dicts even if their states match.
+        return hash((self.timestamp, self.__json__()))
 
     def __eq__(self, other):
-        return self.__json__() == other.__json__()
+        if not isinstance(other, Observation):
+            return NotImplemented
+        return self.timestamp == other.timestamp and self.__json__() == other.__json__()

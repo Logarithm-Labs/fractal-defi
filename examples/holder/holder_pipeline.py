@@ -1,19 +1,17 @@
 import warnings
+
 warnings.filterwarnings('ignore')
 
 from typing import List
 
 import numpy as np
-
-from sklearn.model_selection import ParameterGrid
-
-from fractal.loaders import BinanceDayPriceLoader, LoaderType
-from fractal.core.base import Observation
-from fractal.core.pipeline import (
-    DefaultPipeline, MLFlowConfig, ExperimentConfig)
-
 from binance_entity import BinanceGlobalState
 from holder_strategy import BinanceHodlerStrategy
+from sklearn.model_selection import ParameterGrid
+
+from fractal.core.base import Observation
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
+from fractal.loaders import BinanceDayPriceLoader, LoaderType
 
 
 # Load prices from Binance and build observations
@@ -41,9 +39,9 @@ def build_grid() -> ParameterGrid:
 
 
 if __name__ == '__main__':
-    # Define MLFlow and Experiment configurations
-    mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.01:8080',
+    # Define MLflow and Experiment configurations
+    mlflow_config: MLflowConfig = MLflowConfig(
+        mlflow_uri='http://127.0.0.1:8080',
         experiment_name='binance_hodler_btc_0'
     )
     experiment_config: ExperimentConfig = ExperimentConfig(

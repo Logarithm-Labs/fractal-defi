@@ -1,6 +1,23 @@
+"""Base ``Loader`` class — every concrete loader inherits from this.
+
+Lifecycle: ``extract → transform → load`` via ``run()``. ``read(with_run=True)``
+runs the pipeline; ``read()`` reads the on-disk cache. Cache files live under
+``<DATA_PATH or cwd>/fractal_data/<loader_class>/<key>.<ext>``.
+
+Subclasses MUST override:
+  - ``extract``, ``transform`` — populate ``self._data``;
+  - ``read(with_run)`` — return one of the typed structs from ``structs.py``.
+
+Subclasses SHOULD override ``_cache_key`` so the on-disk filename reflects
+all parameters that affect the dump (ticker, interval, time window, …).
+The default implementation uses the empty string and is only safe for
+single-shot loaders such as the constant-funding stub.
+"""
 import os
+import pickle
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Any
 
 import pandas as pd
 
@@ -13,89 +30,90 @@ class LoaderType(Enum):
 
 
 class Loader(ABC):
-    """
-    Abstract base class for loaders that handle data extraction, transformation, and loading.
-    This class provides a common interface for different data loaders, allowing for easy
-    integration and extension.
-
-    It follows ETL (Extract, Transform, Load) principles, where each loader is responsible for
-    its own data source and format. The loader type can be specified to determine the format
-    in which the data will be saved or read.
-    """
-    def __init__(self, loader_type: LoaderType = LoaderType.CSV, *args, **kwargs) -> None:
+    def __init__(self, *args, loader_type: LoaderType = LoaderType.CSV, **kwargs) -> None:
         if not isinstance(loader_type, LoaderType):
             raise ValueError(f"Loader type {loader_type} not supported")
         self.loader_type: LoaderType = loader_type
-        self._data: pd.DataFrame = None
+        self._data: Any = None
 
-        # Determine base path from environment or current working directory
-        base_path: str = os.getenv('DATA_PATH') or os.getenv('PYTHONPATH') or os.getcwd()
-        self._base_path: str = os.path.join(base_path, 'fractal_data')
+        # ``DATA_PATH`` is the explicit knob; otherwise cache lives under cwd.
+        # ``PYTHONPATH`` is a colon-separated import list, not a directory,
+        # so we no longer fall back to it.
+        base_path: str = os.getenv("DATA_PATH") or os.getcwd()
+        self._base_path: str = os.path.join(base_path, "fractal_data")
+
+    # ------------------------------------------------------------------ ABC
+    @abstractmethod
+    def extract(self) -> None:
+        ...
 
     @abstractmethod
-    def extract(self):
-        pass
+    def transform(self) -> None:
+        ...
+
+    def load(self) -> None:
+        """Default: write ``self._data`` to disk under the configured loader type."""
+        self._load(self._cache_key())
 
     @abstractmethod
-    def transform(self):
-        pass
+    def read(self, with_run: bool = False):
+        ...
 
-    @abstractmethod
-    def load(self):
-        pass
+    def _cache_key(self) -> str:
+        """Filename stem used for cache. Override in subclasses."""
+        return "data"
 
-    @abstractmethod
-    def read(self, with_run: bool = False) -> pd.DataFrame:
-        pass
-
+    # --------------------------------------------------------------- helpers
     def file_path(self, *args: str) -> str:
-        """Build a file path using the base path, loader name, and given arguments."""
-        file_name = '_'.join(args)
+        file_name = "_".join(args)
         return os.path.join(self._base_path, self.__class__.__name__.lower(), file_name)
 
     def _load(self, *args: str) -> None:
-        """
-        Save data to the specified file format based on LoaderType.
-        """
         if self._data is None:
             raise ValueError("No data to save. Please ensure data is loaded and transformed.")
 
-        file_name = '_'.join(args)
+        file_name = "_".join(args)
         directory = os.path.join(self._base_path, self.__class__.__name__.lower())
         os.makedirs(directory, exist_ok=True)
         path_name = os.path.join(directory, file_name)
 
         if self.loader_type == LoaderType.CSV:
-            self._data.to_csv(f'{path_name}.csv')
+            if not isinstance(self._data, pd.DataFrame):
+                raise TypeError(
+                    f"CSV loader requires self._data to be a DataFrame, got {type(self._data)}"
+                )
+            self._data.to_csv(f"{path_name}.csv")
         elif self.loader_type == LoaderType.JSON:
-            self._data.to_json(f'{path_name}.json', orient='records')
+            if not isinstance(self._data, pd.DataFrame):
+                raise TypeError(
+                    f"JSON loader requires self._data to be a DataFrame, got {type(self._data)}"
+                )
+            self._data.to_json(f"{path_name}.json", orient="records")
+        elif self.loader_type == LoaderType.PICKLE:
+            # pickle handles arbitrary Python objects, including list-of-DataFrame
+            with open(f"{path_name}.pkl", "wb") as fh:
+                pickle.dump(self._data, fh)
         elif self.loader_type == LoaderType.SQL:
             raise NotImplementedError("SQL loader not implemented")
-        elif self.loader_type == LoaderType.PICKLE:
-            self._data.to_pickle(f'{path_name}.pkl')
         else:
             raise ValueError(f"Loader type {self.loader_type} not supported")
 
     def _read(self, *args) -> None:
-        """
-        Read data from the specified file format based on LoaderType.
-        """
         file_path: str = self.file_path(*args)
         if self.loader_type == LoaderType.CSV:
-            self._data = pd.read_csv(f'{file_path}.csv')
+            self._data = pd.read_csv(f"{file_path}.csv")
         elif self.loader_type == LoaderType.JSON:
-            self._data = pd.read_json(f'{file_path}.json', orient='records')
+            self._data = pd.read_json(f"{file_path}.json", orient="records")
+        elif self.loader_type == LoaderType.PICKLE:
+            with open(f"{file_path}.pkl", "rb") as fh:
+                self._data = pickle.load(fh)
         elif self.loader_type == LoaderType.SQL:
             raise NotImplementedError("SQL loader not implemented")
-        elif self.loader_type == LoaderType.PICKLE:
-            self._data = pd.read_pickle(f'{file_path}.pkl')
         else:
             raise ValueError(f"Loader type {self.loader_type} not supported")
 
     def run(self) -> None:
-        """
-        Execute the full loading process: extract, transform, and save the data.
-        """
+        """Execute the full pipeline: extract → transform → load."""
         self.extract()
         self.transform()
         self.load()

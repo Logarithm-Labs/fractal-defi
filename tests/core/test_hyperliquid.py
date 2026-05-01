@@ -1,9 +1,12 @@
 import numpy as np
 import pytest
 
-from fractal.core.entities.hyperliquid import (HyperliquidEntity,
-                                               HyperLiquidGlobalState,
-                                               HyperLiquidPosition)
+from fractal.core.entities.protocols.hyperliquid import (
+    HyperliquidEntity,
+    HyperliquidEntityException,
+    HyperliquidGlobalState,
+    HyperliquidPosition,
+)
 
 
 @pytest.fixture
@@ -40,35 +43,35 @@ def test_action_withdraw_insufficient_balance(hyperliquid_entity):
 
 @pytest.mark.core
 def test_action_open_position(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE)
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee)
 
 
 @pytest.mark.core
 def test_pnl(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
     assert hyperliquid_entity.pnl == 0
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3100))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3100))
     assert hyperliquid_entity.pnl == 0.5 * 100
 
 
 @pytest.mark.core
 def test_balance(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE)
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3100))
-    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE) + (0.5 * (3100 - 3000))
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee)
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3100))
+    assert hyperliquid_entity.balance == 1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee) + (0.5 * (3100 - 3000))
 
 
 @pytest.mark.core
 def test_size(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.1)
     assert hyperliquid_entity.size == 0.1
@@ -76,27 +79,27 @@ def test_size(hyperliquid_entity):
 
 @pytest.mark.core
 def test_leverage(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(0.5)
-    assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.TRADING_FEE))
+    assert hyperliquid_entity.leverage == 0.5 * 3000 / (1000 - (0.5 * 3000 * hyperliquid_entity.trading_fee))
 
-    
+
 @pytest.mark.core
 def test_check_liquidation(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
     hyperliquid_entity.action_open_position(-0.7)
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=5000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=5000))
     # liquidation was triggered
     assert hyperliquid_entity.size == 0
 
-    
+
 @pytest.mark.core
 def test_leverage_change(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
     hyperliquid_entity.action_deposit(1000)
-    hyperliquid_entity.TRADING_FEE = 0.0
+    hyperliquid_entity.trading_fee = 0.0
     hyperliquid_entity.action_open_position(1)
     assert hyperliquid_entity.leverage == 3
     hyperliquid_entity.action_withdraw(500)
@@ -108,24 +111,122 @@ def test_leverage_change(hyperliquid_entity):
 
 @pytest.mark.core
 def test_state_update(hyperliquid_entity):
-    state = HyperLiquidGlobalState(mark_price=10, funding_rate=0.004)
+    state = HyperliquidGlobalState(mark_price=10, funding_rate=0.004)
     hyperliquid_entity.update_state(state)
     assert hyperliquid_entity.global_state == state
 
 
 @pytest.mark.core
+def test_action_close_position_flattens_long(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.trading_fee = 0.0
+    hyperliquid_entity.action_open_position(0.5)
+    assert hyperliquid_entity.size == 0.5
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3100))
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    # Realized profit folded into collateral: 0.5 * (3100 - 3000) = 50
+    assert hyperliquid_entity.balance == pytest.approx(1050)
+
+
+@pytest.mark.core
+def test_action_close_position_flattens_short(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.trading_fee = 0.0
+    hyperliquid_entity.action_open_position(-0.5)
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=2900))
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    # Short profits when price drops: 0.5 * (3000 - 2900) = 50
+    assert hyperliquid_entity.balance == pytest.approx(1050)
+
+
+@pytest.mark.core
+def test_action_close_position_when_flat_is_noop(hyperliquid_entity):
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.action_close_position()
+    assert hyperliquid_entity.size == 0
+    assert hyperliquid_entity.balance == 1000
+
+
+@pytest.mark.core
+def test_pnl_property_polymorphic(hyperliquid_entity):
+    """Through BasePerpEntity, `pnl` is the contract for unrealized PnL."""
+    from fractal.core.entities import BasePerpEntity
+    assert isinstance(hyperliquid_entity, BasePerpEntity)
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
+    hyperliquid_entity.action_deposit(1000)
+    hyperliquid_entity.trading_fee = 0.0
+    hyperliquid_entity.action_open_position(0.5)
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3200))
+    assert hyperliquid_entity.pnl == pytest.approx(0.5 * 200)
+
+
+@pytest.mark.core
 def test_clearing(hyperliquid_entity):
-    hyperliquid_entity.update_state(HyperLiquidGlobalState(mark_price=3000))
-    hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquid_entity._global_state.mark_price,
-                                                                           max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.TRADING_FEE * hyperliquid_entity._global_state.mark_price)
-    hyperliquid_entity._internal_state.positions.append(HyperLiquidPosition(amount=0.5,
-                                                                           entry_price=hyperliquid_entity._global_state.mark_price,
-                                                                           max_leverage=50))
-    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * hyperliquid_entity.TRADING_FEE * hyperliquid_entity._global_state.mark_price)
+    hyperliquid_entity.update_state(HyperliquidGlobalState(mark_price=3000))
+    mark = hyperliquid_entity._global_state.mark_price
+    fee = hyperliquid_entity.trading_fee
+    hyperliquid_entity._internal_state.positions.append(
+        HyperliquidPosition(amount=0.5, entry_price=mark, max_leverage=50)
+    )
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * fee * mark)
+    hyperliquid_entity._internal_state.positions.append(
+        HyperliquidPosition(amount=0.5, entry_price=mark, max_leverage=50)
+    )
+    hyperliquid_entity._internal_state.collateral -= np.abs(-0.5 * fee * mark)
     leverage_before_clearing = hyperliquid_entity.leverage
     balance_before_clearing = hyperliquid_entity.balance
     hyperliquid_entity._clearing()
     assert hyperliquid_entity.leverage == leverage_before_clearing
     assert hyperliquid_entity.balance == balance_before_clearing
+
+
+# -------------------------------------------------------------- H4 lock-ins
+@pytest.mark.core
+def test_open_position_rejects_above_max_leverage():
+    """H4: post-trade leverage above ``max_leverage`` is rejected and
+    rolled back atomically."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperliquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    with pytest.raises(HyperliquidEntityException, match="leverage"):
+        e.action_open_position(2.0)  # notional 2000 → leverage 20x > 10
+    assert e.size == 0
+    assert e._internal_state.collateral == 100
+    assert e._internal_state.positions == []
+
+
+@pytest.mark.core
+def test_open_position_rejects_without_deposit():
+    """H4: opening any non-zero position with zero collateral is rejected."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperliquidGlobalState(mark_price=1000.0))
+    with pytest.raises(HyperliquidEntityException):
+        e.action_open_position(0.1)
+    assert e.size == 0
+    assert e._internal_state.positions == []
+
+
+@pytest.mark.core
+def test_open_position_at_max_leverage_passes():
+    """H4 boundary: leverage == max_leverage is allowed."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperliquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # notional 1000 → leverage exactly 10x
+    assert e.size == 1.0
+
+
+@pytest.mark.core
+def test_close_position_passes_even_from_margin_bound_state():
+    """H4: risk-reducing trades must NOT be rejected by the leverage check."""
+    e = HyperliquidEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(HyperliquidGlobalState(mark_price=1000.0))
+    e.action_deposit(100)
+    e.action_open_position(1.0)  # opened at exactly 10x
+    e.action_open_position(-0.5)  # risk-reducing
+    assert e.size == 0.5

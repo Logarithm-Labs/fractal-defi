@@ -1,83 +1,49 @@
-from dataclasses import dataclass
-from typing import Optional
+"""Deprecated shim — use :mod:`fractal.core.entities.simple_spot`.
 
-from fractal.core.base.entity import GlobalState, InternalState
-from fractal.core.entities.spot import BaseSpotEntity
+The class was renamed to :class:`SimpleSpotExchange` for naming consistency
+with :class:`SimplePerpEntity`, and the trading semantics were corrected
+to match :class:`BaseSpotEntity` (``buy`` takes ``amount_in_notional``,
+``sell`` takes ``amount_in_product`` — previously both took bare ``amount``
+in product, silently violating the base contract).
+"""
+import warnings
+
+from fractal.core.entities.simple.spot import (
+    SimpleSpotExchange,
+    SimpleSpotExchangeException,
+    SimpleSpotExchangeGlobalState,
+    SimpleSpotExchangeInternalState,
+)
 
 
-@dataclass
-class SingleSpotExchangeGlobalState(GlobalState):
+class SingleSpotExchange(SimpleSpotExchange):
+    """Deprecated alias for :class:`SimpleSpotExchange`.
+
+    .. note::
+        Trading semantics changed alongside the rename:
+        ``action_buy`` now takes ``amount_in_notional`` (was bare ``amount``
+        in product), ``action_sell`` now takes ``amount_in_product`` (was
+        bare ``amount``). Update existing ``Action(...)`` payloads.
     """
-    Klines Data
-    """
-    open: float = 0.0
-    high: float = 0.0
-    low: float = 0.0
-    close: float = 0.0
+
+    def __init__(self, *args, **kwargs):
+        warnings.warn(
+            "SingleSpotExchange is deprecated; use SimpleSpotExchange from "
+            "fractal.core.entities.simple_spot. Trading args also changed: "
+            "buy now takes amount_in_notional, sell takes amount_in_product.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        super().__init__(*args, **kwargs)
 
 
-@dataclass
-class SingleSpotExchangeInternalState(InternalState):
-    amount: float = 0.0  # hold amount of tokens
-    cash: float = 0.0   # balance in notional (USD)
+# Re-export the state aliases too so old `from single_spot_exchange import ...` still works.
+SingleSpotExchangeGlobalState = SimpleSpotExchangeGlobalState
+SingleSpotExchangeInternalState = SimpleSpotExchangeInternalState
 
-
-class SingleSpotExchange(BaseSpotEntity):
-
-    def __init__(self, trading_fee: Optional[float] = 0.005):
-        """
-        Single Spot Exchange Entity
-
-        Args:
-            trading_fee (float, optional): Fee for the trade that is collected
-            in side (in tokens for buy and in notional for sell).
-            Defaults to 0.005.
-        """
-        self._trading_fee: float = trading_fee
-        super().__init__()
-
-    def _initialize_states(self):
-        self._global_state: SingleSpotExchangeGlobalState = SingleSpotExchangeGlobalState()
-        self._internal_state: SingleSpotExchangeInternalState = SingleSpotExchangeInternalState()
-
-    def update_state(self, state: SingleSpotExchangeGlobalState, *args, **kwargs) -> None:
-        self._global_state = state
-
-    @property
-    def balance(self) -> float:
-        """
-        Returns the balance in notional.
-        balance = amount * close + cash
-        """
-        return self._internal_state.amount * self._global_state.close + self._internal_state.cash
-
-    def action_buy(self, amount: float) -> None:
-        """
-        Buy tokens.
-
-        Args:
-            amount (float): amount of tokens to buy
-        """
-        amount_in_notional = amount * self._global_state.close
-        if amount_in_notional > self._internal_state.cash:
-            raise ValueError(f'Not enough cash to buy {amount}')
-        self._internal_state.amount += amount * (1 - self._trading_fee)
-        self._internal_state.cash -= amount_in_notional
-
-    def action_sell(self, amount: float) -> None:
-        """
-        Sell tokens.
-
-        Args:
-            amount (float): amount of tokens to sell
-        """
-        if amount > self._internal_state.amount:
-            raise ValueError(f'Not enough balance to sell {amount}')
-        self._internal_state.amount -= amount
-        self._internal_state.cash += amount * self._global_state.close * (1 - self._trading_fee)
-
-    def action_deposit(self, amount_in_notional: float) -> None:
-        self._internal_state.cash += amount_in_notional
-
-    def action_withdraw(self, amount_in_notional: float) -> None:
-        self._internal_state.cash -= amount_in_notional
+__all__ = [
+    "SingleSpotExchange",
+    "SingleSpotExchangeGlobalState",
+    "SingleSpotExchangeInternalState",
+    "SimpleSpotExchangeException",
+]

@@ -4,18 +4,15 @@ fractal.core.entities.models package
 Submodules
 ----------
 
-fractal.core.entities.models.uniswap\_v3\_fees module
------------------------------------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: fractal.core.entities.models.uniswap_v3_fees
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   fractal.core.entities.models.uniswap_v3_fees
 
 Module contents
 ---------------
 
 .. automodule:: fractal.core.entities.models
    :members:
-   :undoc-members:
    :show-inheritance:
+   :undoc-members:

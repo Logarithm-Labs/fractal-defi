@@ -4,8 +4,7 @@ from datetime import datetime
 import pytest
 
 from fractal.core.base.entity import GlobalState
-from fractal.core.base.observations import (Observation,
-                                            SQLiteObservationsStorage)
+from fractal.core.base.observations import Observation, SQLiteObservationsStorage
 
 
 @dataclass
@@ -19,7 +18,7 @@ def observation():
     return Observation(
         timestamp=datetime.now(),
         states={
-            'exchange':  SomeState(price=100.0, volume=1000.0),
+            'exchange': SomeState(price=100.0, volume=1000.0),
         }
     )
 

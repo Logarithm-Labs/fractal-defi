@@ -1,13 +1,11 @@
-from typing import List
 from dataclasses import dataclass
+from typing import List
 
-from fractal.core.base import (
-    BaseStrategy, Action, BaseStrategyParams,
-    ActionToTake, NamedEntity, Observation)
+from binance_entity import BinanceGlobalState, BinanceSpot
+
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
 from fractal.core.entities import BaseSpotEntity
 from fractal.loaders import BinanceDayPriceLoader, LoaderType
-
-from binance_entity import BinanceSpot, BinanceGlobalState
 
 
 @dataclass
@@ -18,7 +16,7 @@ class HolderStrategyParams(BaseStrategyParams):
     INITIAL_BALANCE: float = 10_000
 
 
-class HodlerStrategy(BaseStrategy):
+class HodlerStrategy(BaseStrategy[HolderStrategyParams]):
 
     def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None, *args, **kwargs):
         super().__init__(params=params, debug=debug, *args, **kwargs)
@@ -30,27 +28,25 @@ class HodlerStrategy(BaseStrategy):
         if self._params is not None:
             self.__deposit_into_exchange()
 
-    def predict(self) -> ActionToTake:
+    def predict(self) -> List[ActionToTake]:
         exchange: BaseSpotEntity = self.get_entity('exchange')
         if exchange.global_state.price < self._params.BUY_PRICE:
-            # Emit a buy action to apply to the entity registered as 'exchange'
-            # We buy a fraction of the total cash available
-            amount_to_buy = self._params.TRADE_SHARE * exchange.internal_state.cash / exchange.global_state.price
-            if amount_to_buy < 1e-6:
+            # Spend a fraction of available cash on the buy.
+            notional_to_spend = self._params.TRADE_SHARE * exchange.internal_state.cash
+            if notional_to_spend < 1e-6:
                 return []
             return [ActionToTake(
                 entity_name='exchange',
-                action=Action(action='buy', args={'amount': amount_to_buy})
+                action=Action(action='buy', args={'amount_in_notional': notional_to_spend})
             )]
         elif exchange.global_state.price > self._params.SELL_PRICE:
-            # Emit a sell action to apply to the entity registered as 'exchange'
-            # We sell a fraction of the total BTC available
-            amount_to_sell = self._params.TRADE_SHARE * exchange.internal_state.amount
-            if amount_to_sell < 1e-6:
+            # Sell a fraction of held product.
+            product_to_sell = self._params.TRADE_SHARE * exchange.internal_state.amount
+            if product_to_sell < 1e-6:
                 return []
             return [ActionToTake(
                 entity_name='exchange',
-                action=Action(action='sell', args={'amount': amount_to_sell})
+                action=Action(action='sell', args={'amount_in_product': product_to_sell})
             )]
         else:
             # HODL
@@ -86,4 +82,4 @@ if __name__ == '__main__':
     strategy = BinanceHodlerStrategy(debug=True, params=params)
     result = strategy.run(observations)
     print(result.get_default_metrics())  # show metrics
-    result.to_dataframe().to_csv('resutl.csv')  # save results of strategy states
+    result.to_dataframe().to_csv('result.csv')  # save results of strategy states

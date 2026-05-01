@@ -158,6 +158,15 @@ backtest/.DS_Store
 *.pickle
 *.zip
 
+# Fixtures consumed by the e2e MLflow harness
+# (``tests/mlflow_tests/scripts/e2e.sh``). Without these committed, the
+# CI ``e2e-mlflow`` job hard-fails on a missing-fixture error instead
+# of running. Slow real-data tests still ``pytest.skip`` if the rest
+# of the ``*_hyperliquid.csv`` family is absent — only these two are
+# load-bearing for CI.
+!examples/basis/BTC_hyperliquid.csv
+!examples/tau_reset/tau_strategy_result.csv
+
 *id_rsa
 *id_rsa.pub
 .vscode/settings.json
@@ -167,11 +176,24 @@ local_run.*
 catboost_info
 .DS_Store
 
-# mlflow and artifacts
-/runs
-*loader
-/mlruns
-/mlartifact
-/fractal_data
+# Runtime artifacts (these accumulate ANYWHERE — strategy logs go
+# under ``runs/`` cwd-relative, loader cache goes under
+# ``fractal_data/`` cwd-relative). Without the leading slash these
+# rules match at any depth (e.g. ``examples/tau_reset/runs/``).
+runs/
+mlruns/
+mlartifacts/
+fractal_data/
+
+# MLflow Docker harness state (sqlite + artifact tree)
+tests/mlflow_tests/mlflow-data/
+tests/mlflow_tests/output/
+
 /.idea
 *.db
+
+# Internal review notes — never part of the public docs surface.
+# Case-insensitive glob via character classes catches REVIEW.md,
+# ENTITIES_REVIEW.md, etc. — any file
+# whose name contains "review" in any case and ends in .md.
+*[Rr][Ee][Vv][Ii][Ee][Ww]*.md

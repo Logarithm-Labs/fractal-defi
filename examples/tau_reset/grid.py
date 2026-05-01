@@ -1,0 +1,59 @@
+import os
+import warnings
+
+warnings.filterwarnings('ignore')
+
+from datetime import UTC, datetime
+
+import numpy as np
+from sklearn.model_selection import ParameterGrid
+
+from examples.tau_reset.backtest import THE_GRAPH_API_KEY, TauResetStrategy, build_observations
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
+
+
+def build_grid():
+    return ParameterGrid({
+        'TAU': np.linspace(start=1, stop=15, num=15, dtype=int),
+        'INITIAL_BALANCE': [1_000_000]
+    })
+
+
+if __name__ == '__main__':
+    ticker: str = 'ETHUSDT'
+    pool_address: str = '0x8ad599c3a0ff1de082011efddc58f1908eb6e6d8'
+    start_time = datetime(2024, 7, 1, tzinfo=UTC)
+    end_time = datetime(2024, 9, 30, tzinfo=UTC)
+    fidelity = 'minute'
+    experiment_name = f'rtau_{fidelity}_{ticker}_{pool_address}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
+    # Pool config — class-level fallback works for backward compat,
+    # but the constructor-kwargs path is cleaner because it avoids
+    # cross-instance class-state mutation. The launcher inside the
+    # pipeline currently constructs with positional ``params`` only,
+    # so we still set class attributes here; switch to constructor
+    # kwargs once the launcher exposes them.
+    TauResetStrategy.token0_decimals = 6
+    TauResetStrategy.token1_decimals = 18
+    TauResetStrategy.tick_spacing = 60
+
+    # Define MLflow and Experiment configurations
+    mlflow_config: MLflowConfig = MLflowConfig(
+        mlflow_uri=os.getenv('MLFLOW_URI'),
+        experiment_name=experiment_name,
+        aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+        aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+    )
+    observations = build_observations(ticker, pool_address, THE_GRAPH_API_KEY, start_time, end_time, fidelity=fidelity)
+    assert len(observations) > 0
+    experiment_config: ExperimentConfig = ExperimentConfig(
+        strategy_type=TauResetStrategy,
+        backtest_observations=observations,
+        window_size=24,
+        params_grid=build_grid(),
+        debug=True,
+    )
+    pipeline: DefaultPipeline = DefaultPipeline(
+        experiment_config=experiment_config,
+        mlflow_config=mlflow_config
+    )
+    pipeline.run()

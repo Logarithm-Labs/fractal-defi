@@ -13,26 +13,8 @@ Subpackages
 Submodules
 ----------
 
-fractal.core.launcher module
-----------------------------
+.. toctree::
+   :maxdepth: 4
 
-.. automodule:: fractal.core.launcher
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-fractal.core.pipeline module
-----------------------------
-
-.. automodule:: fractal.core.pipeline
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: fractal.core
-   :members:
-   :undoc-members:
-   :show-inheritance:
+   fractal.core.launcher
+   fractal.core.pipeline

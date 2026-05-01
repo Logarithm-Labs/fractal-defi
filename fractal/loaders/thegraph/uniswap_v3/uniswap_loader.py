@@ -29,14 +29,26 @@ class UniswapV3Loader(ArbitrumGraphLoader):
             Tuple[int, int]: Decimals of input tokens (token0, token1)
         """
 
+    # Lifecycle methods are required by the ``Loader`` ABC but have no
+    # meaningful implementation at this layer — concrete pool/spot
+    # loaders below override them. Keep them as ``NotImplementedError``
+    # so a misconfigured subclass that forgets to override fails loudly.
     def extract(self):
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} must override extract()."
+        )
 
     def transform(self):
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} must override transform()."
+        )
 
     def load(self):
-        pass
+        raise NotImplementedError(
+            f"{type(self).__name__} must override load()."
+        )
 
-    def read(self):
-        pass
+    def read(self, with_run: bool = False):
+        raise NotImplementedError(
+            f"{type(self).__name__} must override read()."
+        )
