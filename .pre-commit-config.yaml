@@ -35,15 +35,18 @@ repos:
   # 2. isort — autoformats imports BEFORE flake8 sees them, so a
   #    misordered import gets fixed instead of rejected. Project
   #    config in ``.isort.cfg`` (matches the 120-char flake8 limit).
+  #    ``rev`` kept in lock-step with setup.py / requirements.txt so
+  #    pre-commit and ``pip install -e ".[dev]"`` resolve to the
+  #    same major.
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 8.0.1
     hooks:
       - id: isort
         files: ^(fractal|tests|examples)/.*\.py$
 
   # 3. flake8 on touched files (fast, ~1s)
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.1.1
+    rev: 7.3.0
     hooks:
       - id: flake8
         files: ^(fractal|tests)/
@@ -58,6 +61,10 @@ repos:
   #    where pylint isn't installed.
   - repo: local
     hooks:
+      # additional_dependencies pinned to the same floors as
+      # setup.py::DEV_REQUIRES + RUNTIME_REQUIRES so the pylint
+      # toolchain pre-commit runs against matches what CI installs
+      # via ``pip install -e ".[dev]"``. Keep both lists in sync.
       - id: pylint
         name: pylint (fractal/)
         entry: pylint fractal/ --disable=R --score=no
@@ -66,13 +73,13 @@ repos:
         types: [python]
         files: ^fractal/
         additional_dependencies:
-          - pylint>=3.2.5
-          - mlflow>=2.14.1
-          - pandas>=2.2.2
-          - numpy>=1.16.0
-          - loguru>=0.7.2
-          - requests>=2.32.3
-          - scikit-learn>=1.5.0
+          - pylint>=4.0.5
+          - mlflow>=3.11.1
+          - pandas>=2.3.3
+          - numpy>=2.2.6
+          - loguru>=0.7.3
+          - requests>=2.33.1
+          - scikit-learn>=1.7.2
 
       - id: pylint-tests
         name: pylint (tests/)
@@ -82,14 +89,14 @@ repos:
         types: [python]
         files: ^tests/
         additional_dependencies:
-          - pylint>=3.2.5
-          - pytest>=8.2.2
-          - mlflow>=2.14.1
-          - pandas>=2.2.2
-          - numpy>=1.16.0
-          - loguru>=0.7.2
-          - requests>=2.32.3
-          - scikit-learn>=1.5.0
+          - pylint>=4.0.5
+          - pytest>=9.0.3
+          - mlflow>=3.11.1
+          - pandas>=2.3.3
+          - numpy>=2.2.6
+          - loguru>=0.7.3
+          - requests>=2.33.1
+          - scikit-learn>=1.7.2
 
   # 5. pytest -m core — full offline test suite (~1100 tests, ~10s).
   #    Lives on the ``manual`` stage so it does NOT fire on every

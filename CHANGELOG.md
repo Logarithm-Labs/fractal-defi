@@ -4,6 +4,59 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [v1.3.1] — Unreleased
+
+Coordinated dependency-floor bump + Codex audit follow-ups. No public-API changes; the library still imports and behaves
+identically to v1.3.0. The supported install matrix narrows — flag
+this if you depend on the older floors.
+
+### Dependencies (user-visible)
+
+- **Runtime floors raised.** `setup.py::install_requires` now requires:
+  - `numpy>=2.2.6` (was `>=1.26.0`) — **major bump**, drops NumPy 1.x
+  - `mlflow>=3.11.1` (was `>=2.14.1`) — **major bump**, drops MLflow 2.x
+  - `pandas>=2.3.3` (was `>=2.2.2`)
+  - `scikit-learn>=1.7.2` (was `>=1.5.0`)
+  - `loguru>=0.7.3` (was `>=0.7.2`), `requests>=2.33.1` (was `>=2.32.3`)
+- **Migration:** consumers pinned to `numpy<2` or `mlflow<3` cannot
+  upgrade — stay on `fractal-defi==1.3.0`. The new floors were chosen
+  after running the full 1108-test core suite plus the closed-form
+  `quick_start.py` smoke (mismatch ≈ 7e-11) on the bumped matrix.
+  v1.3.0's documented `numpy>=1.26.0` floor served the Python 3.13
+  wheel-availability problem of mid-2025; that's no longer a
+  constraint with NumPy 2.x.
+- **Dev tooling floors raised** to match what CI installs:
+  `pytest>=9.0.3`, `pylint>=4.0.5`, `flake8>=7.3.0`, `isort>=8.0.1`,
+  `pre-commit>=4.6.0`, `sphinx>=8.1.3`, `sphinx-rtd-theme>=3.1.0`.
+- **`.pre-commit-config.yaml` synchronized** with the new floors so
+  local hooks and CI run the same toolchain (was a source of pylint
+  drift between `git commit` and the CI lint job).
+- **Release tooling added to `[dev]` extra**: `build>=1.2.0`,
+  `twine>=5.0.0`. `make build` / `make release` now work after a
+  plain `pip install -e ".[dev]"` (closes Codex M3).
+- `requirements.txt` re-synced as a faithful mirror of `setup.py`
+  (closes Codex L2).
+
+### Fixes
+
+- **Aave `_request` type annotation.** `AaveV3RatesLoader._request`
+  was declared `-> List[Dict[str, Any]]` but actually returned the
+  GraphQL `data` object. Now correctly typed `-> Dict[str, Any]`
+  with guards that raise `RuntimeError` on malformed payload (non-
+  object `payload` or non-object `data`) instead of silent NoneType
+  drift downstream (closes Codex L1).
+
+### Not included (deliberately deferred)
+
+- Docker base-image bump from `python:3.11-slim` → `python:3.14-slim`
+  in `tests/mlflow_tests/Dockerfile`: rejected. `mlflow==2.14.1` (the
+  pin in that Dockerfile) has no Python 3.14-compatible NumPy wheel,
+  build fails. Will land paired with an `mlflow` bump in the
+  Dockerfile.
+- `examples/agentic_trader/requirements.txt` bumps (`dash 4.1.0`,
+  `openai-agents 0.14.8`): land via Dependabot in their own PRs —
+  example-only, doesn't gate this release.
+
 ## [v1.3.0] — 2026-05-01
 
 First fully reviewed release. Refactors loaders/entities/strategies to a
