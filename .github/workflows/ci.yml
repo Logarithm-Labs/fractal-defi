@@ -1,8 +1,12 @@
 name: CI
 
 on:
-  push:
-    branches: [main, dev]
+  # Gitflow is PR-only: every change lands via a PR and is gated by CI
+  # there. ``push`` triggers would just re-run the same jobs after merge
+  # for no extra signal, so we drop them. ``main`` is additionally
+  # locked down — the only PR allowed in is from ``dev`` (enforced by
+  # ``guard-release-source`` below + branch protection), no direct
+  # pushes, no other source branches.
   pull_request:
     branches: [main, dev]
   # Manual trigger for the heavy jobs (docs / slow / integration /
@@ -103,8 +107,7 @@ jobs:
     name: Docs (Sphinx)
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request'
           && github.event.pull_request.base.ref == 'main'
           && github.event.pull_request.head.ref == 'dev')
@@ -135,8 +138,7 @@ jobs:
     name: Slow real-data tests
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request'
           && github.event.pull_request.base.ref == 'main'
           && github.event.pull_request.head.ref == 'dev')
@@ -159,8 +161,7 @@ jobs:
     name: Integration (live API) tests
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request'
           && github.event.pull_request.base.ref == 'main'
           && github.event.pull_request.head.ref == 'dev')
@@ -185,8 +186,7 @@ jobs:
     name: Wheel smoke (build + install + tests)
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request'
           && github.event.pull_request.base.ref == 'main'
           && github.event.pull_request.head.ref == 'dev')
@@ -223,8 +223,7 @@ jobs:
     name: E2E MLflow harness (Docker)
     runs-on: ubuntu-latest
     if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
-      || github.event_name == 'workflow_dispatch'
+      github.event_name == 'workflow_dispatch'
       || (github.event_name == 'pull_request'
           && github.event.pull_request.base.ref == 'main'
           && github.event.pull_request.head.ref == 'dev')
