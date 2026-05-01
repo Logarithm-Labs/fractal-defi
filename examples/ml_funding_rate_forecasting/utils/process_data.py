@@ -1,17 +1,36 @@
+import glob
+
 import pandas as pd
+
+
+def _read_latest_cache(loader_name: str, ticker: str) -> pd.DataFrame:
+    """Read the most-recent cached CSV for ``ticker`` under ``loader_name``.
+
+    fractal-defi >= 1.3.0 stores cache files as
+    ``{ticker}-{interval}-{start_ms}-{end_ms}.csv``; older versions used
+    just ``{ticker}.csv``. Glob-match handles both — sorted picks the
+    most recent slice if multiple windows were cached.
+    """
+    pattern = f"./fractal_data/{loader_name}/{ticker}-*.csv"
+    matches = sorted(glob.glob(pattern))
+    if not matches:
+        # Pre-1.3.0 cache filename (no time range suffix).
+        legacy = f"./fractal_data/{loader_name}/{ticker}.csv"
+        if glob.glob(legacy):
+            matches = [legacy]
+    if not matches:
+        raise FileNotFoundError(
+            f"no cached CSV for {ticker} under fractal_data/{loader_name}/. "
+            f"Run the data-download cell first."
+        )
+    return pd.read_csv(matches[-1], sep=",", index_col=0)
 
 
 def process_ticker(ticker_name):
 
-    df_futr = pd.read_csv(
-        f"./fractal_data/binancepriceloader/{ticker_name}.csv", sep=",", index_col=0
-    )
-    df_spot = pd.read_csv(
-        f"./fractal_data/binancespotpriceloader/{ticker_name}.csv", sep=",", index_col=0
-    )
-    df_rate = pd.read_csv(
-        f"./fractal_data/binancefundingloader/{ticker_name}.csv", sep=",", index_col=0
-    )
+    df_futr = _read_latest_cache("binancepriceloader", ticker_name)
+    df_spot = _read_latest_cache("binancespotpriceloader", ticker_name)
+    df_rate = _read_latest_cache("binancefundingloader", ticker_name)
 
     df_futr.rename(
         columns={
@@ -49,7 +68,7 @@ def process_ticker(ticker_name):
     df.sort_values(by="open_time", ascending=False, inplace=True)
     df.drop(columns=["ticker"], inplace=True)
 
-    df["fundingRate"].ffill(inplace=True)
+    df["fundingRate"] = df["fundingRate"].ffill()
     df.dropna(inplace=True)
     df.sort_values(by="open_time", ascending=True, inplace=True)
 

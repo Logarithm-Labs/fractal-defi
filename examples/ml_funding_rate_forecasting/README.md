@@ -32,11 +32,18 @@ This directory contains an example project for forecasting funding rates in DeFi
 
 ## Metrics
 
-SMAPE
+SMAPE on a 1-year window of hourly ETHUSDT (Apr 2024 – Apr 2025), held-out
+20% test split:
 
-| Ticker | Model | Baseline rolling mean |  Baseline constant |
+| Ticker | Model | Baseline rolling mean | Baseline constant |
 |--------|-------|-----------------------|-------------------|
-| ETH    | 1.072 | 1.128                 | 1.198             |
+| ETH    | 1.094 | 1.163                 | 1.199             |
+
+Numbers regenerated after a fix to the forecasting target — earlier
+versions of this notebook used `df['basis'].shift(2)` (predicting
+basis from 2 hours **earlier**), inflating apparent skill. The current
+notebook uses `shift(-2)` (predicting 2 hours **ahead**, as originally
+intended).
 
 
 ## Requirements
