@@ -13,7 +13,7 @@
 # The /mlflow directory is bind-mounted from the host as ``mlflow-data/``
 # so the sqlite DB and artifact tree survive container restarts and can
 # be inspected from the host.
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 RUN pip install --no-cache-dir \
         mlflow==2.14.1 \
