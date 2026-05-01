@@ -2,8 +2,7 @@ from dataclasses import dataclass
 
 from fractal.core.base.strategy import NamedEntity
 from fractal.core.entities import HyperliquidEntity, UniswapV3SpotEntity
-from fractal.strategies.basis_trading_strategy import (
-    BasisTradingStrategy, BasisTradingStrategyHyperparams)
+from fractal.strategies.basis_trading_strategy import BasisTradingStrategy, BasisTradingStrategyHyperparams
 
 
 @dataclass

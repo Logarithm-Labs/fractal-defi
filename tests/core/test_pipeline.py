@@ -8,12 +8,9 @@ from unittest.mock import MagicMock
 import pytest
 
 from fractal.core import pipeline as pipeline_module
-from fractal.core.base import (BaseStrategy, BaseStrategyParams, NamedEntity,
-                               Observation)
-from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                               SimpleSpotExchangeGlobalState)
-from fractal.core.pipeline import (DefaultPipeline, ExperimentConfig,
-                                   MLFlowConfig, Pipeline, _params_to_dict)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, NamedEntity, Observation
+from fractal.core.entities.simple.spot import SimpleSpotExchange, SimpleSpotExchangeGlobalState
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig, Pipeline, _params_to_dict
 
 
 @dataclass
@@ -85,7 +82,7 @@ def _default_obs():
 
 def _make_pipeline(mlflow_cfg=None, exp_cfg=None):
     if mlflow_cfg is None:
-        mlflow_cfg = MLFlowConfig(experiment_name='test', mlflow_uri='http://stub')
+        mlflow_cfg = MLflowConfig(experiment_name='test', mlflow_uri='http://stub')
     if exp_cfg is None:
         exp_cfg = ExperimentConfig(
             strategy_type=_DummyStrategy,
@@ -130,7 +127,7 @@ def test_params_to_dict_rejects_non_convertible():
 def test_aws_env_vars_unchanged_when_config_is_none(monkeypatch):
     monkeypatch.setenv('AWS_ACCESS_KEY_ID', 'host_key')
     monkeypatch.setenv('AWS_SECRET_ACCESS_KEY', 'host_secret')
-    cfg = MLFlowConfig(experiment_name='e', mlflow_uri='http://s')
+    cfg = MLflowConfig(experiment_name='e', mlflow_uri='http://s')
     p = _make_pipeline(mlflow_cfg=cfg)
     p._set_aws_env()
     assert os.environ['AWS_ACCESS_KEY_ID'] == 'host_key'
@@ -140,7 +137,7 @@ def test_aws_env_vars_unchanged_when_config_is_none(monkeypatch):
 @pytest.mark.core
 def test_aws_env_vars_unchanged_when_config_is_empty_string(monkeypatch):
     monkeypatch.setenv('AWS_ACCESS_KEY_ID', 'host_key')
-    cfg = MLFlowConfig(
+    cfg = MLflowConfig(
         experiment_name='e', mlflow_uri='http://s',
         aws_access_key_id='', aws_secret_access_key='',
     )
@@ -153,7 +150,7 @@ def test_aws_env_vars_unchanged_when_config_is_empty_string(monkeypatch):
 def test_aws_env_vars_set_when_config_provides_them(monkeypatch):
     monkeypatch.delenv('AWS_ACCESS_KEY_ID', raising=False)
     monkeypatch.delenv('AWS_SECRET_ACCESS_KEY', raising=False)
-    cfg = MLFlowConfig(
+    cfg = MLflowConfig(
         experiment_name='e', mlflow_uri='http://s',
         aws_access_key_id='cfg_key', aws_secret_access_key='cfg_secret',
     )
@@ -253,7 +250,7 @@ def test_grid_step_logs_params_for_plain_dict(mlflow_calls):
 
 @pytest.mark.core
 def test_grid_step_invokes_run_name_formatter(mlflow_calls):
-    cfg = MLFlowConfig(
+    cfg = MLflowConfig(
         experiment_name='e', mlflow_uri='http://s',
         run_name_formatter=lambda params: f"A={_params_to_dict(params)['A']}",
     )
@@ -272,7 +269,7 @@ def test_run_iterates_grid_calling_grid_step_per_params(monkeypatch):
             seen.append(params)
 
     monkeypatch.setattr(pipeline_module, 'mlflow', MagicMock())
-    cfg = MLFlowConfig(experiment_name='e', mlflow_uri='http://s')
+    cfg = MLflowConfig(experiment_name='e', mlflow_uri='http://s')
     grid = [_Params(A=1), _Params(A=2), _Params(A=3)]
     p = _Recorder(cfg, ExperimentConfig(
         strategy_type=_DummyStrategy, params_grid=grid,
@@ -289,5 +286,5 @@ def test_default_pipeline_subclasses_pipeline():
 @pytest.mark.core
 def test_pipeline_is_abstract():
     with pytest.raises(TypeError):
-        Pipeline(MLFlowConfig(experiment_name='e', mlflow_uri='http://s'),
+        Pipeline(MLflowConfig(experiment_name='e', mlflow_uri='http://s'),
                  ExperimentConfig(strategy_type=_DummyStrategy, params_grid=[]))

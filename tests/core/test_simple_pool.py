@@ -1,9 +1,7 @@
 """Tests for :class:`SimplePoolEntity`."""
 import pytest
 
-from fractal.core.entities.simple.pool import (SimplePoolEntity,
-                                               SimplePoolException,
-                                               SimplePoolGlobalState)
+from fractal.core.entities.simple.pool import SimplePoolEntity, SimplePoolException, SimplePoolGlobalState
 
 
 @pytest.fixture

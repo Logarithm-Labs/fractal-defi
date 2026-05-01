@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
 from fractal.loaders import LoaderType
 from fractal.loaders.aave import AaveV3EthereumLoader
 

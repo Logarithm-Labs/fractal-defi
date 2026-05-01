@@ -1,23 +1,22 @@
 import time
-
-from typing import List
 from dataclasses import dataclass
-from datetime import datetime, UTC
+from datetime import UTC, datetime
+from typing import List
 
-from fractal.core.base import (
-    BaseStrategy, Action, BaseStrategyParams,
-    ActionToTake, NamedEntity, Observation)
+from agents import Agent, Runner, function_tool
+from openai_agent import AgentAction, create_agent
+from prompts import NEUTRAL_PROMPT
 
-from fractal.core.entities.simple.spot import (
-    SimpleSpotExchange, SimpleSpotExchangeGlobalState, SimpleSpotExchangeInternalState
-)
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
 from fractal.core.base.observations import ObservationsStorage, SQLiteObservationsStorage
+from fractal.core.entities.simple.spot import (
+    SimpleSpotExchange,
+    SimpleSpotExchangeGlobalState,
+    SimpleSpotExchangeInternalState,
+)
 from fractal.loaders import LoaderType
 from fractal.loaders.binance import BinanceKlinesLoader
 
-from openai_agent import create_agent, AgentAction
-from agents import function_tool, Runner, Agent
-from prompts import NEUTRAL_PROMPT
 
 @dataclass
 class AgentTradingStrategyParams(BaseStrategyParams):

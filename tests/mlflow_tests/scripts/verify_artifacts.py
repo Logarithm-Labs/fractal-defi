@@ -22,12 +22,16 @@ from pathlib import Path
 from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import (DEFAULT_MLFLOW_URI,  # noqa: E402
-                     EXP_MB_PIPELINE, EXP_MB_SINGLE,
-                     EXP_TAU_PIPELINE, EXP_TAU_SINGLE, OUTPUT_DIR)
-
 import mlflow  # noqa: E402
 import pandas as pd  # noqa: E402
+from _common import (  # noqa: E402
+    DEFAULT_MLFLOW_URI,
+    EXP_MB_PIPELINE,
+    EXP_MB_SINGLE,
+    EXP_TAU_PIPELINE,
+    EXP_TAU_SINGLE,
+    OUTPUT_DIR,
+)
 from mlflow.tracking import MlflowClient  # noqa: E402
 
 

@@ -14,8 +14,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHGlobalState)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState
 from fractal.loaders import LoaderType
 from fractal.loaders.thegraph.lido import StETHLoader
 

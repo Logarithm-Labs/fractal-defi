@@ -7,14 +7,14 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import (EXP_TAU_PIPELINE,  # noqa: E402
-                     load_tau_observations, make_mlflow_config)
+from _common import (  # noqa: E402
+    EXP_TAU_PIPELINE,
+    load_tau_observations,
+    make_mlflow_config,
+)
 
-from fractal.core.pipeline import (DefaultPipeline,  # noqa: E402
-                                   ExperimentConfig)
-from fractal.strategies.tau_reset_strategy import (  # noqa: E402
-    TauResetParams, TauResetStrategy)
-
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig  # noqa: E402
+from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy  # noqa: E402
 
 # Same class-level pool config as the example pipeline.
 TauResetStrategy.token0_decimals = 6

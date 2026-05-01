@@ -11,14 +11,10 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import (EXP_TAU_SINGLE, OUTPUT_DIR,  # noqa: E402
-                     load_tau_observations, make_mlflow_config)
+from _common import EXP_TAU_SINGLE, OUTPUT_DIR, load_tau_observations, make_mlflow_config  # noqa: E402
 
-from fractal.core.pipeline import (DefaultPipeline,  # noqa: E402
-                                   ExperimentConfig)
-from fractal.strategies.tau_reset_strategy import (  # noqa: E402
-    TauResetParams, TauResetStrategy)
-
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig  # noqa: E402
+from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy  # noqa: E402
 
 # Pool-config attributes flow through class-level state because the
 # ``Launcher`` inside the pipeline still uses the legacy positional

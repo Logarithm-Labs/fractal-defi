@@ -4,9 +4,8 @@ from typing import Tuple
 import numpy as np
 
 from fractal.core.base.entity import EntityException, InternalState
-from fractal.core.entities.models.uniswap_v3_fees import (estimate_fee,
-                                                          get_liquidity_delta)
 from fractal.core.entities.base.pool import BasePoolEntity, BasePoolGlobalState
+from fractal.core.entities.models.uniswap_v3_fees import estimate_fee, get_liquidity_delta
 
 
 @dataclass

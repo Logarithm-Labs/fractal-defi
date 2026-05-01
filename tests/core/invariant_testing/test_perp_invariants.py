@@ -10,7 +10,7 @@ They differ on details:
 * Liquidation comparison: SimplePerp uses ``<``; Hyperliquid uses ``<=``
   (boundary triggers, per docs).
 * State shape: SimplePerp aggregates into scalar ``size, entry_price``
-  fields; Hyperliquid keeps ``positions: List[HyperLiquidPosition]``
+  fields; Hyperliquid keeps ``positions: List[HyperliquidPosition]``
   collapsed via ``_clearing``.
 
 These tests cover the **shared paradigm** invariants (parity-friendly)
@@ -22,16 +22,13 @@ import math
 import pytest
 
 from fractal.core.entities import BasePerpEntity
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState,
-                                                         HyperLiquidPosition)
-from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                               SimplePerpGlobalState)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidGlobalState, HyperliquidPosition
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState
 
 
 def _hl(collateral=1000.0, mark=3000.0, fee=0.0, max_lev=50.0):
     e = HyperliquidEntity(trading_fee=fee, max_leverage=max_lev)
-    e.update_state(HyperLiquidGlobalState(mark_price=mark))
+    e.update_state(HyperliquidGlobalState(mark_price=mark))
     e.action_deposit(collateral)
     return e
 
@@ -162,7 +159,7 @@ def test_long_close_with_price_up_realizes_profit(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
+@pytest.mark.parametrize("factory,cls", [(_hl, HyperliquidGlobalState),
                                          (_sp, SimplePerpGlobalState)])
 def test_long_pays_positive_funding(factory, cls):
     e = factory(fee=0.0)
@@ -174,7 +171,7 @@ def test_long_pays_positive_funding(factory, cls):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
+@pytest.mark.parametrize("factory,cls", [(_hl, HyperliquidGlobalState),
                                          (_sp, SimplePerpGlobalState)])
 def test_short_receives_positive_funding(factory, cls):
     e = factory(fee=0.0)
@@ -185,7 +182,7 @@ def test_short_receives_positive_funding(factory, cls):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
+@pytest.mark.parametrize("factory,cls", [(_hl, HyperliquidGlobalState),
                                          (_sp, SimplePerpGlobalState)])
 def test_funding_settled_before_liquidation_check(factory, cls):
     """Both entities apply funding BEFORE liquidation check.
@@ -214,7 +211,7 @@ def test_close_when_flat_is_noop(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,cls", [(_hl, HyperLiquidGlobalState),
+@pytest.mark.parametrize("factory,cls", [(_hl, HyperliquidGlobalState),
                                          (_sp, SimplePerpGlobalState)])
 def test_liquidation_wipes_position(factory, cls):
     """Sharp move past liq → both entities wipe collateral and clear position.
@@ -264,11 +261,11 @@ def test_hl_maintenance_margin_uses_current_mark():
 
 @pytest.mark.core
 def test_hl_position_is_dataclass():
-    """HyperLiquidPosition uses @dataclass — equality and
+    """HyperliquidPosition uses @dataclass — equality and
     repr work cleanly."""
-    p1 = HyperLiquidPosition(amount=1.0, entry_price=3000, max_leverage=50)
-    p2 = HyperLiquidPosition(amount=1.0, entry_price=3000, max_leverage=50)
-    p3 = HyperLiquidPosition(amount=2.0, entry_price=3000, max_leverage=50)
+    p1 = HyperliquidPosition(amount=1.0, entry_price=3000, max_leverage=50)
+    p2 = HyperliquidPosition(amount=1.0, entry_price=3000, max_leverage=50)
+    p3 = HyperliquidPosition(amount=2.0, entry_price=3000, max_leverage=50)
     assert p1 == p2
     assert p1 != p3
     # PnL still works
@@ -281,7 +278,7 @@ def test_hl_uses_positions_list_state():
     e = _hl(fee=0.0)
     e.action_open_position(1.0)
     assert len(e._internal_state.positions) == 1
-    assert isinstance(e._internal_state.positions[0], HyperLiquidPosition)
+    assert isinstance(e._internal_state.positions[0], HyperliquidPosition)
 
 
 @pytest.mark.core

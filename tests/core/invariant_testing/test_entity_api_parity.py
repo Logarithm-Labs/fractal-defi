@@ -16,8 +16,7 @@ from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
 from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity
 from fractal.core.entities.protocols.steth import StakedETHEntity
 from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingGlobalState)
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingGlobalState
 from fractal.core.entities.simple.liquid_staking import SimpleLiquidStakingToken
 from fractal.core.entities.simple.perp import SimplePerpEntity
 from fractal.core.entities.simple.spot import SimpleSpotExchange

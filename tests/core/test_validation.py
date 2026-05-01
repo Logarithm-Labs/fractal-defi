@@ -4,10 +4,8 @@ from datetime import datetime
 
 import pytest
 
-from fractal.core.base import (BaseStrategy, BaseStrategyParams, GlobalState,
-                               NamedEntity, Observation)
-from fractal.core.entities import (SimpleSpotExchange,
-                                   SimpleSpotExchangeGlobalState)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, GlobalState, NamedEntity, Observation
+from fractal.core.entities import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
 
 # -------------------------------------------------- Observation shape check

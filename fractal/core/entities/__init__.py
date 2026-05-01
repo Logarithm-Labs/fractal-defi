@@ -13,46 +13,61 @@ Three logical levels:
   ``StakedETHEntity``).
 """
 # Bases
-from fractal.core.entities.base import (BaseHedgeEntity,  # deprecated alias
-                                        BaseLendingEntity,
-                                        BaseLiquidStakingToken,
-                                        BasePerpEntity, BasePerpInternalState,
-                                        BasePoolEntity, BaseSpotEntity,
-                                        BaseSpotInternalState)
+from fractal.core.entities.base import BaseHedgeEntity  # deprecated alias
+from fractal.core.entities.base import (
+    BaseLendingEntity,
+    BaseLiquidStakingToken,
+    BasePerpEntity,
+    BasePerpInternalState,
+    BasePoolEntity,
+    BaseSpotEntity,
+    BaseSpotInternalState,
+)
+
 # Protocols
-from fractal.core.entities.protocols import (AaveEntity, AaveGlobalState,
-                                             HyperliquidEntity,
-                                             HyperLiquidGlobalState,
-                                             HyperLiquidInternalState,
-                                             StakedETHEntity,
-                                             StakedETHGlobalState,
-                                             UniswapV2LPConfig,
-                                             UniswapV2LPEntity,
-                                             UniswapV2LPGlobalState,
-                                             UniswapV3LPConfig,
-                                             UniswapV3LPEntity,
-                                             UniswapV3LPGlobalState,
-                                             UniswapV3SpotEntity,
-                                             UniswapV3SpotGlobalState)
+from fractal.core.entities.protocols import (  # Pre-1.3.0 aliases.
+    AaveEntity,
+    AaveGlobalState,
+    HyperliquidEntity,
+    HyperliquidGlobalState,
+    HyperLiquidGlobalState,
+    HyperliquidInternalState,
+    HyperLiquidInternalState,
+    HyperliquidPosition,
+    HyperLiquidPosition,
+    StakedETHEntity,
+    StakedETHGlobalState,
+    UniswapV2LPConfig,
+    UniswapV2LPEntity,
+    UniswapV2LPGlobalState,
+    UniswapV3LPConfig,
+    UniswapV3LPEntity,
+    UniswapV3LPGlobalState,
+    UniswapV3SpotEntity,
+    UniswapV3SpotGlobalState,
+)
+
 # Simple
-from fractal.core.entities.simple import (SimpleLendingEntity,
-                                          SimpleLendingGlobalState,
-                                          SimpleLendingInternalState,
-                                          SimpleLiquidStakingToken,
-                                          SimpleLiquidStakingTokenGlobalState,
-                                          SimpleLiquidStakingTokenInternalState,
-                                          SimplePerpEntity,
-                                          SimplePerpGlobalState,
-                                          SimplePerpInternalState,
-                                          SimplePoolEntity,
-                                          SimplePoolGlobalState,
-                                          SimplePoolInternalState,
-                                          SimpleSpotExchange,
-                                          SimpleSpotExchangeGlobalState,
-                                          SimpleSpotExchangeInternalState)
+from fractal.core.entities.simple import (
+    SimpleLendingEntity,
+    SimpleLendingGlobalState,
+    SimpleLendingInternalState,
+    SimpleLiquidStakingToken,
+    SimpleLiquidStakingTokenGlobalState,
+    SimpleLiquidStakingTokenInternalState,
+    SimplePerpEntity,
+    SimplePerpGlobalState,
+    SimplePerpInternalState,
+    SimplePoolEntity,
+    SimplePoolGlobalState,
+    SimplePoolInternalState,
+    SimpleSpotExchange,
+    SimpleSpotExchangeGlobalState,
+    SimpleSpotExchangeInternalState,
+)
+
 # Deprecated alias (top-level back-compat)
-from fractal.core.entities.single_spot_exchange import (
-    SingleSpotExchange, SingleSpotExchangeGlobalState)
+from fractal.core.entities.single_spot_exchange import SingleSpotExchange, SingleSpotExchangeGlobalState
 
 __all__ = [
     # base
@@ -71,7 +86,10 @@ __all__ = [
     "SimpleLiquidStakingTokenInternalState",
     # protocols
     "AaveEntity", "AaveGlobalState",
-    "HyperliquidEntity", "HyperLiquidGlobalState", "HyperLiquidInternalState",
+    "HyperliquidEntity",
+    "HyperliquidGlobalState", "HyperliquidInternalState", "HyperliquidPosition",
+    # Pre-1.3.0 aliases (deprecated; will be removed in a future major release).
+    "HyperLiquidGlobalState", "HyperLiquidInternalState", "HyperLiquidPosition",
     "StakedETHEntity", "StakedETHGlobalState",
     "UniswapV2LPConfig", "UniswapV2LPEntity", "UniswapV2LPGlobalState",
     "UniswapV3LPConfig", "UniswapV3LPEntity", "UniswapV3LPGlobalState",

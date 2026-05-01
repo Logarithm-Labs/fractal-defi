@@ -11,10 +11,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fractal.loaders import (ConstantFundingsLoader, FundingHistory,
-                             MonteCarloHourPriceLoader,
-                             MonteCarloPriceLoader, PriceHistory,
-                             TrajectoryBundle)
+from fractal.loaders import (
+    ConstantFundingsLoader,
+    FundingHistory,
+    MonteCarloHourPriceLoader,
+    MonteCarloPriceLoader,
+    PriceHistory,
+    TrajectoryBundle,
+)
 from fractal.loaders.base_loader import LoaderType
 
 UTC = timezone.utc

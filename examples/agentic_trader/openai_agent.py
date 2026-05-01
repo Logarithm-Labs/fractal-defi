@@ -1,6 +1,7 @@
-from pydantic import BaseModel
 from typing import List
+
 from agents import Agent
+from pydantic import BaseModel
 
 
 class AgentAction(BaseModel):

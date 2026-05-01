@@ -1,7 +1,6 @@
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState,
-                                                  EntityException)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState, EntityException
 
 
 @pytest.fixture
@@ -92,9 +91,11 @@ def test_action_borrow_rejects_cumulative_ltv_over_max():
 def test_action_borrow_cumulative_parity_with_simple_lending():
     """Both Aave and SimpleLending must reject the same cumulative-LTV
     scenario identically (same convention)."""
-    from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                      SimpleLendingException,
-                                                      SimpleLendingGlobalState)
+    from fractal.core.entities.simple.lending import (
+        SimpleLendingEntity,
+        SimpleLendingException,
+        SimpleLendingGlobalState,
+    )
 
     aave = AaveEntity()
     simple = SimpleLendingEntity()
@@ -222,8 +223,7 @@ def test_aave_simple_lending_parity_under_same_rates():
     """H1 parity: ``AaveEntity`` and ``SimpleLendingEntity`` must apply
     the same positive ``borrowing_rate`` identically — both grow debt
     by the same factor."""
-    from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                      SimpleLendingGlobalState)
+    from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingGlobalState
 
     aave = AaveEntity()
     simple = SimpleLendingEntity()

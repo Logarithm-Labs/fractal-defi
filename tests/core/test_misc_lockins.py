@@ -1,17 +1,27 @@
 """Cross-cutting lock-ins for ``Observation`` equality, ``BaseStrategy``
 construction, ``SQLiteObservationsStorage`` lifecycle and a few small
 strategy/entity invariants."""
-from datetime import datetime, timezone
 from dataclasses import dataclass
+from datetime import datetime, timezone
 
 import pytest
 
-from fractal.core.base import (Action, BaseStrategy, BaseStrategyParams,
-                               EntityException, GlobalState,
-                               NamedEntity, Observation)
+from fractal.core.base import (
+    Action,
+    BaseStrategy,
+    BaseStrategyParams,
+    EntityException,
+    GlobalState,
+    NamedEntity,
+    Observation,
+)
 from fractal.core.base.observations import SQLiteObservationsStorage
-from fractal.core.entities import (SimpleLendingEntity, SimplePerpEntity,
-                                   SimpleSpotExchange, SimpleSpotExchangeGlobalState)
+from fractal.core.entities import (
+    SimpleLendingEntity,
+    SimplePerpEntity,
+    SimpleSpotExchange,
+    SimpleSpotExchangeGlobalState,
+)
 from fractal.core.entities.simple.lending import SimpleLendingException
 
 UTC = timezone.utc

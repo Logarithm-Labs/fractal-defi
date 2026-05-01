@@ -10,18 +10,11 @@ import pytest
 
 from fractal.core.base import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
-from fractal.core.entities.protocols.hyperliquid import (
-    HyperliquidEntity, HyperliquidEntityException)
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException)
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity,
-                                                           UniswapV2LPGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (
-    UniswapV3SpotEntity, UniswapV3SpotEntityException)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidEntityException
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHEntityException
+from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity, UniswapV2LPGlobalState
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotEntityException
 
 
 @pytest.mark.core

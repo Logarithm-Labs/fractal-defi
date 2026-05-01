@@ -6,15 +6,9 @@ from datetime import datetime, timedelta
 import pytest
 
 from fractal.core.base import NamedEntity, Observation
-from fractal.core.entities.protocols.uniswap_v3_spot import (
-    UniswapV3SpotEntity, UniswapV3SpotGlobalState,
-)
-from fractal.core.entities.simple.perp import (
-    SimplePerpEntity, SimplePerpGlobalState,
-)
-from fractal.strategies.basis_trading_strategy import (
-    BasisTradingStrategy, BasisTradingStrategyHyperparams,
-)
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotGlobalState
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState
+from fractal.strategies.basis_trading_strategy import BasisTradingStrategy, BasisTradingStrategyHyperparams
 
 
 class _TestableBasis(BasisTradingStrategy):

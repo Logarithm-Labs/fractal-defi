@@ -9,9 +9,8 @@ import random
 
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState)
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingGlobalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingGlobalState
 
 
 def _bars(seed: int = 17, n: int = 30, p_n: float = 1.0, p_p: float = 1.0,

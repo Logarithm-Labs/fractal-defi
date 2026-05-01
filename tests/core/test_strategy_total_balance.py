@@ -6,12 +6,9 @@ across entities (typically USD). See README's "Pricing convention".
 """
 import pytest
 
-from fractal.core.base import (BaseStrategy, BaseStrategyParams,
-                               NamedEntity)
-from fractal.core.entities import (SimpleSpotExchange,
-                                   SimpleSpotExchangeGlobalState)
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingGlobalState)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, NamedEntity
+from fractal.core.entities import SimpleSpotExchange, SimpleSpotExchangeGlobalState
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingGlobalState
 
 
 class _SingleEntityStrategy(BaseStrategy):

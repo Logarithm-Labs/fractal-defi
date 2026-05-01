@@ -13,10 +13,8 @@ import pytest
 from fractal.core.entities.protocols.aave import AaveEntity
 from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity
 from fractal.core.entities.protocols.steth import StakedETHEntity
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity)
+from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity
 from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity
 
 
@@ -103,12 +101,12 @@ def test_uniswap_v2_internal_state_mutation_does_not_leak():
 @pytest.mark.core
 def test_hyperliquid_positions_list_is_per_instance():
     """Lists are mutable — extra-important they are not shared."""
-    from fractal.core.entities.protocols.hyperliquid import HyperLiquidPosition
+    from fractal.core.entities.protocols.hyperliquid import HyperliquidPosition
 
     e1 = HyperliquidEntity()
     e2 = HyperliquidEntity()
     e1._internal_state.positions.append(
-        HyperLiquidPosition(amount=1.0, entry_price=100.0, max_leverage=10)
+        HyperliquidPosition(amount=1.0, entry_price=100.0, max_leverage=10)
     )
     assert len(e1._internal_state.positions) == 1
     assert len(e2._internal_state.positions) == 0

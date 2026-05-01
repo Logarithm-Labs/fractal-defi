@@ -1,9 +1,7 @@
 """Tests for :class:`SimpleLendingEntity`."""
 import pytest
 
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingException,
-                                                  SimpleLendingGlobalState)
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingException, SimpleLendingGlobalState
 
 
 @pytest.fixture

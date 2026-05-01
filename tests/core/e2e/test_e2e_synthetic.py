@@ -15,12 +15,8 @@ import random
 
 import pytest
 
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity,
-                                                           UniswapV2LPGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState)
+from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity, UniswapV2LPGlobalState
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState
 
 
 def _bars(seed: int = 42, n: int = 30, p0: float = 3000.0,

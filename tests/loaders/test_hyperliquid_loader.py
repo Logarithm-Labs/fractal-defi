@@ -10,9 +10,11 @@ import pandas as pd
 import pytest
 
 from fractal.loaders import FundingHistory, KlinesHistory, PriceHistory
-from fractal.loaders.hyperliquid import (HyperliquidFundingRatesLoader,
-                                         HyperliquidPerpsKlinesLoader,
-                                         HyperLiquidPerpsPricesLoader)
+from fractal.loaders.hyperliquid import (
+    HyperliquidFundingRatesLoader,
+    HyperliquidPerpsKlinesLoader,
+    HyperliquidPerpsPricesLoader,
+)
 
 UTC = timezone.utc
 
@@ -84,14 +86,14 @@ def test_hyperliquid_fundings_loader_pagination():
 def test_hyperliquid_perp_prices_loader():
     end = datetime(2025, 2, 1, tzinfo=UTC)
     start = end - timedelta(days=14)
-    loader = HyperLiquidPerpsPricesLoader(
+    loader = HyperliquidPerpsPricesLoader(
         ticker="ETH", interval="1d", start_time=start, end_time=end,
     )
     data: PriceHistory = loader.read(with_run=True)
     assert isinstance(data, PriceHistory)
     assert len(data) > 0
     assert data["price"].dtype == "float64"
-    fresh = HyperLiquidPerpsPricesLoader(
+    fresh = HyperliquidPerpsPricesLoader(
         ticker="ETH", interval="1d", start_time=start, end_time=end,
     )
     cached: PriceHistory = fresh.read()
@@ -101,14 +103,14 @@ def test_hyperliquid_perp_prices_loader():
 @pytest.mark.integration
 def test_hyperliquid_perp_prices_loader_rejects_unknown_interval():
     with pytest.raises(ValueError):
-        HyperLiquidPerpsPricesLoader(ticker="ETH", interval="42m")
+        HyperliquidPerpsPricesLoader(ticker="ETH", interval="42m")
 
 
 @pytest.mark.integration
 def test_hyperliquid_perp_prices_loader_handles_empty_window():
     far_future_start = datetime(2099, 1, 1, tzinfo=UTC)
     far_future_end = datetime(2099, 1, 2, tzinfo=UTC)
-    loader = HyperLiquidPerpsPricesLoader(
+    loader = HyperliquidPerpsPricesLoader(
         ticker="BTC", interval="1d",
         start_time=far_future_start, end_time=far_future_end,
     )

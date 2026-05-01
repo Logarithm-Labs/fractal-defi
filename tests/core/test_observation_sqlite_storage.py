@@ -4,8 +4,7 @@ from datetime import datetime
 import pytest
 
 from fractal.core.base.entity import GlobalState
-from fractal.core.base.observations import (Observation,
-                                            SQLiteObservationsStorage)
+from fractal.core.base.observations import Observation, SQLiteObservationsStorage
 
 
 @dataclass

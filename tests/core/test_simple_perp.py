@@ -1,9 +1,7 @@
 """Tests for :class:`SimplePerpEntity`."""
 import pytest
 
-from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                               SimplePerpEntityException,
-                                               SimplePerpGlobalState)
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpEntityException, SimplePerpGlobalState
 
 
 @pytest.fixture

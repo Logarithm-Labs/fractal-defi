@@ -1,21 +1,20 @@
 import os
-
+from datetime import UTC, datetime
 from typing import List
-from datetime import datetime, UTC
 
 import pandas as pd
 
-from fractal.loaders.base_loader import LoaderType
-from fractal.loaders.thegraph.uniswap_v3 import (
-    UniswapV3EthereumPoolHourDataLoader, EthereumUniswapV3Loader, UniswapV3EthereumPoolMinuteDataLoader
-)
-from fractal.loaders.binance import BinanceHourPriceLoader, BinanceMinutePriceLoader
-from fractal.loaders.structs import PriceHistory, PoolHistory
-
 from fractal.core.base import Observation
 from fractal.core.entities import UniswapV3LPGlobalState
+from fractal.loaders.base_loader import LoaderType
+from fractal.loaders.binance import BinanceHourPriceLoader, BinanceMinutePriceLoader
+from fractal.loaders.structs import PoolHistory, PriceHistory
+from fractal.loaders.thegraph.uniswap_v3 import (
+    EthereumUniswapV3Loader,
+    UniswapV3EthereumPoolHourDataLoader,
+    UniswapV3EthereumPoolMinuteDataLoader,
+)
 from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy
-
 
 THE_GRAPH_API_KEY = os.getenv('THE_GRAPH_API_KEY')
 

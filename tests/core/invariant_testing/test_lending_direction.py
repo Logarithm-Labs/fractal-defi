@@ -13,10 +13,8 @@ appropriately) and that the helper accessors (``collateral_value``,
 """
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity,
-                                                  AaveGlobalState)
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingGlobalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingGlobalState
 
 
 @pytest.mark.core

@@ -15,14 +15,18 @@ from dataclasses import dataclass
 import pytest
 
 from fractal.core.entities.base.pool import BasePoolGlobalState
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity,
-                                                           UniswapV2LPGlobalState,
-                                                           UniswapV2LPInternalState)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState,
-                                                           UniswapV3LPInternalState)
+from fractal.core.entities.protocols.uniswap_v2_lp import (
+    UniswapV2LPConfig,
+    UniswapV2LPEntity,
+    UniswapV2LPGlobalState,
+    UniswapV2LPInternalState,
+)
+from fractal.core.entities.protocols.uniswap_v3_lp import (
+    UniswapV3LPConfig,
+    UniswapV3LPEntity,
+    UniswapV3LPGlobalState,
+    UniswapV3LPInternalState,
+)
 from fractal.core.entities.simple.pool import SimplePoolGlobalState
 
 

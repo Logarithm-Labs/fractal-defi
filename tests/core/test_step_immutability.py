@@ -8,10 +8,8 @@ from datetime import datetime
 
 import pytest
 
-from fractal.core.base import (Action, ActionToTake, BaseStrategy,
-                               BaseStrategyParams, NamedEntity, Observation)
-from fractal.core.entities import (SimpleSpotExchange,
-                                   SimpleSpotExchangeGlobalState)
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
+from fractal.core.entities import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
 
 def _state(close: float) -> SimpleSpotExchangeGlobalState:

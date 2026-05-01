@@ -14,10 +14,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState)
-from fractal.loaders import (HyperliquidFundingRatesLoader,
-                             HyperliquidPerpsKlinesLoader, LoaderType)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidGlobalState
+from fractal.loaders import HyperliquidFundingRatesLoader, HyperliquidPerpsKlinesLoader, LoaderType
 
 UTC = timezone.utc
 TICKER = "BTC"
@@ -68,7 +66,7 @@ def test_real_btc_long_balance_finite_through_walk(real_btc_perp):
     """Walk a long BTC position through 30 days; balance stays finite."""
     e = HyperliquidEntity(trading_fee=0.0)
     first = real_btc_perp.iloc[0]
-    e.update_state(HyperLiquidGlobalState(mark_price=float(first["close"])))
+    e.update_state(HyperliquidGlobalState(mark_price=float(first["close"])))
     e.action_deposit(100_000)
     # Conservative size: ~1x leverage at entry
     leverage_target = 0.5
@@ -77,7 +75,7 @@ def test_real_btc_long_balance_finite_through_walk(real_btc_perp):
 
     bars_walked = 0
     for _, row in real_btc_perp.iloc[1:].iterrows():
-        e.update_state(HyperLiquidGlobalState(
+        e.update_state(HyperliquidGlobalState(
             mark_price=float(row["close"]),
             funding_rate=float(row["funding_rate"]),
         ))
@@ -100,14 +98,14 @@ def test_real_btc_short_funding_accrual_consistent(real_btc_perp):
     e = HyperliquidEntity(trading_fee=0.0)
     first = real_btc_perp.iloc[0]
     p0 = float(first["close"])
-    e.update_state(HyperLiquidGlobalState(mark_price=p0))
+    e.update_state(HyperliquidGlobalState(mark_price=p0))
     e.action_deposit(1_000_000)  # huge collateral → no liquidation risk
     btc_to_short = -0.05  # ~5k notional, very low leverage
     e.action_open_position(btc_to_short)
 
     coll_history = [e._internal_state.collateral]
     for _, row in real_btc_perp.iloc[1:].iterrows():
-        e.update_state(HyperLiquidGlobalState(
+        e.update_state(HyperliquidGlobalState(
             mark_price=float(row["close"]),
             funding_rate=float(row["funding_rate"]),
         ))

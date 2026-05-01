@@ -11,11 +11,19 @@ import pytest
 # --------------------------------------------------------- core.base
 @pytest.mark.core
 def test_fractal_core_base_exports_load():
-    from fractal.core.base import (Action, ActionToTake, BaseEntity,
-                                   BaseStrategy, BaseStrategyParams,
-                                   EntityException, GlobalState,
-                                   InternalState, NamedEntity, Observation,
-                                   ObservationsStorage)
+    from fractal.core.base import (
+        Action,
+        ActionToTake,
+        BaseEntity,
+        BaseStrategy,
+        BaseStrategyParams,
+        EntityException,
+        GlobalState,
+        InternalState,
+        NamedEntity,
+        Observation,
+        ObservationsStorage,
+    )
     assert Action and ActionToTake and BaseEntity and BaseStrategy
     assert BaseStrategyParams and EntityException and GlobalState
     assert InternalState and NamedEntity and Observation and ObservationsStorage
@@ -23,17 +31,20 @@ def test_fractal_core_base_exports_load():
 
 @pytest.mark.core
 def test_fractal_core_base_observations_exports():
-    from fractal.core.base.observations import (Observation,
-                                                ObservationsStorage,
-                                                SQLiteObservationsStorage)
+    from fractal.core.base.observations import Observation, ObservationsStorage, SQLiteObservationsStorage
     assert Observation and ObservationsStorage and SQLiteObservationsStorage
 
 
 @pytest.mark.core
 def test_fractal_core_base_strategy_exports():
-    from fractal.core.base.strategy import (ActionToTake, BaseStrategy,
-                                            BaseStrategyParams, NamedEntity,
-                                            StrategyMetrics, StrategyResult)
+    from fractal.core.base.strategy import (
+        ActionToTake,
+        BaseStrategy,
+        BaseStrategyParams,
+        NamedEntity,
+        StrategyMetrics,
+        StrategyResult,
+    )
     assert ActionToTake and BaseStrategy and BaseStrategyParams
     assert NamedEntity and StrategyMetrics and StrategyResult
 
@@ -49,11 +60,16 @@ def test_entities_top_level_all_consistent():
 
 @pytest.mark.core
 def test_entities_base_subpackage():
-    from fractal.core.entities.base import (BaseHedgeEntity, BaseLendingEntity,
-                                            BasePerpEntity,
-                                            BasePerpInternalState,
-                                            BasePoolEntity, BaseSpotEntity,
-                                            BaseSpotInternalState)
+    from fractal.core.entities.base import (
+        BaseHedgeEntity,
+        BaseLendingEntity,
+        BasePerpEntity,
+        BasePerpInternalState,
+        BasePoolEntity,
+        BaseSpotEntity,
+        BaseSpotInternalState,
+    )
+
     # BaseHedgeEntity is a transparent alias of BasePerpEntity
     assert BaseHedgeEntity is BasePerpEntity
     assert BaseLendingEntity and BasePoolEntity
@@ -64,14 +80,23 @@ def test_entities_base_subpackage():
 @pytest.mark.core
 def test_entities_simple_subpackage():
     from fractal.core.entities.simple import (
-        SimpleLendingEntity, SimpleLendingGlobalState, SimpleLendingInternalState,
-        SimpleLiquidStakingToken, SimpleLiquidStakingTokenGlobalState,
+        SimpleLendingEntity,
+        SimpleLendingGlobalState,
+        SimpleLendingInternalState,
+        SimpleLiquidStakingToken,
+        SimpleLiquidStakingTokenGlobalState,
         SimpleLiquidStakingTokenInternalState,
-        SimplePerpEntity, SimplePerpGlobalState, SimplePerpInternalState,
-        SimplePoolEntity, SimplePoolGlobalState, SimplePoolInternalState,
-        SimpleSpotExchange, SimpleSpotExchangeGlobalState,
+        SimplePerpEntity,
+        SimplePerpGlobalState,
+        SimplePerpInternalState,
+        SimplePoolEntity,
+        SimplePoolGlobalState,
+        SimplePoolInternalState,
+        SimpleSpotExchange,
+        SimpleSpotExchangeGlobalState,
         SimpleSpotExchangeInternalState,
     )
+
     # All five simple categories present and instantiable.
     for cls in (SimpleLendingEntity, SimpleLiquidStakingToken,
                 SimplePerpEntity, SimplePoolEntity, SimpleSpotExchange):
@@ -86,12 +111,14 @@ def test_entities_simple_subpackage():
 
 @pytest.mark.core
 def test_entities_protocols_subpackage():
-    from fractal.core.entities.protocols import (AaveEntity,
-                                                 HyperliquidEntity,
-                                                 StakedETHEntity,
-                                                 UniswapV2LPEntity,
-                                                 UniswapV3LPEntity,
-                                                 UniswapV3SpotEntity)
+    from fractal.core.entities.protocols import (
+        AaveEntity,
+        HyperliquidEntity,
+        StakedETHEntity,
+        UniswapV2LPEntity,
+        UniswapV3LPEntity,
+        UniswapV3SpotEntity,
+    )
     assert all((AaveEntity, HyperliquidEntity, StakedETHEntity,
                 UniswapV2LPEntity, UniswapV3LPEntity, UniswapV3SpotEntity))
 
@@ -101,6 +128,7 @@ def test_entities_protocols_subpackage():
 def test_single_spot_exchange_alias_resolves():
     from fractal.core.entities.simple.spot import SimpleSpotExchange
     from fractal.core.entities.single_spot_exchange import SingleSpotExchange
+
     # alias subclasses the new class
     assert issubclass(SingleSpotExchange, SimpleSpotExchange)
 

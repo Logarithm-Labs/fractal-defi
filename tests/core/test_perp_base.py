@@ -3,8 +3,7 @@ back-compat alias :class:`BaseHedgeEntity`.
 """
 import pytest
 
-from fractal.core.entities import (BaseHedgeEntity, BasePerpEntity,
-                                   HyperliquidEntity, SimplePerpEntity)
+from fractal.core.entities import BaseHedgeEntity, BasePerpEntity, HyperliquidEntity, SimplePerpEntity
 
 
 @pytest.mark.core

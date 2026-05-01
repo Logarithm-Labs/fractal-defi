@@ -42,27 +42,32 @@ IS = TypeVar("IS", bound=InternalState)
 
 
 class BaseEntity(ABC, Generic[GS, IS]):
-    """
-    Base class for entities.
-    Entities are responsible for managing their internal state
-    and executing actions. Each entity has a global state and
-    internal state. The global state is the state of the environment,
-    and the internal state is the state of the entity.
+    """Base class for all simulated DeFi protocol positions.
 
-    Each entity is a representation of DeFi object.
-    For instance, a pool, a landing, a vault, etc.
+    Each entity owns two pieces of state:
 
-    Important Note: Each method that starts with 'action_' is considered
-    as an action that can be executed by the simulation engine.
+    * a ``GlobalState`` — market context the entity reads at every
+      step (prices, funding/lending/borrowing rates, pool TVL, etc.).
+    * an ``InternalState`` — the user's position inside the protocol
+      (collateral, debt, LP tokens, perp size, accumulated cash).
 
-    Abstract Methods:
-    - `update_state(state: GlobalState, *args, **kwargs) -> None` - Update the Global State of the entity.
-    Here it can be calculated changes in the entity's internal state based on the global state.
-    For example, while the price of the asset changes, the value of the entity's assets changes.
-    - `action_deposit(amount_in_notional: float) -> None` - Deposit the specified amount in notional value
-    into the entity. This is not mandatory for all entities but it can be useful for most of them.
-    - `action_withdraw(amount_in_notional: float) -> None` - Withdraw the specified amount from the entity's account.
-    - `balance` - Property that returns the balance of the entity.
+    Every public method whose name starts with ``action_`` is treated
+    as a side-effecting action that the simulation engine may dispatch
+    via :meth:`execute`. The ``update_state`` hook is called by the
+    engine on every observation BEFORE ``predict`` fires, so accruals
+    (interest, funding, fees) compound naturally inside it.
+
+    Subclasses should override:
+
+    * ``update_state(state)`` — apply the next ``GlobalState`` and run
+      any per-step bookkeeping (interest accrual, liquidation checks,
+      mark-to-market).
+    * ``action_deposit(amount_in_notional)`` — add notional cash to
+      the position. Optional but typical.
+    * ``action_withdraw(amount_in_notional)`` — pull cash out of the
+      position. Optional but typical.
+    * ``balance`` — read-only property returning the entity's equity
+      in notional units.
     """
     _internal_state: IS
     _global_state: GS

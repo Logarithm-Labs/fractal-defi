@@ -4,10 +4,13 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.loaders.binance import (BinanceDayPriceLoader,
-                                     BinanceFundingLoader,
-                                     BinanceHourPriceLoader,
-                                     BinanceKlinesLoader, BinancePriceLoader)
+from fractal.loaders.binance import (
+    BinanceDayPriceLoader,
+    BinanceFundingLoader,
+    BinanceHourPriceLoader,
+    BinanceKlinesLoader,
+    BinancePriceLoader,
+)
 from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 
 UTC = timezone.utc

@@ -29,12 +29,14 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from fractal.core.base import Observation  # noqa: E402
-from fractal.core.entities import (HyperLiquidGlobalState,  # noqa: E402
-                                   UniswapV3LPGlobalState,
-                                   UniswapV3SpotGlobalState)
-from fractal.strategies.hyperliquid_basis import \
-    HyperliquidBasisParams  # noqa: E402,F401  (re-exported for scripts)
-
+from fractal.core.entities import (  # noqa: E402
+    HyperliquidGlobalState,
+    UniswapV3LPGlobalState,
+    UniswapV3SpotGlobalState,
+)
+from fractal.strategies.hyperliquid_basis import (  # noqa: E402,F401  pylint: disable=unused-import
+    HyperliquidBasisParams,
+)
 
 # -------------------------------------------------------------- paths
 TESTS_DIR = REPO_ROOT / "tests" / "mlflow_tests"
@@ -79,7 +81,7 @@ def load_managed_basis_observations(
             timestamp=ts,
             states={
                 "SPOT": UniswapV3SpotGlobalState(price=float(row["SPOT_price"])),
-                "HEDGE": HyperLiquidGlobalState(
+                "HEDGE": HyperliquidGlobalState(
                     mark_price=float(row["HEDGE_mark_price"]),
                     funding_rate=float(row["HEDGE_funding_rate"]),
                 ),
@@ -116,9 +118,9 @@ def make_mlflow_config(
     experiment_name: str,
     uri: Optional[str] = None,
 ):
-    """Build an :class:`MLFlowConfig` pointing at the local docker server."""
-    from fractal.core.pipeline import MLFlowConfig
-    return MLFlowConfig(
+    """Build an :class:`MLflowConfig` pointing at the local docker server."""
+    from fractal.core.pipeline import MLflowConfig
+    return MLflowConfig(
         mlflow_uri=uri or DEFAULT_MLFLOW_URI,
         experiment_name=experiment_name,
     )

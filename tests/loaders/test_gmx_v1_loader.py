@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 import pytest
 import requests
 
-from fractal.loaders.gmx_v1 import GMXV1FundingLoader, LEGACY_URL
+from fractal.loaders.gmx_v1 import LEGACY_URL, GMXV1FundingLoader
 from fractal.loaders.structs import FundingHistory
 
 UTC = timezone.utc

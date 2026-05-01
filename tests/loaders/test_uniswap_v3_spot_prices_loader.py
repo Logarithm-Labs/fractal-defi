@@ -3,9 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fractal.loaders import (LoaderType, PriceHistory,
-                             UniswapV3ArbitrumPricesLoader,
-                             UniswapV3EthereumPricesLoader)
+from fractal.loaders import LoaderType, PriceHistory, UniswapV3ArbitrumPricesLoader, UniswapV3EthereumPricesLoader
 
 UTC = timezone.utc
 

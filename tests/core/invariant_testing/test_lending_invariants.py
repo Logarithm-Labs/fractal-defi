@@ -13,11 +13,8 @@
 import pytest
 
 from fractal.core.base.entity import EntityException
-from fractal.core.entities.protocols.aave import (AaveEntity,
-                                                  AaveGlobalState)
-from fractal.core.entities.simple.lending import (SimpleLendingEntity,
-                                                  SimpleLendingException,
-                                                  SimpleLendingGlobalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingException, SimpleLendingGlobalState
 
 
 def _aave():

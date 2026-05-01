@@ -16,9 +16,8 @@ import random
 
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                             UniswapV3SpotGlobalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotGlobalState
 
 
 def _eth_walk(seed: int = 5, n: int = 30, p0: float = 3000.0, drift: float = 0.001,

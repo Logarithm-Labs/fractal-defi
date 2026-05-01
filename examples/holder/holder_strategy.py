@@ -1,13 +1,11 @@
-from typing import List
 from dataclasses import dataclass
+from typing import List
 
-from fractal.core.base import (
-    BaseStrategy, Action, BaseStrategyParams,
-    ActionToTake, NamedEntity, Observation)
+from binance_entity import BinanceGlobalState, BinanceSpot
+
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
 from fractal.core.entities import BaseSpotEntity
 from fractal.loaders import BinanceDayPriceLoader, LoaderType
-
-from binance_entity import BinanceSpot, BinanceGlobalState
 
 
 @dataclass

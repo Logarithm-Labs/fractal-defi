@@ -6,10 +6,12 @@ spot-traded asset. Adds tests for the LST-specific rebasing behaviour
 """
 import pytest
 
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException,
-                                                   StakedETHGlobalState,
-                                                   StakedETHInternalState)
+from fractal.core.entities.protocols.steth import (
+    StakedETHEntity,
+    StakedETHEntityException,
+    StakedETHGlobalState,
+    StakedETHInternalState,
+)
 
 
 class TestStakedETHEntityCRUD:

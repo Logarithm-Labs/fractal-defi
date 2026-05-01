@@ -4,8 +4,10 @@ import pytest
 from fractal.core.entities.base.liquid_staking import BaseLiquidStakingToken
 from fractal.core.entities.base.spot import BaseSpotEntity
 from fractal.core.entities.simple.liquid_staking import (
-    SimpleLiquidStakingToken, SimpleLiquidStakingTokenException,
-    SimpleLiquidStakingTokenGlobalState)
+    SimpleLiquidStakingToken,
+    SimpleLiquidStakingTokenException,
+    SimpleLiquidStakingTokenGlobalState,
+)
 
 
 @pytest.fixture

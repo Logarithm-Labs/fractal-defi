@@ -8,10 +8,9 @@ import pytest
 pd = pytest.importorskip("pandas")
 
 from fractal.core.base import Observation  # noqa: E402
-from fractal.core.entities import HyperLiquidGlobalState, UniswapV3SpotGlobalState  # noqa: E402
+from fractal.core.entities import HyperliquidGlobalState, UniswapV3SpotGlobalState  # noqa: E402
 from fractal.strategies.basis_trading_strategy import BasisTradingStrategyHyperparams  # noqa: E402
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis  # noqa: E402
-
 
 _FIXTURES_DIR = (Path(__file__).resolve().parents[2]
                  / "examples" / "basis")
@@ -38,7 +37,7 @@ def _load_observations(ticker, *, n):
             timestamp=ts,
             states={
                 "SPOT": UniswapV3SpotGlobalState(price=float(row["SPOT_price"])),
-                "HEDGE": HyperLiquidGlobalState(
+                "HEDGE": HyperliquidGlobalState(
                     mark_price=float(row["HEDGE_mark_price"]),
                     funding_rate=float(row["HEDGE_funding_rate"]),
                 ),

@@ -6,12 +6,9 @@ import pytest
 
 from fractal.core.base import Observation
 from fractal.core.entities import UniswapV3LPGlobalState
-from fractal.strategies.basis_trading_strategy import \
-    BasisTradingStrategyHyperparams
+from fractal.strategies.basis_trading_strategy import BasisTradingStrategyHyperparams
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis
-from fractal.strategies.tau_reset_strategy import (TauResetException,
-                                                   TauResetParams,
-                                                   TauResetStrategy)
+from fractal.strategies.tau_reset_strategy import TauResetException, TauResetParams, TauResetStrategy
 
 
 @dataclass

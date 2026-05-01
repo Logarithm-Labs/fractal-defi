@@ -5,10 +5,8 @@ from datetime import datetime
 
 import pytest
 
-from fractal.core.base import (BaseStrategy, BaseStrategyParams, NamedEntity,
-                               Observation)
-from fractal.core.entities import (SimpleSpotExchange,
-                                   SimpleSpotExchangeGlobalState)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, NamedEntity, Observation
+from fractal.core.entities import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
 
 class _TransferStrategy(BaseStrategy):

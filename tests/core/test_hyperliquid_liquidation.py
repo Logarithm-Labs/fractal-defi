@@ -24,14 +24,13 @@ import math
 
 import pytest
 
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidGlobalState
 
 
 def _make(collateral: float, size: float, entry: float, max_leverage: float = 50.0):
     """Build an entity with a single position at known parameters."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=max_leverage)
-    e.update_state(HyperLiquidGlobalState(mark_price=entry))
+    e.update_state(HyperliquidGlobalState(mark_price=entry))
     e.action_deposit(collateral)
     e.action_open_position(size)
     return e
@@ -167,7 +166,7 @@ def test_leverage_change_red_test_now_green():
     until balance == maintenance_margin exactly. ``_check_liquidation``
     must return ``True`` at boundary (``<=`` semantics)."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(1000)
     e.action_open_position(1)
     assert e.leverage == 3
@@ -185,10 +184,10 @@ def test_leverage_change_red_test_now_green():
 def test_update_state_wipes_position_on_short_squeeze():
     """Original ``test_check_liquidation`` scenario."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(1000)
     e.action_open_position(-0.7)
-    e.update_state(HyperLiquidGlobalState(mark_price=5000))
+    e.update_state(HyperliquidGlobalState(mark_price=5000))
     assert e.size == 0
     assert e._internal_state.collateral == 0
 
@@ -197,10 +196,10 @@ def test_update_state_wipes_position_on_short_squeeze():
 def test_update_state_does_not_liquidate_long_in_safe_band():
     """Long survives a 10% drop with conservative leverage."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(2000)
     e.action_open_position(1)  # 1.5x leverage at entry
-    e.update_state(HyperLiquidGlobalState(mark_price=2700))  # 10% drop
+    e.update_state(HyperliquidGlobalState(mark_price=2700))  # 10% drop
     assert e.size == 1
     assert e._internal_state.collateral > 0
 
@@ -210,11 +209,11 @@ def test_action_withdraw_blocked_by_current_maintenance_margin_after_drawdown():
     """After price drops, withdrawal limit shrinks because MM is computed
     from current mark (notional shrinks)."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(1000)
     e.action_open_position(0.1)  # tiny position; MM at entry would be ~3
     # Drop price to 2500: balance = 1000 + 0.1×(2500-3000) = 950
-    e.update_state(HyperLiquidGlobalState(mark_price=2500))
+    e.update_state(HyperliquidGlobalState(mark_price=2500))
     # MM(current) = 0.1 × 2500 × 0.01 = 2.5
     # Withdraw up to balance − MM: 950 − 2.5 = 947.5 should pass.
     e.action_withdraw(947.5)
@@ -226,7 +225,7 @@ def test_action_withdraw_blocked_by_current_maintenance_margin_after_drawdown():
 @pytest.mark.core
 def test_maintenance_margin_zero_when_no_position():
     e = HyperliquidEntity()
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     assert e.maintenance_margin == 0.0
 
 

@@ -6,7 +6,6 @@ from uuid import uuid4
 
 from loguru import logger
 
-
 # Loguru installs a default ``stderr`` sink at handler id 0 on import.
 # Without removing it, ``logger.debug`` from a strategy fans out to BOTH
 # our per-instance file sink AND the console — which surprises users

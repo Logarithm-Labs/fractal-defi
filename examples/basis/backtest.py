@@ -1,15 +1,14 @@
+from datetime import UTC, datetime
 from typing import List
-from datetime import datetime, UTC
 
 import pandas as pd
 
-from fractal.loaders.base_loader import LoaderType
-from fractal.loaders.hyperliquid import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
-from fractal.loaders.binance import BinanceFundingLoader, BinancePriceLoader
-from fractal.loaders.structs import PriceHistory, RateHistory
-
 from fractal.core.base import Observation
-from fractal.core.entities import UniswapV3LPGlobalState, HyperLiquidGlobalState
+from fractal.core.entities import HyperliquidGlobalState, UniswapV3LPGlobalState
+from fractal.loaders.base_loader import LoaderType
+from fractal.loaders.binance import BinanceFundingLoader, BinancePriceLoader
+from fractal.loaders.hyperliquid import HyperliquidFundingRatesLoader, HyperliquidPerpsPricesLoader
+from fractal.loaders.structs import PriceHistory, RateHistory
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis, HyperliquidBasisParams
 
 
@@ -36,7 +35,7 @@ def get_observations(
             timestamp=timestamp,
             states={
                 'SPOT': UniswapV3LPGlobalState(price=price, tvl=0, volume=0, fees=0, liquidity=0),
-                'HEDGE': HyperLiquidGlobalState(mark_price=price, funding_rate=rate)
+                'HEDGE': HyperliquidGlobalState(mark_price=price, funding_rate=rate)
             }
         ) for timestamp, (price, rate) in observations_df.iterrows()
     ]
@@ -65,7 +64,7 @@ def build_observations(
         rate_data: RateHistory = BinanceFundingLoader(
             ticker=ticker+'USDT', start_time=start_time, end_time=end_time).read(with_run=True)
     else:
-        prices: PriceHistory = HyperLiquidPerpsPricesLoader(
+        prices: PriceHistory = HyperliquidPerpsPricesLoader(
             ticker=ticker, interval=fidelity,
             start_time=start_time, end_time=end_time).read(with_run=True)
         rate_data: RateHistory = HyperliquidFundingRatesLoader(

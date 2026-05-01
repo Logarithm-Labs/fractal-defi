@@ -3,8 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fractal.loaders import (EthereumUniswapV2PoolDataLoader, LoaderType,
-                             PoolHistory)
+from fractal.loaders import EthereumUniswapV2PoolDataLoader, LoaderType, PoolHistory
 
 UTC = timezone.utc
 

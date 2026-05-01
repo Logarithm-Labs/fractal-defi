@@ -18,8 +18,7 @@ from pathlib import Path
 
 import pytest
 
-from fractal.core.base import (BaseStrategy, BaseStrategyParams, GlobalState,
-                               NamedEntity, Observation)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, GlobalState, NamedEntity, Observation
 from fractal.core.base.observations import SQLiteObservationsStorage
 from fractal.core.entities import SimpleSpotExchange
 
@@ -197,8 +196,7 @@ def test_validate_evm_address_accepts_canonical_address():
 
 @pytest.mark.core
 def test_validate_evm_address_rejects_short_or_garbage():
-    from fractal.loaders.thegraph.base_graph_loader import (
-        GraphLoaderException, validate_evm_address)
+    from fractal.loaders.thegraph.base_graph_loader import GraphLoaderException, validate_evm_address
     with pytest.raises(GraphLoaderException):
         validate_evm_address("0x123")  # too short
     with pytest.raises(GraphLoaderException):
@@ -222,7 +220,10 @@ def test_uniswap_v3_lp_update_state_rejects_non_positive_price():
     rather than silently producing nonsense token amounts."""
     from fractal.core.base.entity import EntityException
     from fractal.core.entities.protocols.uniswap_v3_lp import (
-        UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState)
+        UniswapV3LPConfig,
+        UniswapV3LPEntity,
+        UniswapV3LPGlobalState,
+    )
 
     e = UniswapV3LPEntity(UniswapV3LPConfig())
     e.action_deposit(1000)
@@ -239,7 +240,10 @@ def test_uniswap_v3_lp_update_state_rejects_non_positive_price():
 def test_uniswap_v3_lp_update_state_rejects_negative_liquidity():
     from fractal.core.base.entity import EntityException
     from fractal.core.entities.protocols.uniswap_v3_lp import (
-        UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState)
+        UniswapV3LPConfig,
+        UniswapV3LPEntity,
+        UniswapV3LPGlobalState,
+    )
 
     e = UniswapV3LPEntity(UniswapV3LPConfig())
     e.action_deposit(1000)
@@ -255,8 +259,7 @@ def test_uniswap_v3_lp_update_state_rejects_negative_liquidity():
 def test_uniswap_v3_loader_lifecycle_methods_raise_not_implemented():
     """``UniswapV3Loader`` (the abstract layer) must not silently
     ``pass`` — subclasses that forget to override should fail loudly."""
-    from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import (
-        UniswapV3Loader)
+    from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import UniswapV3Loader
 
     class _NoOverride(UniswapV3Loader):
         # Note: ``get_pool_decimals`` is abstract elsewhere; for this test

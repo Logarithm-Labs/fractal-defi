@@ -1,7 +1,5 @@
 from fractal.core.base.strategy.result import StrategyMetrics, StrategyResult
-from fractal.core.base.strategy.strategy import (ActionToTake, BaseStrategy,
-                                                 BaseStrategyParams,
-                                                 NamedEntity)
+from fractal.core.base.strategy.strategy import ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity
 
 __all__ = [
     'BaseStrategy',

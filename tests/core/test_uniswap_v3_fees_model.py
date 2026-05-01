@@ -6,13 +6,15 @@ fees calculation. These pin down the V3 standard-convention contracts
 """
 import pytest
 
-from fractal.core.entities.models.uniswap_v3_fees import (Q96,
-                                                          estimate_fee,
-                                                          expand_decimals,
-                                                          get_liquidity_delta,
-                                                          get_liquidity_for_amount0,
-                                                          get_liquidity_for_amount1,
-                                                          get_sqrt_price_x96)
+from fractal.core.entities.models.uniswap_v3_fees import (
+    Q96,
+    estimate_fee,
+    expand_decimals,
+    get_liquidity_delta,
+    get_liquidity_for_amount0,
+    get_liquidity_for_amount1,
+    get_sqrt_price_x96,
+)
 
 
 @pytest.mark.core

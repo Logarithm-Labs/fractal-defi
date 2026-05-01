@@ -8,9 +8,7 @@ in favour of ``action_open_position`` (zap-in) and ``_open_from_pair`` (advanced
 """
 import pytest
 
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState)
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState
 
 
 @pytest.fixture

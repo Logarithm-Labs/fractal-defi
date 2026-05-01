@@ -31,8 +31,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import List
 
-from fractal.core.base import (Action, ActionToTake, BaseStrategy,
-                               BaseStrategyParams, NamedEntity, Observation)
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
 from fractal.core.entities import SimpleLendingEntity, SimpleLendingGlobalState
 
 

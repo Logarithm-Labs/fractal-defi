@@ -20,6 +20,10 @@ DEV_REQUIRES = [
     "pytest-timeout>=2.3.0",
     "pylint>=3.2.5",
     "flake8>=7.1.0",
+    "isort>=5.13.0",
+    "pre-commit>=3.7.0",
+    "sphinx>=7.0.0",
+    "sphinx-rtd-theme>=2.0.0",
 ]
 
 setup(
@@ -29,9 +33,23 @@ setup(
     author='Logarithm Labs',
     author_email='dev@logarithm.fi',
     description=(
-        'Fractal is the ultimate DeFi research library for strategies '
-        'development and backtesting created by Logarithm Labs.'
+        'Open-source Python research library for DeFi strategies. '
+        'Compose protocol-agnostic entities (lending, perps, DEX and LP) '
+        'into typed strategies; backtest, simulate, track experiments.'
     ),
+    keywords=[
+        'defi', 'backtesting', 'research', 'uniswap', 'uniswap-v3', 'aave',
+        'hyperliquid', 'gmx', 'binance', 'mlflow', 'algorithmic-trading',
+        'quantitative-finance', 'delta-neutral', 'basis-trade',
+        'liquidity-provision', 'yield-farming', 'agentic-ai',
+        'monte-carlo', 'protocol-agnostic', 'composable',
+    ],
+    project_urls={
+        'Documentation': 'https://logarithm-labs.gitbook.io/fractal',
+        'Source': 'https://github.com/Logarithm-Labs/fractal-defi',
+        'Changelog': 'https://github.com/Logarithm-Labs/fractal-defi/blob/main/CHANGELOG.md',
+        'Issues': 'https://github.com/Logarithm-Labs/fractal-defi/issues',
+    },
     long_description=Path('README.md').read_text(encoding='utf-8'),
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/Fractal',
@@ -43,8 +61,19 @@ setup(
         "test": ["pytest>=8.2.2", "pytest-timeout>=2.3.0"],
     },
     classifiers=[
-        'Programming Language :: Python :: 3',
+        'Development Status :: 5 - Production/Stable',
+        'Intended Audience :: Developers',
+        'Intended Audience :: Financial and Insurance Industry',
+        'Intended Audience :: Science/Research',
         'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
+        'Programming Language :: Python :: 3',
+        'Programming Language :: Python :: 3.10',
+        'Programming Language :: Python :: 3.11',
+        'Programming Language :: Python :: 3.12',
+        'Topic :: Office/Business :: Financial',
+        'Topic :: Office/Business :: Financial :: Investment',
+        'Topic :: Scientific/Engineering',
+        'Topic :: Scientific/Engineering :: Information Analysis',
     ],
 )

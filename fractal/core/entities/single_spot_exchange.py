@@ -8,10 +8,12 @@ in product, silently violating the base contract).
 """
 import warnings
 
-from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                               SimpleSpotExchangeException,
-                                               SimpleSpotExchangeGlobalState,
-                                               SimpleSpotExchangeInternalState)
+from fractal.core.entities.simple.spot import (
+    SimpleSpotExchange,
+    SimpleSpotExchangeException,
+    SimpleSpotExchangeGlobalState,
+    SimpleSpotExchangeInternalState,
+)
 
 
 class SingleSpotExchange(SimpleSpotExchange):

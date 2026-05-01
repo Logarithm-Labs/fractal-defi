@@ -136,7 +136,7 @@ Run agent strategies on historical Binance data:
 
 ```python
 binance_klines = BinanceKlinesLoader('BTCUSDT', interval='1d',
-                                     start_time=datetime(2024, 1, 1), 
+                                     start_time=datetime(2024, 1, 1),
                                      end_time=datetime(2025, 4, 1),
                                      loader_type=LoaderType.CSV).read(with_run=True)
 
@@ -200,8 +200,8 @@ def build_grid() -> ParameterGrid:
         'INITIAL_BALANCE': [100_000]
     })
 
-# Define MLFlow and Experiment configurations
-mlflow_config: MLFlowConfig = MLFlowConfig(
+# Define MLflow and Experiment configurations
+mlflow_config: MLflowConfig = MLflowConfig(
     mlflow_uri='http://127.0.0.1:8080',
     experiment_name=f'agent_trader_btc_v0.1-2024'
 )
@@ -219,12 +219,12 @@ pipeline: DefaultPipeline = DefaultPipeline(
 pipeline.run()
 ```
 
-Start MLFlow server:
+Start MLflow server:
 ```bash
 mlflow server --host 127.0.0.1 --port 8080
 ```
 
-Run grid search with MLFlow logging:
+Run grid search with MLflow logging:
 ```bash
 python agent_pipeline.py
 🏃 View run upset-quail-538 at: http://127.0.0.1:8080/#/experiments/322037600437979899/runs/0b62ce154e8740feb18ed8af9ec69dda
@@ -238,9 +238,9 @@ python agent_pipeline.py
 
 ---
 
-## 🌐 MLFlow Integration
+## 🌐 MLflow Integration
 
-View MLFlow UI:
+View MLflow UI:
 ```
 http://127.0.0.1:8080
 ```

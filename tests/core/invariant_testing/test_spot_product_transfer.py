@@ -18,14 +18,10 @@ These tests pin down:
 import pytest
 
 from fractal.core.base.entity import EntityException
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                             UniswapV3SpotGlobalState)
-from fractal.core.entities.simple.liquid_staking import (SimpleLiquidStakingToken,
-                                                         SimpleLiquidStakingTokenGlobalState)
-from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                               SimpleSpotExchangeGlobalState)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotGlobalState
+from fractal.core.entities.simple.liquid_staking import SimpleLiquidStakingToken, SimpleLiquidStakingTokenGlobalState
+from fractal.core.entities.simple.spot import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
 
 def _univ3_spot():

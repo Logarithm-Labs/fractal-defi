@@ -9,15 +9,18 @@ from dataclasses import fields
 import pytest
 
 from fractal.core.entities.base.pool import BasePoolGlobalState
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity,
-                                                           UniswapV2LPGlobalState,
-                                                           UniswapV2LPInternalState)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState,
-                                                           UniswapV3LPInternalState)
-
+from fractal.core.entities.protocols.uniswap_v2_lp import (
+    UniswapV2LPConfig,
+    UniswapV2LPEntity,
+    UniswapV2LPGlobalState,
+    UniswapV2LPInternalState,
+)
+from fractal.core.entities.protocols.uniswap_v3_lp import (
+    UniswapV3LPConfig,
+    UniswapV3LPEntity,
+    UniswapV3LPGlobalState,
+    UniswapV3LPInternalState,
+)
 
 # Methods/properties that BOTH V2 and V3 must expose with the same name.
 SHARED_PUBLIC_API = {

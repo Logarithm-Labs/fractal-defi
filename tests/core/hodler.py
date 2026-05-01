@@ -1,9 +1,16 @@
 from dataclasses import dataclass
 
-
-from fractal.core.base import (Action, ActionToTake, BaseEntity, BaseStrategy,
-                               BaseStrategyParams, GlobalState, InternalState,
-                               NamedEntity, Observation)
+from fractal.core.base import (
+    Action,
+    ActionToTake,
+    BaseEntity,
+    BaseStrategy,
+    BaseStrategyParams,
+    GlobalState,
+    InternalState,
+    NamedEntity,
+    Observation,
+)
 
 
 @dataclass

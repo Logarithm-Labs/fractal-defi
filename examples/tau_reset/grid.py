@@ -1,16 +1,15 @@
 import os
 import warnings
+
 warnings.filterwarnings('ignore')
 
-import numpy as np
+from datetime import UTC, datetime
 
-from datetime import datetime, UTC
+import numpy as np
 from sklearn.model_selection import ParameterGrid
 
-from fractal.core.pipeline import (
-    DefaultPipeline, MLFlowConfig, ExperimentConfig)
-
-from examples.tau_reset.backtest import TauResetStrategy, build_observations, THE_GRAPH_API_KEY
+from examples.tau_reset.backtest import THE_GRAPH_API_KEY, TauResetStrategy, build_observations
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
 
 
 def build_grid():
@@ -37,8 +36,8 @@ if __name__ == '__main__':
     TauResetStrategy.token1_decimals = 18
     TauResetStrategy.tick_spacing = 60
 
-    # Define MLFlow and Experiment configurations
-    mlflow_config: MLFlowConfig = MLFlowConfig(
+    # Define MLflow and Experiment configurations
+    mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri=os.getenv('MLFLOW_URI'),
         experiment_name=experiment_name,
         aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),

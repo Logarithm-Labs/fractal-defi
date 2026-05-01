@@ -15,12 +15,8 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState)
-from fractal.loaders import (LoaderType,
-                             UniswapV3EthereumPoolDayDataLoader,
-                             UniswapV3EthereumPricesLoader)
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity, UniswapV3LPGlobalState
+from fractal.loaders import LoaderType, UniswapV3EthereumPoolDayDataLoader, UniswapV3EthereumPricesLoader
 
 UTC = timezone.utc
 

@@ -21,15 +21,12 @@ class StrategyMetrics:
 
 @dataclass
 class StrategyResult:
-    """
-    Result of the strategy running.
-    It contains the timestamps, internal states, global states of all entities
-    and total balances
+    """Per-step snapshot of a strategy run.
 
-    Methods:
-        get_metrics(data: pd.DataFrame) -> StrategyMetrics
-        get_default_metrics() -> StrategyMetrics
-        to_dataframe() -> pd.DataFrame
+    Holds parallel lists (one entry per processed observation) of the
+    entities' internal states, global states and per-entity balances,
+    indexed by timestamp. Methods convert this into a flat ``DataFrame``
+    or compute scalar return / risk metrics.
     """
     timestamps: List[datetime]
     internal_states: List[Dict[str, InternalState]]

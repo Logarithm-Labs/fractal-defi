@@ -11,15 +11,14 @@ import pytest
 
 from fractal.core.base import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException,
-                                                   StakedETHGlobalState)
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHEntityException, StakedETHGlobalState
+from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity
 from fractal.core.entities.protocols.uniswap_v3_spot import (
-    UniswapV3SpotEntity, UniswapV3SpotEntityException, UniswapV3SpotGlobalState)
+    UniswapV3SpotEntity,
+    UniswapV3SpotEntityException,
+    UniswapV3SpotGlobalState,
+)
 
 
 @pytest.fixture

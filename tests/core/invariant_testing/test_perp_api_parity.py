@@ -12,13 +12,12 @@ from dataclasses import fields
 
 import pytest
 
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState,
-                                                         HyperLiquidInternalState)
-from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                               SimplePerpGlobalState,
-                                               SimplePerpInternalState)
-
+from fractal.core.entities.protocols.hyperliquid import (
+    HyperliquidEntity,
+    HyperliquidGlobalState,
+    HyperliquidInternalState,
+)
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState, SimplePerpInternalState
 
 # Methods/properties that BOTH perp entities must expose with the same name.
 SHARED_PUBLIC_API = {
@@ -107,7 +106,7 @@ def test_both_subclass_base_perp_entity():
 @pytest.mark.core
 def test_internal_states_share_collateral_field():
     """Both internal states inherit ``collateral`` from BasePerpInternalState."""
-    hl_fields = {f.name for f in fields(HyperLiquidInternalState)}
+    hl_fields = {f.name for f in fields(HyperliquidInternalState)}
     sp_fields = {f.name for f in fields(SimplePerpInternalState)}
     assert "collateral" in hl_fields
     assert "collateral" in sp_fields
@@ -116,7 +115,7 @@ def test_internal_states_share_collateral_field():
 @pytest.mark.core
 def test_internal_states_have_distinct_position_models():
     """Hyperliquid keeps ``positions: List``, SimplePerp keeps scalars."""
-    hl_fields = {f.name for f in fields(HyperLiquidInternalState)}
+    hl_fields = {f.name for f in fields(HyperliquidInternalState)}
     sp_fields = {f.name for f in fields(SimplePerpInternalState)}
     assert "positions" in hl_fields
     assert "size" in sp_fields and "entry_price" in sp_fields
@@ -124,7 +123,7 @@ def test_internal_states_have_distinct_position_models():
 
 @pytest.mark.core
 def test_global_states_share_mark_price_and_funding_rate():
-    hl_fields = {f.name for f in fields(HyperLiquidGlobalState)}
+    hl_fields = {f.name for f in fields(HyperliquidGlobalState)}
     sp_fields = {f.name for f in fields(SimplePerpGlobalState)}
     assert "mark_price" in hl_fields
     assert "mark_price" in sp_fields
@@ -179,7 +178,7 @@ def test_both_perps_init_validate_max_leverage():
 def test_both_perps_long_liquidation_below_entry():
     hl = HyperliquidEntity(trading_fee=0.0)
     sp = SimplePerpEntity(trading_fee=0.0)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hl.update_state(HyperliquidGlobalState(mark_price=3000))
     sp.update_state(SimplePerpGlobalState(mark_price=3000))
     hl.action_deposit(1000)
     sp.action_deposit(1000)
@@ -193,7 +192,7 @@ def test_both_perps_long_liquidation_below_entry():
 def test_both_perps_short_liquidation_above_entry():
     hl = HyperliquidEntity(trading_fee=0.0)
     sp = SimplePerpEntity(trading_fee=0.0)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hl.update_state(HyperliquidGlobalState(mark_price=3000))
     sp.update_state(SimplePerpGlobalState(mark_price=3000))
     hl.action_deposit(1000)
     sp.action_deposit(1000)
@@ -208,7 +207,7 @@ def test_both_perps_maintenance_margin_scales_with_mark_price():
     """MM is mark-price-based on both entities."""
     hl = HyperliquidEntity(trading_fee=0.0)
     sp = SimplePerpEntity(trading_fee=0.0)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hl.update_state(HyperliquidGlobalState(mark_price=3000))
     sp.update_state(SimplePerpGlobalState(mark_price=3000))
     hl.action_deposit(1000)
     sp.action_deposit(1000)

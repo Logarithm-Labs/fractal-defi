@@ -4,10 +4,13 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.loaders import (LoaderType, UniswapV3ArbitrumPoolDayDataLoader,
-                             UniswapV3ArbitrumPoolHourDataLoader,
-                             UniswapV3EthereumPoolDayDataLoader,
-                             UniswapV3EthereumPoolHourDataLoader)
+from fractal.loaders import (
+    LoaderType,
+    UniswapV3ArbitrumPoolDayDataLoader,
+    UniswapV3ArbitrumPoolHourDataLoader,
+    UniswapV3EthereumPoolDayDataLoader,
+    UniswapV3EthereumPoolHourDataLoader,
+)
 
 UTC = timezone.utc
 

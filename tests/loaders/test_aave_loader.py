@@ -10,9 +10,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from fractal.loaders import (AaveV2EthereumLoader, AaveV3ArbitrumLoader,
-                             AaveV3EthereumLoader, LendingHistory,
-                             LoaderType)
+from fractal.loaders import AaveV2EthereumLoader, AaveV3ArbitrumLoader, AaveV3EthereumLoader, LendingHistory, LoaderType
 
 UTC = timezone.utc
 

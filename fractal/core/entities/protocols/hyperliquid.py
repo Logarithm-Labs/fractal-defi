@@ -8,12 +8,12 @@ from fractal.core.entities.base.perp import BasePerpEntity, BasePerpInternalStat
 
 class HyperliquidEntityException(EntityException):
     """
-    Exception raised for errors in the HyperLiquid entity.
+    Exception raised for errors in the Hyperliquid entity.
     """
 
 
 @dataclass
-class HyperLiquidPosition:
+class HyperliquidPosition:
     """A single Hyperliquid perp position.
 
     Attributes:
@@ -33,7 +33,7 @@ class HyperLiquidPosition:
 
 
 @dataclass
-class HyperLiquidGlobalState(GlobalState):
+class HyperliquidGlobalState(GlobalState):
     """
     Global state of the entity.
     It includes the state of the environment.
@@ -44,12 +44,12 @@ class HyperLiquidGlobalState(GlobalState):
 
 
 @dataclass
-class HyperLiquidInternalState(BasePerpInternalState):
-    """Internal state of the HyperLiquid entity.
+class HyperliquidInternalState(BasePerpInternalState):
+    """Internal state of the Hyperliquid entity.
 
     Inherits ``collateral`` and adds an aggregated ``positions`` list.
     """
-    positions: List[HyperLiquidPosition] = field(default_factory=list)
+    positions: List[HyperliquidPosition] = field(default_factory=list)
 
 
 class HyperliquidEntity(BasePerpEntity):
@@ -57,8 +57,8 @@ class HyperliquidEntity(BasePerpEntity):
     Represents a Hyperliquid isolated market entity.
     """
 
-    _internal_state: HyperLiquidInternalState
-    _global_state: HyperLiquidGlobalState
+    _internal_state: HyperliquidInternalState
+    _global_state: HyperliquidGlobalState
 
     def __init__(self, *args, trading_fee: float = 0.00035, max_leverage: float = 50, **kwargs):
         if trading_fee < 0:
@@ -97,15 +97,15 @@ class HyperliquidEntity(BasePerpEntity):
         return self.max_leverage
 
     def _initialize_states(self):
-        self._internal_state = HyperLiquidInternalState()
-        self._global_state = HyperLiquidGlobalState()
+        self._internal_state = HyperliquidInternalState()
+        self._global_state = HyperliquidGlobalState()
 
     @property
-    def internal_state(self) -> HyperLiquidInternalState:  # type: ignore[override]
+    def internal_state(self) -> HyperliquidInternalState:  # type: ignore[override]
         return self._internal_state
 
     @property
-    def global_state(self) -> HyperLiquidGlobalState:  # type: ignore[override]
+    def global_state(self) -> HyperliquidGlobalState:  # type: ignore[override]
         return self._global_state
 
     def action_deposit(self, amount_in_notional: float):
@@ -172,7 +172,7 @@ class HyperliquidEntity(BasePerpEntity):
         # ``_clearing`` mutates the position objects in place.
         snap_collateral = self._internal_state.collateral
         snap_positions = [
-            HyperLiquidPosition(amount=p.amount,
+            HyperliquidPosition(amount=p.amount,
                                 entry_price=p.entry_price,
                                 max_leverage=p.max_leverage)
             for p in self._internal_state.positions
@@ -180,7 +180,7 @@ class HyperliquidEntity(BasePerpEntity):
         old_size = sum(p.amount for p in snap_positions)
 
         self._internal_state.positions.append(
-            HyperLiquidPosition(amount=amount_in_product,
+            HyperliquidPosition(amount=amount_in_product,
                                 entry_price=self._global_state.mark_price,
                                 max_leverage=self.max_leverage))
 
@@ -344,7 +344,7 @@ class HyperliquidEntity(BasePerpEntity):
                     # Carry over the **incoming position's** ``max_leverage`` —
                     # the remainder belongs to that position, not to the entity default.
                     if abs(base.amount) < 1e-9:
-                        base = HyperLiquidPosition(
+                        base = HyperliquidPosition(
                             amount=remaining if pos.amount > 0 else -remaining,
                             entry_price=pos.entry_price,
                             max_leverage=pos.max_leverage,
@@ -362,7 +362,7 @@ class HyperliquidEntity(BasePerpEntity):
         else:
             self._internal_state.positions = [base]
 
-    def update_state(self, state: HyperLiquidGlobalState) -> None:
+    def update_state(self, state: HyperliquidGlobalState) -> None:
         """Step the entity forward to ``state``.
 
         Order: apply state → **settle funding** → **check liquidation**.
@@ -413,3 +413,13 @@ class HyperliquidEntity(BasePerpEntity):
         if not self._internal_state.positions:
             return False
         return bool(self.balance <= self.maintenance_margin)
+
+
+# -------------------------------------------------------------- back-compat
+# Pre-1.3.0 names used the camelcased ``HyperLiquid`` form (capital L).
+# The brand is ``Hyperliquid`` (single-word, lowercase L) so the canonical
+# names dropped the capital. Aliases keep existing imports working — they
+# will be removed in a future major release.
+HyperLiquidPosition = HyperliquidPosition
+HyperLiquidGlobalState = HyperliquidGlobalState
+HyperLiquidInternalState = HyperliquidInternalState

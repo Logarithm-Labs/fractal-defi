@@ -12,12 +12,15 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _common import (EXP_MB_SINGLE, OUTPUT_DIR,  # noqa: E402
-                     HyperliquidBasisParams,
-                     load_managed_basis_observations, make_mlflow_config)
+from _common import (  # noqa: E402
+    EXP_MB_SINGLE,
+    OUTPUT_DIR,
+    HyperliquidBasisParams,
+    load_managed_basis_observations,
+    make_mlflow_config,
+)
 
-from fractal.core.pipeline import (DefaultPipeline,  # noqa: E402
-                                   ExperimentConfig)
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig  # noqa: E402
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis  # noqa: E402
 
 

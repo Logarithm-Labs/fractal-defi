@@ -1,20 +1,20 @@
 import warnings
+
 warnings.filterwarnings('ignore')
 
-from typing import List
 from datetime import datetime
+from typing import List
+
+from prompts import BEARISH_PROMPT, BULLISH_PROMPT, NEUTRAL_PROMPT
 from sklearn.model_selection import ParameterGrid
 
-from fractal.loaders import LoaderType
-from fractal.loaders.binance import BinanceKlinesLoader
+from examples.agentic_trader.backtest import AgentTradingStrategy
 from fractal.core.base import Observation
 from fractal.core.base.observations import SQLiteObservationsStorage
 from fractal.core.entities.simple.spot import SimpleSpotExchangeGlobalState
-from fractal.core.pipeline import (
-    DefaultPipeline, MLFlowConfig, ExperimentConfig)
-
-from examples.agentic_trader.backtest import AgentTradingStrategy
-from prompts import BULLISH_PROMPT, BEARISH_PROMPT, NEUTRAL_PROMPT
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
+from fractal.loaders import LoaderType
+from fractal.loaders.binance import BinanceKlinesLoader
 
 
 # Load prices from Binance and build observations
@@ -46,8 +46,8 @@ def build_grid() -> ParameterGrid:
 
 
 if __name__ == '__main__':
-    # Define MLFlow and Experiment configurations
-    mlflow_config: MLFlowConfig = MLFlowConfig(
+    # Define MLflow and Experiment configurations
+    mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri='http://127.0.0.1:8080',
         experiment_name=f'agent_trader_btc_v0.1-2024'
     )

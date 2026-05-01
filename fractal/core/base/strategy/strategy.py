@@ -3,11 +3,9 @@ from abc import ABC, abstractmethod
 from copy import deepcopy
 from datetime import datetime
 from types import MappingProxyType
-from typing import (Callable, Dict, Generic, List, Mapping, NamedTuple, Optional,
-                    Type, TypeVar, Union)
+from typing import Callable, Dict, Generic, List, Mapping, NamedTuple, Optional, Type, TypeVar, Union
 
-from fractal.core.base.entity import (Action, BaseEntity, GlobalState,
-                                      InternalState)
+from fractal.core.base.entity import Action, BaseEntity, GlobalState, InternalState
 from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
 from fractal.core.base.strategy.result import StrategyResult

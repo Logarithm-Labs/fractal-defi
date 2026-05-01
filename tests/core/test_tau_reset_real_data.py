@@ -8,10 +8,7 @@ pd = pytest.importorskip("pandas")
 
 from fractal.core.base import Observation  # noqa: E402
 from fractal.core.entities import UniswapV3LPGlobalState  # noqa: E402
-from fractal.strategies.tau_reset_strategy import (  # noqa: E402
-    TauResetParams, TauResetStrategy,
-)
-
+from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy  # noqa: E402
 
 _FIXTURE = (Path(__file__).resolve().parents[2]
             / "examples" / "tau_reset" / "tau_strategy_result.csv")

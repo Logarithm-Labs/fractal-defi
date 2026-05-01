@@ -14,10 +14,8 @@ import random
 
 import pytest
 
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState)
-from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                               SimplePerpGlobalState)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidGlobalState
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState
 
 
 def _price_walk(seed=11, n=30, p0=3000.0, sigma=0.01):
@@ -34,11 +32,11 @@ def _price_walk(seed=11, n=30, p0=3000.0, sigma=0.01):
 def test_hl_long_survives_gentle_walk():
     """Conservative leverage + gentle walk → no liquidation, balance finite."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(1.0)  # 0.3x leverage
     for p in _price_walk(sigma=0.005):
-        e.update_state(HyperLiquidGlobalState(mark_price=p, funding_rate=0.0001))
+        e.update_state(HyperliquidGlobalState(mark_price=p, funding_rate=0.0001))
         assert e.balance == e.balance, "NaN balance"
         if e.size == 0:
             pytest.fail("liquidated on a gentle walk — should not happen")
@@ -48,10 +46,10 @@ def test_hl_long_survives_gentle_walk():
 def test_hl_long_liquidated_by_sharp_drop():
     """High leverage + sharp drop → liquidation in same bar."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(100)  # tight
     e.action_open_position(1.0)  # 30x leverage
-    e.update_state(HyperLiquidGlobalState(mark_price=2900))  # 3.3% drop
+    e.update_state(HyperliquidGlobalState(mark_price=2900))  # 3.3% drop
     assert e.size == 0
 
 
@@ -60,12 +58,12 @@ def test_hl_long_funding_drains_collateral_over_time():
     """Long pays funding bar after bar; collateral decreases monotonically
     (until liquidation)."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(1.0)
     coll_history = [e._internal_state.collateral]
     for _ in range(20):
-        e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.001))
+        e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.001))
         if e.size == 0:
             break
         coll_history.append(e._internal_state.collateral)
@@ -78,12 +76,12 @@ def test_hl_long_funding_drains_collateral_over_time():
 def test_hl_short_funding_grows_collateral_over_time():
     """Short receives positive funding → collateral grows."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(-1.0)
     coll_history = [e._internal_state.collateral]
     for _ in range(20):
-        e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.001))
+        e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.001))
         coll_history.append(e._internal_state.collateral)
     for i in range(1, len(coll_history)):
         assert coll_history[i] > coll_history[i - 1]
@@ -93,11 +91,11 @@ def test_hl_short_funding_grows_collateral_over_time():
 def test_hl_open_close_cycle_through_walk():
     """Open and close repeatedly through a walk — entity stays consistent."""
     e = HyperliquidEntity(trading_fee=0.001)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     cycles = 0
     for p in _price_walk(seed=42, sigma=0.02, n=20):
-        e.update_state(HyperLiquidGlobalState(mark_price=p, funding_rate=0.0))
+        e.update_state(HyperliquidGlobalState(mark_price=p, funding_rate=0.0))
         if e.size == 0 and e._internal_state.collateral >= 100:
             e.action_open_position(0.1)
             cycles += 1
@@ -112,7 +110,7 @@ def test_hl_open_close_cycle_through_walk():
 def test_hl_position_flip_through_walk():
     """Flip from long to short and back — leverage tracking holds."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     # Long 1.0
     e.action_open_position(1.0)
@@ -132,14 +130,14 @@ def test_hl_and_sp_match_pnl_through_walk():
     hl = HyperliquidEntity(trading_fee=0.0)
     sp = SimplePerpEntity(trading_fee=0.0)
 
-    for ent, cls in ((hl, HyperLiquidGlobalState), (sp, SimplePerpGlobalState)):
+    for ent, cls in ((hl, HyperliquidGlobalState), (sp, SimplePerpGlobalState)):
         ent.update_state(cls(mark_price=3000))
         ent.action_deposit(10_000)
         ent.action_open_position(1.0)
 
     pnls_hl, pnls_sp = [], []
     for p in bars[1:]:
-        hl.update_state(HyperLiquidGlobalState(mark_price=p, funding_rate=0.0))
+        hl.update_state(HyperliquidGlobalState(mark_price=p, funding_rate=0.0))
         sp.update_state(SimplePerpGlobalState(mark_price=p, funding_rate=0.0))
         if hl.size != 0 and sp.size != 0:
             pnls_hl.append(hl.pnl)
@@ -156,13 +154,13 @@ def test_hl_liquidation_at_predicted_price():
     """At the moment mark_price crosses ``liquidation_price``, position is
     wiped within one ``update_state`` call."""
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(1000)
     e.action_open_position(1.0)
     liq = e.liquidation_price
     assert liq < 3000  # long: liq below entry
     # Just below liq → liquidation
-    e.update_state(HyperLiquidGlobalState(mark_price=liq - 1.0))
+    e.update_state(HyperliquidGlobalState(mark_price=liq - 1.0))
     assert e.size == 0
 
 

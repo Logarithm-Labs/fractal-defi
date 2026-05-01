@@ -14,18 +14,22 @@ import pytest
 
 from fractal.core.entities.base.liquid_staking import BaseLiquidStakingToken
 from fractal.core.entities.base.spot import BaseSpotEntity, BaseSpotInternalState
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHEntityException,
-                                                   StakedETHGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                             UniswapV3SpotEntityException,
-                                                             UniswapV3SpotGlobalState)
-from fractal.core.entities.simple.liquid_staking import (SimpleLiquidStakingToken,
-                                                         SimpleLiquidStakingTokenException,
-                                                         SimpleLiquidStakingTokenGlobalState)
-from fractal.core.entities.simple.spot import (SimpleSpotExchange,
-                                               SimpleSpotExchangeException,
-                                               SimpleSpotExchangeGlobalState)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHEntityException, StakedETHGlobalState
+from fractal.core.entities.protocols.uniswap_v3_spot import (
+    UniswapV3SpotEntity,
+    UniswapV3SpotEntityException,
+    UniswapV3SpotGlobalState,
+)
+from fractal.core.entities.simple.liquid_staking import (
+    SimpleLiquidStakingToken,
+    SimpleLiquidStakingTokenException,
+    SimpleLiquidStakingTokenGlobalState,
+)
+from fractal.core.entities.simple.spot import (
+    SimpleSpotExchange,
+    SimpleSpotExchangeException,
+    SimpleSpotExchangeGlobalState,
+)
 
 
 def _univ3_spot():

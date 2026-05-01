@@ -12,25 +12,30 @@ the subclass must not raise.
 """
 import pytest
 
-from fractal.core.entities.protocols.aave import (AaveEntity, AaveGlobalState,
-                                                  AaveInternalState)
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState,
-                                                         HyperLiquidInternalState)
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHGlobalState,
-                                                   StakedETHInternalState)
-from fractal.core.entities.protocols.uniswap_v2_lp import (UniswapV2LPConfig,
-                                                           UniswapV2LPEntity,
-                                                           UniswapV2LPGlobalState,
-                                                           UniswapV2LPInternalState)
-from fractal.core.entities.protocols.uniswap_v3_lp import (UniswapV3LPConfig,
-                                                           UniswapV3LPEntity,
-                                                           UniswapV3LPGlobalState,
-                                                           UniswapV3LPInternalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                             UniswapV3SpotGlobalState,
-                                                             UniswapV3SpotInternalState)
+from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState, AaveInternalState
+from fractal.core.entities.protocols.hyperliquid import (
+    HyperliquidEntity,
+    HyperliquidGlobalState,
+    HyperliquidInternalState,
+)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState, StakedETHInternalState
+from fractal.core.entities.protocols.uniswap_v2_lp import (
+    UniswapV2LPConfig,
+    UniswapV2LPEntity,
+    UniswapV2LPGlobalState,
+    UniswapV2LPInternalState,
+)
+from fractal.core.entities.protocols.uniswap_v3_lp import (
+    UniswapV3LPConfig,
+    UniswapV3LPEntity,
+    UniswapV3LPGlobalState,
+    UniswapV3LPInternalState,
+)
+from fractal.core.entities.protocols.uniswap_v3_spot import (
+    UniswapV3SpotEntity,
+    UniswapV3SpotGlobalState,
+    UniswapV3SpotInternalState,
+)
 
 
 @pytest.mark.core
@@ -56,8 +61,8 @@ def test_hyperliquid_config_available_in_initialize_states():
         def _initialize_states(self):
             captured["trading_fee"] = self.trading_fee
             captured["max_leverage"] = self.max_leverage
-            self._internal_state = HyperLiquidInternalState()
-            self._global_state = HyperLiquidGlobalState()
+            self._internal_state = HyperliquidInternalState()
+            self._global_state = HyperliquidGlobalState()
 
     _Sub(trading_fee=0.001, max_leverage=20)
     assert captured == {"trading_fee": 0.001, "max_leverage": 20}

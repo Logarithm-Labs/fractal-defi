@@ -130,7 +130,7 @@ class HyperliquidFundingRatesLoader(HyperliquidBaseLoader):
         )
 
 
-class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
+class HyperliquidPerpsPricesLoader(HyperliquidBaseLoader):
     """Perp candle snapshots → :class:`PriceHistory` of open prices."""
 
     _BATCH_LIMIT = 5000  # candleSnapshot hard cap
@@ -242,8 +242,8 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
         )
 
 
-class HyperliquidPerpsKlinesLoader(HyperLiquidPerpsPricesLoader):
-    """Same extract+transform as :class:`HyperLiquidPerpsPricesLoader` but
+class HyperliquidPerpsKlinesLoader(HyperliquidPerpsPricesLoader):
+    """Same extract+transform as :class:`HyperliquidPerpsPricesLoader` but
     returns full OHLCV rows as :class:`KlinesHistory`."""
 
     def read(self, with_run: bool = False) -> KlinesHistory:
@@ -261,3 +261,8 @@ class HyperliquidPerpsKlinesLoader(HyperLiquidPerpsPricesLoader):
             close=self._data["close_price"].astype(float).values,
             volume=self._data["volume"].astype(float).values,
         )
+
+
+# -------------------------------------------------------------- back-compat
+# Pre-1.3.0 alias; the canonical brand is ``Hyperliquid`` (lowercase L).
+HyperLiquidPerpsPricesLoader = HyperliquidPerpsPricesLoader

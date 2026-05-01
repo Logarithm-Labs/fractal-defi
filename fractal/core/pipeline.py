@@ -11,7 +11,7 @@ Design notes:
 * MLflow is **lazily connected** on the first call to ``run`` or
   ``grid_step``. Construction does not require network access,
   which makes the pipeline trivially testable and importable.
-* AWS credentials in ``MLFlowConfig`` are only injected into the
+* AWS credentials in ``MLflowConfig`` are only injected into the
   environment when explicitly provided — they do not overwrite
   pre-existing ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` with
   empty strings.
@@ -24,8 +24,7 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass, is_dataclass
 from io import StringIO
-from typing import (Any, Callable, Dict, Iterable, List, Mapping, Optional,
-                    Type, Union)
+from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Type, Union
 
 import mlflow
 import numpy as np
@@ -33,19 +32,17 @@ import pandas as pd
 from sklearn.model_selection import ParameterGrid
 
 from fractal.core.base.observations import Observation, ObservationsStorage
-from fractal.core.base.strategy import (BaseStrategy, BaseStrategyParams,
-                                        StrategyMetrics, StrategyResult)
+from fractal.core.base.strategy import BaseStrategy, BaseStrategyParams, StrategyMetrics, StrategyResult
 from fractal.core.launcher import Launcher
 
 
 @dataclass
-class MLFlowConfig:
-    """
-    MLFlow Configuration for the pipeline.
+class MLflowConfig:
+    """MLflow configuration for the pipeline.
 
     Attributes:
         experiment_name (str): Name of the experiment.
-        mlflow_uri (str): URI of the MLFlow server.
+        mlflow_uri (str): URI of the MLflow server.
         tags (Optional[Dict[str, str]]): Tags for the experiment.
         aws_access_key_id (Optional[str]): AWS access key ID. ``None``
             (default) leaves ``$AWS_ACCESS_KEY_ID`` from the host
@@ -62,6 +59,12 @@ class MLFlowConfig:
     aws_access_key_id: Optional[str] = None
     aws_secret_access_key: Optional[str] = None
     run_name_formatter: Optional[Callable[[Union[BaseStrategyParams, Dict]], str]] = None
+
+
+# Pre-1.3.0 alias — the brand is ``MLflow`` (lowercase ``f``); the
+# uppercase-``F`` form is preserved for back-compat and will be
+# removed in a future major release.
+MLFlowConfig = MLflowConfig
 
 
 @dataclass
@@ -117,15 +120,15 @@ class Pipeline(ABC):
     """
     Pipeline for running experiments.
     """
-    def __init__(self, mlflow_config: MLFlowConfig, experiment_config: ExperimentConfig) -> None:
+    def __init__(self, mlflow_config: MLflowConfig, experiment_config: ExperimentConfig) -> None:
         """
         Initialize the pipeline.
 
         Args:
-            mlflow_config (MLFlowConfig): MLFlow configuration to store metrics and artifacts.
+            mlflow_config (MLflowConfig): MLflow configuration to store metrics and artifacts.
             experiment_config (ExperimentConfig): Experiment configuration where defining steps to run.
         """
-        self._mlflow_config: MLFlowConfig = mlflow_config
+        self._mlflow_config: MLflowConfig = mlflow_config
         self._config: ExperimentConfig = experiment_config
         self._connected: bool = False
 

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from fractal.core.base import (BaseStrategy, BaseStrategyParams, NamedEntity)
+from fractal.core.base import BaseStrategy, BaseStrategyParams, NamedEntity
 from fractal.core.entities import SimpleSpotExchange
 
 

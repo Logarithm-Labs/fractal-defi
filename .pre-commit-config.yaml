@@ -1,0 +1,116 @@
+# Run automatically on every ``git commit``. Install once:
+#
+#     pip install pre-commit
+#     pre-commit install
+#
+# Run all hooks against the entire repo (not just staged files):
+#
+#     pre-commit run --all-files
+#
+# Run the manual-stage test hook explicitly (slower; not on every commit):
+#
+#     pre-commit run --hook-stage manual --all-files pytest-core
+#
+# Hooks below cover four layers:
+#   1. Cheap file-shape checks (whitespace, EOF, large files, debug-stmt).
+#   2. isort — autoformat imports.
+#   3. flake8 — PEP 8 / lint.
+#   4. pylint — full lint at 10/10 (own venv with runtime deps).
+#   5. pytest -m core — core test suite (manual stage; opt-in).
+
+repos:
+  # 1. File-level hygiene (built-in pre-commit hooks)
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+        args: ['--maxkb=2048']
+      - id: check-merge-conflict
+      - id: debug-statements
+
+  # 2. isort — autoformats imports BEFORE flake8 sees them, so a
+  #    misordered import gets fixed instead of rejected. Project
+  #    config in ``.isort.cfg`` (matches the 120-char flake8 limit).
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        files: ^(fractal|tests|examples)/.*\.py$
+
+  # 3. flake8 on touched files (fast, ~1s)
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.1.1
+    hooks:
+      - id: flake8
+        files: ^(fractal|tests)/
+        # Project config in ``.flake8``
+
+  # 4. pylint — heavyweight static analysis. Runs in pre-commit's
+  #    own virtualenv (``language: python``) and pulls fractal's
+  #    runtime deps + pylint via ``additional_dependencies`` so it
+  #    can resolve imports during analysis. The git-hook subprocess
+  #    does NOT inherit the user's active venv — using
+  #    ``language: system`` here would call the system ``python3``
+  #    where pylint isn't installed.
+  - repo: local
+    hooks:
+      - id: pylint
+        name: pylint (fractal/)
+        entry: pylint fractal/ --disable=R --score=no
+        language: python
+        pass_filenames: false
+        types: [python]
+        files: ^fractal/
+        additional_dependencies:
+          - pylint>=3.2.5
+          - mlflow>=2.14.1
+          - pandas>=2.2.2
+          - numpy>=1.16.0
+          - loguru>=0.7.2
+          - requests>=2.32.3
+          - scikit-learn>=1.5.0
+
+      - id: pylint-tests
+        name: pylint (tests/)
+        entry: pylint --rcfile=tests/.pylintrc tests/ --disable=R --score=no
+        language: python
+        pass_filenames: false
+        types: [python]
+        files: ^tests/
+        additional_dependencies:
+          - pylint>=3.2.5
+          - pytest>=8.2.2
+          - mlflow>=2.14.1
+          - pandas>=2.2.2
+          - numpy>=1.16.0
+          - loguru>=0.7.2
+          - requests>=2.32.3
+          - scikit-learn>=1.5.0
+
+  # 5. pytest -m core — full offline test suite (~1100 tests, ~10s).
+  #    Lives on the ``manual`` stage so it does NOT fire on every
+  #    ``git commit`` (would slow commits down and require all
+  #    runtime + test deps in pre-commit's isolated venv). Run
+  #    explicitly via:
+  #
+  #        pre-commit run --hook-stage manual --all-files pytest-core
+  #
+  #    Or, more naturally, in your active venv:
+  #
+  #        pytest -m core
+  #
+  #    CI should run the suite directly on every PR.
+  - repo: local
+    hooks:
+      - id: pytest-core
+        name: pytest -m core
+        entry: pytest -m core -q --no-header
+        language: system
+        pass_filenames: false
+        types: [python]
+        files: ^(fractal|tests)/.*\.py$
+        stages: [manual]

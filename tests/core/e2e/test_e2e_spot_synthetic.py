@@ -8,10 +8,8 @@ import random
 
 import pytest
 
-from fractal.core.entities.protocols.steth import (StakedETHEntity,
-                                                   StakedETHGlobalState)
-from fractal.core.entities.protocols.uniswap_v3_spot import (UniswapV3SpotEntity,
-                                                             UniswapV3SpotGlobalState)
+from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState
+from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotGlobalState
 
 
 def _price_walk(seed: int = 7, n: int = 30, p0: float = 2000.0, sigma: float = 0.02):

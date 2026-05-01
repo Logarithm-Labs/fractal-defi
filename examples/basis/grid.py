@@ -1,14 +1,12 @@
 import os
 import warnings
+from datetime import UTC, datetime
 
 import numpy as np
-from datetime import datetime, UTC
+from backtest import build_observations
 from sklearn.model_selection import ParameterGrid
 
-from fractal.core.pipeline import (
-    DefaultPipeline, MLFlowConfig, ExperimentConfig)
-
-from backtest import build_observations
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis
 
 warnings.filterwarnings('ignore')
@@ -39,7 +37,7 @@ if __name__ == '__main__':
     experiment_name = f'mb_binance_{fidelity}_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
     HyperliquidBasis.MAX_LEVERAGE = 25
 
-    # Define MLFlow and Experiment configurations
+    # Define MLflow and Experiment configurations
     mlflow_uri = os.getenv('MLFLOW_URI')
     aws_key = os.getenv('AWS_ACCESS_KEY_ID')
     aws_secret = os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -48,9 +46,9 @@ if __name__ == '__main__':
         raise ValueError("MLFLOW_URI isn't set.")
 
     if not aws_key or not aws_secret:
-        warnings.warn("AWS_ACCESS_KEY_ID или AWS_SECRET_ACCESS_KEY are not set", RuntimeWarning)
+        warnings.warn("AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY are not set", RuntimeWarning)
 
-    mlflow_config: MLFlowConfig = MLFlowConfig(
+    mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri=mlflow_uri,
         experiment_name=experiment_name,
         aws_access_key_id=aws_key,

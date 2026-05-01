@@ -20,8 +20,7 @@ References:
 """
 import pytest
 
-from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
-                                                         HyperLiquidGlobalState)
+from fractal.core.entities.protocols.hyperliquid import HyperliquidEntity, HyperliquidGlobalState
 
 
 @pytest.mark.core
@@ -35,10 +34,10 @@ def test_positive_funding_saves_short_from_would_be_liquidation():
     With funding-first: collateral += 30.7 = 130.7, balance = 60.7 > MM → safe.
     """
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(100)
     e.action_open_position(-1)
-    e.update_state(HyperLiquidGlobalState(mark_price=3070, funding_rate=0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=3070, funding_rate=0.01))
     assert e.size == -1, "short was wiped — funding-first ordering broken"
     # collateral was 100, gained 30.7 from funding; balance = 130.7 - 70 = 60.7
     assert e.balance == pytest.approx(60.7)
@@ -54,11 +53,11 @@ def test_positive_funding_tips_long_into_liquidation_same_bar():
     collateral -= 60 → 20. MM=30 (unchanged). 20 < 30 → liquidate.
     """
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(80)
     e.action_open_position(1)
     # No price move; funding pays 60 from collateral.
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.02))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.02))
     assert e.size == 0, "long should have been liquidated by funding tick"
 
 
@@ -66,10 +65,10 @@ def test_positive_funding_tips_long_into_liquidation_same_bar():
 def test_long_pays_positive_funding():
     """Long with rate=+0.01 → collateral decreases by size×price×rate."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(1.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.01))
     # Funding payment = 1 * 3000 * 0.01 = 30 (long pays)
     assert e._internal_state.collateral == pytest.approx(10_000 - 30)
 
@@ -78,10 +77,10 @@ def test_long_pays_positive_funding():
 def test_long_receives_negative_funding():
     """Long with rate=-0.01 → collateral increases."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(1.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=-0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=-0.01))
     # Funding payment = 1 * 3000 * -0.01 = -30 → collateral -= -30 → +30
     assert e._internal_state.collateral == pytest.approx(10_000 + 30)
 
@@ -90,10 +89,10 @@ def test_long_receives_negative_funding():
 def test_short_receives_positive_funding():
     """Short with rate=+0.01 → collateral increases (longs pay shorts)."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(-1.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.01))
     # Funding payment = -1 * 3000 * 0.01 = -30 → collateral -= -30 → +30
     assert e._internal_state.collateral == pytest.approx(10_000 + 30)
 
@@ -102,10 +101,10 @@ def test_short_receives_positive_funding():
 def test_short_pays_negative_funding():
     """Short with rate=-0.01 → collateral decreases."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(-1.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=-0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=-0.01))
     # Funding payment = -1 * 3000 * -0.01 = +30 → collateral -= 30
     assert e._internal_state.collateral == pytest.approx(10_000 - 30)
 
@@ -115,7 +114,7 @@ def test_no_funding_settle_when_flat():
     """No position → funding term skipped, collateral unchanged regardless of rate."""
     e = HyperliquidEntity(trading_fee=0.0)
     e.action_deposit(1000)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.05))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.05))
     assert e._internal_state.collateral == 1000
 
 
@@ -123,12 +122,12 @@ def test_no_funding_settle_when_flat():
 def test_zero_funding_rate_no_collateral_change():
     """rate=0 → funding term is 0, even with a position."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(1000)
     e.action_open_position(1.0)
     coll_before = e._internal_state.collateral
     # Same state, rate=0
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.0))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.0))
     assert e._internal_state.collateral == coll_before
 
 
@@ -136,12 +135,12 @@ def test_zero_funding_rate_no_collateral_change():
 def test_funding_accumulates_over_multiple_bars():
     """Apply same positive rate over 5 bars on a long → collateral down by 5× per-bar payment."""
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(1.0)
     coll_before = e._internal_state.collateral
     for _ in range(5):
-        e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.001))
+        e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.001))
     # 5 × (1 * 3000 * 0.001) = 15 paid total
     assert e._internal_state.collateral == pytest.approx(coll_before - 15)
 
@@ -164,10 +163,10 @@ def test_funding_uses_alive_size_before_potential_liquidation():
     applied to the alive position before clearing.
     """
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(80)
     e.action_open_position(1)
-    e.update_state(HyperLiquidGlobalState(mark_price=2900, funding_rate=0.01))
+    e.update_state(HyperliquidGlobalState(mark_price=2900, funding_rate=0.01))
     # Liquidated either way; the lock-in is that order is correct, no exception.
     assert e.size == 0
     assert e._internal_state.collateral == 0
@@ -184,11 +183,11 @@ def test_funding_uses_alive_size_before_potential_liquidation():
 ])
 def test_funding_payment_matches_quadrant(size, rate, expected_collateral_delta):
     e = HyperliquidEntity(trading_fee=0.0)
-    e.update_state(HyperLiquidGlobalState(mark_price=3000))
+    e.update_state(HyperliquidGlobalState(mark_price=3000))
     e.action_deposit(10_000)
     e.action_open_position(size)
     coll_before = e._internal_state.collateral
-    e.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=rate))
+    e.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=rate))
     assert e._internal_state.collateral == pytest.approx(coll_before + expected_collateral_delta)
 
 
@@ -200,14 +199,13 @@ def test_hyperliquid_matches_simple_perp_funding_order():
     within max_leverage); funding_rate=+2% drains 60 → coll=20 < MM(SP)=60
     and < MM(HL)=30. Both wipe in the same bar.
     """
-    from fractal.core.entities.simple.perp import (SimplePerpEntity,
-                                                   SimplePerpGlobalState)
+    from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState
 
     hl = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000))
+    hl.update_state(HyperliquidGlobalState(mark_price=3000))
     hl.action_deposit(80)
     hl.action_open_position(1)
-    hl.update_state(HyperLiquidGlobalState(mark_price=3000, funding_rate=0.02))
+    hl.update_state(HyperliquidGlobalState(mark_price=3000, funding_rate=0.02))
 
     sp = SimplePerpEntity(trading_fee=0.0, max_leverage=50.0)
     sp.update_state(SimplePerpGlobalState(mark_price=3000))

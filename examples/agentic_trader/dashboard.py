@@ -3,10 +3,9 @@ import textwrap
 from datetime import datetime
 
 import dash
-from dash import dcc, html
-import plotly.graph_objects as go
 import pandas as pd
-
+import plotly.graph_objects as go
+from dash import dcc, html
 
 # TradingView-like style template
 TRADINGVIEW_TEMPLATE = {

@@ -8,10 +8,8 @@ from fractal.loaders._dt import to_seconds, to_utc, utcnow
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.structs import PoolHistory
 from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
-from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_arbitrum import \
-    ArbitrumUniswapV3Loader
-from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import \
-    EthereumUniswapV3Loader
+from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_arbitrum import ArbitrumUniswapV3Loader
+from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_ethereum import EthereumUniswapV3Loader
 
 
 class _UniswapV3PoolBase:
