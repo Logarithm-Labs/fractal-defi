@@ -1,7 +1,10 @@
-"""Binance USDT-M futures REST wrapper used by the funding/kline loaders.
+"""Binance public REST wrapper used by the funding/kline loaders.
 
-This is a thin adapter around the shared :class:`fractal.loaders._http.HttpClient`
-so we don't have to duplicate retry/backoff logic per call site.
+Thin adapter around the shared :class:`fractal.loaders._http.HttpClient`
+so retry/backoff logic isn't duplicated per call site. Two API
+sections supported: ``futures`` (USDT-M perp endpoints under
+``fapi.binance.com``) and ``spot`` (CEX spot endpoints under
+``api.binance.com``). Loaders pick the section explicitly.
 """
 from typing import Any, Dict, Optional
 
@@ -12,6 +15,7 @@ SPOT_SECTION = "spot"
 
 _BASES = {
     FUTURES_SECTION: "https://fapi.binance.com",
+    SPOT_SECTION: "https://api.binance.com",
 }
 
 
