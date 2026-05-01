@@ -158,6 +158,15 @@ backtest/.DS_Store
 *.pickle
 *.zip
 
+# Fixtures consumed by the e2e MLflow harness
+# (``tests/mlflow_tests/scripts/e2e.sh``). Without these committed, the
+# CI ``e2e-mlflow`` job hard-fails on a missing-fixture error instead
+# of running. Slow real-data tests still ``pytest.skip`` if the rest
+# of the ``*_hyperliquid.csv`` family is absent — only these two are
+# load-bearing for CI.
+!examples/basis/BTC_hyperliquid.csv
+!examples/tau_reset/tau_strategy_result.csv
+
 *id_rsa
 *id_rsa.pub
 .vscode/settings.json

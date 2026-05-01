@@ -81,7 +81,9 @@ echo "=== [3/6] installing wheel + test deps into smoke venv ==="
 pip install --quiet "$WHEEL"
 pip install --quiet "pytest>=8.2.2" "pytest-timeout>=2.3.0"
 echo "  installed packages:"
-pip show fractal-defi | head -3
+# ``grep`` instead of ``| head -3`` — head closes the pipe after N lines
+# which makes ``pip`` raise ``BrokenPipeError`` under ``set -o pipefail``.
+pip show fractal-defi | grep -E '^(Name|Version|Summary):' || true
 
 # Steps 4-6 run inside the SMOKE venv after ``activate`` puts its
 # ``bin/`` first on PATH. Use ``python`` (no version suffix) so it

@@ -9,10 +9,6 @@ from setuptools import find_packages, setup
 RUNTIME_REQUIRES = [
     "mlflow>=2.14.1",
     "pandas>=2.2.2",
-    # ``numpy>=1.26.0`` covers the Python 3.10–3.13 matrix without
-    # upper-bound thrashing. The previous ``numpy<2,>=1.16.0`` pin in
-    # v1.1.0 forced pip onto numpy 1.26.4 — which has no Python 3.13
-    # wheel and required a C compiler at install time.
     "numpy>=1.26.0",
     "loguru>=0.7.2",
     "requests>=2.32.3",
@@ -57,6 +53,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/fractal-defi',
     include_package_data=True,
+    license="BSD-3-Clause",
     python_requires=">=3.10, <3.14",
     install_requires=RUNTIME_REQUIRES,
     extras_require={
@@ -68,7 +65,6 @@ setup(
         'Intended Audience :: Developers',
         'Intended Audience :: Financial and Insurance Industry',
         'Intended Audience :: Science/Research',
-        'License :: OSI Approved :: BSD License',
         'Operating System :: OS Independent',
         'Programming Language :: Python :: 3',
         'Programming Language :: Python :: 3.10',
