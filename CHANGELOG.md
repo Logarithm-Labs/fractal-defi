@@ -6,9 +6,12 @@ with one-line bullets per change.
 
 ## [v1.3.1] — Unreleased
 
-Coordinated dependency-floor bump + Codex audit follow-ups. No public-API changes; the library still imports and behaves
-identically to v1.3.0. The supported install matrix narrows — flag
-this if you depend on the older floors.
+Coordinated dependency-floor bump + Codex audit follow-ups + Uniswap
+V2 LP fee-modelling extensions. Existing strategies behave identically
+(default config preserves prior semantics); real-data V2 backtests get
+a small-magnitude correction to the loader/entity tvl contract. The
+supported install matrix narrows — flag this if you depend on the
+older floors.
 
 ### Added
 
@@ -16,6 +19,23 @@ this if you depend on the older floors.
   `importlib.metadata` so there's a single source of truth (`setup.py`).
   Matches the numpy/pandas/mlflow convention; useful for sanity-checks
   like `print(f"fractal-defi {fractal.__version__}")` in notebooks.
+- **`UniswapV2LPConfig.fees_compounding_model`** — opt-in `"cash"`
+  (default, backward-compatible) / `"compound"` flag controlling how
+  per-bar pool fees flow through the position.
+  - `"cash"` — fees flow to `InternalState.cash`; position token
+    amounts purely reflect price-divergence; `impermanent_loss` is
+    the textbook hodl-vs-LP gap (useful for IL modelling in
+    isolation).
+  - `"compound"` — fees implicitly reinvested into the position by
+    growing `token0/token1_amount` (split 50/50 by value at current
+    price); `liquidity` (LP-token count) stays constant — mirrors
+    on-chain V2 where reserves grow but LP supply does not. `balance`
+    matches the `"cash"` total; `impermanent_loss` becomes a
+    fee-adjusted gap (pool yield offsets price-divergence cost).
+- **`UniswapV2LPInternalState.compounded_token0_amount` /
+  `compounded_token1_amount`** — cumulative buffer fields used by
+  the new compound mode. Stay 0 in `"cash"` mode; reset on
+  `action_close_position`.
 
 ### Dependencies (user-visible)
 
@@ -52,6 +72,18 @@ this if you depend on the older floors.
   with guards that raise `RuntimeError` on malformed payload (non-
   object `payload` or non-object `data`) instead of silent NoneType
   drift downstream (closes Codex L1).
+- **V2 loader / entity `tvl` contract.**
+  `EthereumUniswapV2PoolDataLoader.transform()` now produces
+  **pre-fee tvl** (`tvl = reserveUSD - fees`). `UniswapV2LPEntity`
+  expects pre-fee tvl per its loader contract so that
+  `share * tvl + share * fees` reconstructs the post-fee position
+  correctly. Previously the loader passed `reserveUSD` through as-is
+  (= post-fee end-of-bar reserves), which combined with the entity's
+  `cash += calculate_fees()` step double-counted each bar's fees on
+  real-data backtests. Magnitude is small (1 bar's fees ≈
+  `volume × fee_tier`, on the order of 0.001-0.005% of TVL per hour
+  on USDC/WETH 30bps), but cumulative — equity curves shift by that
+  amount, no longer drift over long windows.
 
 ### Not included (deliberately deferred)
 
