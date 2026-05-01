@@ -62,6 +62,22 @@ V3_ONLY_PUBLIC = {
     "tick_to_price",
 }
 
+# Members allowed only on V2. V3 has different fee accrual mechanics
+# (concentrated liquidity, fees claimed explicitly), so the
+# ``fees_compounding_model`` config option and its derived state are
+# V2-specific. May be ported to V3 in a future release.
+V2_ONLY_PUBLIC = {
+    "fees_compounding_model",
+}
+
+V2_ONLY_INTERNAL_FIELDS = {
+    "cumulative_position_fees",
+}
+
+V2_ONLY_CONFIG_FIELDS = {
+    "fees_compounding_model",
+}
+
 
 def _public_members(cls):
     """Public members exposed on a class instance.
@@ -110,12 +126,11 @@ def test_v3_has_all_v3_specific_members():
 def test_no_unexpected_public_api_members_v2():
     """Catch silent additions to V2's public surface."""
     members = _public_members(UniswapV2LPEntity)
-    # Allow shared API + standard Python/object members.
-    extras = members - SHARED_PUBLIC_API - V3_ONLY_PUBLIC
-    # Whitelist is empty; if you add a public member, update SHARED_PUBLIC_API.
+    # Allow shared API + V2-only members.
+    extras = members - SHARED_PUBLIC_API - V2_ONLY_PUBLIC
     assert not extras, (
         f"V2 has unexpected public members: {extras}. "
-        f"If intentional, add them to SHARED_PUBLIC_API or document why V2-only."
+        f"If intentional, add them to SHARED_PUBLIC_API or V2_ONLY_PUBLIC."
     )
 
 
@@ -131,13 +146,15 @@ def test_no_unexpected_public_api_members_v3():
 
 @pytest.mark.core
 def test_v2_v3_configs_have_same_fields():
-    """Both configs must expose identical field names. V3 may have extras
-    (currently none — kept symmetric)."""
+    """Both configs must expose identical field names — modulo declared
+    V2-only / V3-only extensions."""
     v2_fields = {f.name for f in fields(UniswapV2LPConfig)}
     v3_fields = {f.name for f in fields(UniswapV3LPConfig)}
-    assert v2_fields == v3_fields, (
-        f"Config fields differ — V2-only: {v2_fields - v3_fields}, "
-        f"V3-only: {v3_fields - v2_fields}"
+    shared_v2 = v2_fields - V2_ONLY_CONFIG_FIELDS
+    shared_v3 = v3_fields  # currently no V3-only config fields
+    assert shared_v2 == shared_v3, (
+        f"Config fields differ outside the declared V2/V3-only sets — "
+        f"V2-only: {shared_v2 - shared_v3}, V3-only: {shared_v3 - shared_v2}"
     )
 
 
@@ -173,10 +190,11 @@ V3_ONLY_INTERNAL_FIELDS = {
 @pytest.mark.core
 def test_v2_internal_state_fields_match_shared_set():
     v2_fields = {f.name for f in fields(UniswapV2LPInternalState)}
-    assert v2_fields == SHARED_INTERNAL_FIELDS, (
-        f"V2 internal state fields differ from shared set — "
-        f"missing: {SHARED_INTERNAL_FIELDS - v2_fields}, "
-        f"extra: {v2_fields - SHARED_INTERNAL_FIELDS}"
+    shared = v2_fields - V2_ONLY_INTERNAL_FIELDS
+    assert shared == SHARED_INTERNAL_FIELDS, (
+        f"V2 internal state fields differ from shared set (modulo "
+        f"V2-only) — missing: {SHARED_INTERNAL_FIELDS - shared}, "
+        f"extra: {shared - SHARED_INTERNAL_FIELDS}"
     )
 
 

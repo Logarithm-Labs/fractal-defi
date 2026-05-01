@@ -6,9 +6,12 @@ with one-line bullets per change.
 
 ## [v1.3.1] — Unreleased
 
-Coordinated dependency-floor bump + Codex audit follow-ups. No public-API changes; the library still imports and behaves
-identically to v1.3.0. The supported install matrix narrows — flag
-this if you depend on the older floors.
+Coordinated dependency-floor bump + Codex audit follow-ups + Uniswap
+V2 LP fee-modelling extensions. Existing strategies behave identically
+(default config preserves prior semantics); real-data V2 backtests get
+a small-magnitude correction to the loader/entity tvl contract. The
+supported install matrix narrows — flag this if you depend on the
+older floors.
 
 ### Added
 
@@ -16,6 +19,26 @@ this if you depend on the older floors.
   `importlib.metadata` so there's a single source of truth (`setup.py`).
   Matches the numpy/pandas/mlflow convention; useful for sanity-checks
   like `print(f"fractal-defi {fractal.__version__}")` in notebooks.
+- **`UniswapV2LPConfig.fees_compounding_model`** — opt-in `"cash"`
+  (default, backward-compatible) / `"compound"` flag controlling how
+  per-bar pool fees flow through the position.
+  - `"cash"` — fees flow to `InternalState.cash`; position token
+    amounts purely reflect price-divergence; `impermanent_loss` is
+    the textbook hodl-vs-LP gap (useful for IL modelling in
+    isolation).
+  - `"compound"` — fees implicitly reinvested into the position by
+    growing `token0/token1_amount` (split 50/50 by value at current
+    price); `liquidity` (LP-token count) stays constant — mirrors
+    on-chain V2 where reserves grow but LP supply does not. `balance`
+    matches the `"cash"` total; `impermanent_loss` becomes a
+    fee-adjusted gap (pool yield offsets price-divergence cost).
+- **`UniswapV2LPInternalState.cumulative_position_fees`** — new
+  field tracking the total USD fee yield earned by the current
+  position. Used in `"cash"` mode to keep position-token amounts
+  purely price-divergence-driven (the cumulative is subtracted
+  from `share * tvl` to remove prior bars' fees that are otherwise
+  baked into the loader's pre-fee tvl). Always 0 in `"compound"`
+  mode. Resets on `action_close_position`.
 
 ### Dependencies (user-visible)
 
@@ -52,6 +75,34 @@ this if you depend on the older floors.
   with guards that raise `RuntimeError` on malformed payload (non-
   object `payload` or non-object `data`) instead of silent NoneType
   drift downstream (closes Codex L1).
+- **V2 LP cumulative fee double-count.**
+  `UniswapV2LPEntity.update_state` was reading per-bar pool fees
+  twice on real-data backtests: once implicitly inside the
+  loader's `state.tvl` (which carries all prior bars' fees on-chain),
+  and again explicitly via `cash += calculate_fees()`. Effect was a
+  steady upward drift in `balance` of `share * sum_prior_fees` per
+  bar — small in any single bar (~0.001-0.005% of TVL on USDC/WETH
+  30bps) but compounds over long windows; ~2-5% inflation over a
+  90-day backtest, larger on high-volume pools.
+  - Loader contract is now explicit: `EthereumUniswapV2PoolDataLoader`
+    emits **pre-fee tvl** (`tvl = reserveUSD - fees`).
+  - Entity rewrites position from this contract correctly in both
+    modes:
+    - `"cash"`: `position = share * tvl - cumulative_position_fees`,
+      so the prior-bar fees baked into `state.tvl` are stripped out;
+      the position USD value stays equal to its no-fee baseline at
+      constant price.
+    - `"compound"`: `position = share * (tvl + fees)` — current-bar
+      post-fee reserves; no cumulative tracking needed because the
+      next bar's pre-fee tvl already incorporates this bar's
+      compound.
+  - **Migration impact:** existing real-data V2 backtests on
+    `cash` mode (the default) will report **slightly lower**
+    cumulative balance — this is the corrected number. New
+    `compound` mode lands with correct math from the start.
+  - Closed-form regression test added: balance in both modes after
+    N bars at constant price equals `balance_at_open + N * share *
+    bar_fees` exactly.
 
 ### Not included (deliberately deferred)
 
