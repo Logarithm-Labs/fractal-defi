@@ -135,110 +135,115 @@ def test_fees_compounding_model_invalid_raises():
         UniswapV2LPEntity(config=cfg)
 
 
+def _stream_states(R_0: float, bar_fees: float, bars: int, price: float = 1000):
+    """Yield N states modelling the loader contract: bar n's ``tvl`` is
+    pre-fee for the bar = ``R_0 + sum(fees over bars 0..n-1)``. This is
+    what real loaders emit — without it tests degenerate to constant
+    state, masking the cumulative-fee semantics under test.
+    """
+    for n in range(bars):
+        yield UniswapV2LPGlobalState(
+            tvl=R_0 + n * bar_fees,
+            liquidity=10_000, fees=bar_fees, price=price, volume=0,
+        )
+
+
 @pytest.mark.core
-def test_cash_mode_routes_fees_to_cash():
-    """cash mode: fees accumulate in ``cash``; position tokens unchanged
-    relative to a fees=0 update.
+def test_cash_mode_position_constant_at_constant_price():
+    """In cash mode, position USD value stays equal to its no-fee
+    baseline at constant price — fee yield lives in cash, not in the
+    position. After 10 bars, position value is unchanged from open-time
+    (only price divergence would move it).
     """
     e = _open_lender(model="cash")
-    cash_before = e.internal_state.cash
-    t0_before = e.internal_state.token0_amount
-    t1_before = e.internal_state.token1_amount
-    # Pre-fee tvl=10_000, fees=100 ⇒ on-chain post-fee reserves = 10_100,
-    # but the entity sees pre-fee tvl per the loader contract.
-    e.update_state(UniswapV2LPGlobalState(
-        tvl=10_000, liquidity=10_000, fees=100, price=1000, volume=0,
-    ))
-    expected_fee_share = e.internal_state.liquidity / 10_000 * 100
-    assert e.internal_state.cash == pytest.approx(cash_before + expected_fee_share)
-    # Token amounts stay at the share-based formula (no compound buffer).
-    assert e.internal_state.token0_amount == pytest.approx(t0_before)
-    assert e.internal_state.token1_amount == pytest.approx(t1_before)
-    assert e.internal_state.compounded_token0_amount == 0.0
-    assert e.internal_state.compounded_token1_amount == 0.0
+    pos_at_open = e.stable_amount + e.volatile_amount * e._global_state.price
+    for state in _stream_states(R_0=10_000, bar_fees=10, bars=10):
+        e.update_state(state)
+    pos_after = e.stable_amount + e.volatile_amount * e._global_state.price
+    assert pos_after == pytest.approx(pos_at_open, rel=1e-9)
+    # Cumulative tracker = sum(share * fees) over the bars.
+    expected_cumulative = 10 * (e.internal_state.liquidity / 10_000) * 10
+    assert e.internal_state.cumulative_position_fees == pytest.approx(expected_cumulative)
 
 
 @pytest.mark.core
-def test_compound_mode_routes_fees_to_position():
-    """compound mode: fees grow ``token0/token1_amount`` (split 50/50 by
-    value) and live in the cumulative buffer; ``cash`` is unchanged.
+def test_compound_mode_position_grows_each_bar():
+    """In compound mode, position USD grows each bar by ``share * fees``;
+    cash and cumulative-fee tracker remain at their open-time values.
     """
     e = _open_lender(model="compound")
-    cash_before = e.internal_state.cash
-    e.update_state(UniswapV2LPGlobalState(
-        tvl=10_000, liquidity=10_000, fees=100, price=1000, volume=0,
-    ))
-    bar_fee_value = e.internal_state.liquidity / 10_000 * 100
-    expected_t0_buffer = bar_fee_value / 2                  # stable side (token0)
-    expected_t1_buffer = (bar_fee_value / 2) / 1000          # volatile side (token1) at price=1000
-    assert e.internal_state.cash == pytest.approx(cash_before)
-    assert e.internal_state.compounded_token0_amount == pytest.approx(expected_t0_buffer)
-    assert e.internal_state.compounded_token1_amount == pytest.approx(expected_t1_buffer)
-    # Liquidity (LP-token count) unchanged — compound is implicit, not a mint.
-    assert e.internal_state.liquidity == pytest.approx(498.5)
+    cash_at_open = e.internal_state.cash
+    pos_history = []
+    for state in _stream_states(R_0=10_000, bar_fees=10, bars=5):
+        e.update_state(state)
+        pos_history.append(e.stable_amount + e.volatile_amount * e._global_state.price)
+    # Strictly monotonically increasing — each bar adds share * fees to position.
+    assert all(b > a for a, b in zip(pos_history, pos_history[1:]))
+    # Cash + cumulative tracker untouched (no separate accounting in compound).
+    assert e.internal_state.cash == pytest.approx(cash_at_open)
+    assert e.internal_state.cumulative_position_fees == 0.0
 
 
 @pytest.mark.core
-def test_total_balance_identical_across_modes_at_constant_price():
-    """The total ``balance`` matches between cash and compound modes —
-    fees just live in different buckets. Verified across 50 bars at a
-    constant price + constant per-bar fees.
+def test_both_modes_match_onchain_truth_at_constant_price():
+    """The crucial double-count regression test.
+
+    Pre-Path-B implementation drifted upward by ``share * sum_prior_fees``
+    each bar — the bug the reviewer flagged. Path B's invariant: balance
+    after N bars = balance-at-open + N · share · bar_fees, exact, in both
+    modes (the per-bar fee yield is the only source of growth at
+    constant price).
     """
+    bars = 50
+    bar_fees = 10.0
+    R_0 = 10_000.0
     cash_e = _open_lender(model="cash")
     comp_e = _open_lender(model="compound")
-    state = UniswapV2LPGlobalState(
-        tvl=10_000, liquidity=10_000, fees=10, price=1000, volume=0,
-    )
-    for _ in range(50):
+    open_balance = cash_e.balance     # both modes start identical at open
+    assert comp_e.balance == pytest.approx(open_balance, rel=1e-12)
+
+    for state in _stream_states(R_0=R_0, bar_fees=bar_fees, bars=bars):
         cash_e.update_state(state)
         comp_e.update_state(state)
-    assert cash_e.balance == pytest.approx(comp_e.balance, rel=1e-9)
+
+    share = cash_e.internal_state.liquidity / 10_000     # ≈ 0.04985
+    expected_growth = bars * share * bar_fees
+    expected_balance = open_balance + expected_growth
+
+    assert cash_e.balance == pytest.approx(expected_balance, rel=1e-9)
+    assert comp_e.balance == pytest.approx(expected_balance, rel=1e-9)
+    # Modes match each other exactly — the deeper invariant.
+    assert cash_e.balance == pytest.approx(comp_e.balance, rel=1e-12)
 
 
 @pytest.mark.core
-def test_compound_mode_buffer_accumulates_across_bars():
-    """Compound buffer grows monotonically with each bar's fees."""
-    e = _open_lender(model="compound")
-    state = UniswapV2LPGlobalState(
-        tvl=10_000, liquidity=10_000, fees=10, price=1000, volume=0,
-    )
-    snapshots = []
-    for _ in range(5):
-        e.update_state(state)
-        snapshots.append(e.internal_state.compounded_token0_amount)
-    # Strictly monotonically increasing — each bar adds positive fees.
-    assert all(b > a for a, b in zip(snapshots, snapshots[1:]))
-
-
-@pytest.mark.core
-def test_close_position_resets_compound_buffer():
-    """``action_close_position`` must zero the compound buffer alongside
-    everything else, so a subsequent ``open_position`` starts clean.
+def test_close_position_resets_cumulative_fees():
+    """``action_close_position`` must zero ``cumulative_position_fees``
+    so a subsequent ``open_position`` starts clean.
     """
-    e = _open_lender(model="compound")
-    e.update_state(UniswapV2LPGlobalState(tvl=10_000, liquidity=10_000,
-                                          fees=100, price=1000, volume=0))
-    assert e.internal_state.compounded_token0_amount > 0
+    e = _open_lender(model="cash")
+    e.update_state(UniswapV2LPGlobalState(
+        tvl=10_000, liquidity=10_000, fees=100, price=1000, volume=0,
+    ))
+    assert e.internal_state.cumulative_position_fees > 0
     e.action_close_position()
-    assert e.internal_state.compounded_token0_amount == 0.0
-    assert e.internal_state.compounded_token1_amount == 0.0
+    assert e.internal_state.cumulative_position_fees == 0.0
     assert e.internal_state.liquidity == 0.0
 
 
 @pytest.mark.core
-def test_compound_mode_il_smaller_than_cash_mode():
-    """Under fee accrual, compound mode reports a SMALLER ``impermanent_loss``
-    than cash mode — pool yield offsets the price-divergence cost in compound,
-    while cash mode keeps ``impermanent_loss`` purely as price divergence.
+def test_compound_mode_il_smaller_than_cash_mode_with_fee_accrual():
+    """Under fee accrual + price move, compound IL < cash IL: in
+    compound mode fees grow position tokens directly, narrowing the
+    hodl-vs-LP gap; in cash mode fees flow to cash so position stays
+    purely price-divergence-driven and IL is the textbook (larger)
+    figure.
     """
     cash_e = _open_lender(model="cash")
     comp_e = _open_lender(model="compound")
-    # Bar 1: price moves up + non-zero fees.
     state = UniswapV2LPGlobalState(
         tvl=10_000, liquidity=10_000, fees=50, price=1500, volume=0,
     )
     cash_e.update_state(state)
     comp_e.update_state(state)
-    # Cash IL is the textbook hodl-vs-LP gap, untouched by fees.
-    # Compound IL has the bar's fees absorbed into the position, lowering it.
     assert comp_e.impermanent_loss < cash_e.impermanent_loss

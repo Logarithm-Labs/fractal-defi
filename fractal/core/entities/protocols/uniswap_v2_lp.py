@@ -31,11 +31,13 @@ class UniswapV2LPInternalState(InternalState):
         price_init (float): Pool price at position open.
         liquidity (float): Position LP-token count.
         cash (float): Free notional cash held by the entity.
-        compounded_token0_amount (float): Cumulative fee-derived growth of
-            token0 in the position. Stays at 0 in ``"cash"`` mode; grows
-            monotonically in ``"compound"`` mode and is added on top of
-            the share-based formula every ``update_state``.
-        compounded_token1_amount (float): Same for token1.
+        cumulative_position_fees (float): Total USD value of pool fees
+            attributed to this position since open. Used in ``"cash"``
+            mode to keep position-token amounts purely price-divergence-
+            driven (subtracting the cumulative from ``share * tvl``
+            removes prior bars' fees that are otherwise baked into
+            ``state.tvl``). Resets to 0 on ``action_close_position``.
+            Always 0 in ``"compound"`` mode (not used there).
     """
 
     token0_amount: float = 0.0
@@ -45,8 +47,7 @@ class UniswapV2LPInternalState(InternalState):
     price_init: float = 0.0
     liquidity: float = 0.0
     cash: float = 0.0
-    compounded_token0_amount: float = 0.0
-    compounded_token1_amount: float = 0.0
+    cumulative_position_fees: float = 0.0
 
 
 @dataclass
@@ -318,8 +319,7 @@ class UniswapV2LPEntity(BasePoolEntity):
         self._internal_state.entry_token1_amount = 0.0
         self._internal_state.price_init = 0.0
         self._internal_state.liquidity = 0.0
-        self._internal_state.compounded_token0_amount = 0.0
-        self._internal_state.compounded_token1_amount = 0.0
+        self._internal_state.cumulative_position_fees = 0.0
 
         return token0_back, token1_back
 
@@ -400,17 +400,34 @@ class UniswapV2LPEntity(BasePoolEntity):
         self._internal_state.cash += stable_back + volatile_proceeds
 
     def update_state(self, state: UniswapV2LPGlobalState) -> None:
-        """Apply pool snapshot, rebalance position amounts, route fees per
-        :attr:`fees_compounding_model`.
+        """Apply pool snapshot, rebalance position amounts, route this-bar
+        fees per :attr:`fees_compounding_model`.
 
-        Loader contract: ``state.tvl`` is the pre-fee pool TVL for the bar
-        (= on-chain reserves BEFORE this bar's fees) and ``state.fees`` is
-        the absolute USD fees accrued during the bar. The share-based
-        position formula ``share * tvl`` therefore underestimates by
-        ``share * fees``, which we add either to ``cash`` (default) or
-        directly to the on-chain token amounts (compound mode). Total
-        ``balance`` is identical between the two modes; only IL semantics
-        and where the value lives differ.
+        Loader contract: ``state.tvl`` is the pre-fee TVL for the bar
+        (= on-chain reserves at the START of the bar = post-fee reserves
+        from the END of the previous bar). ``state.fees`` is the absolute
+        USD fees accrued during this bar.
+
+        Crucially, ``state.tvl`` accumulates **all prior bars' fees** —
+        if bar n's fees were $f_n, then ``tvl_N = original_reserves +
+        sum(f_0..f_{N-1})``. Naive ``position = share * tvl + cash +=
+        share * fees`` therefore double-counts every prior bar's fees
+        (they appear once in ``tvl`` and again in ``cash``). Both modes
+        below correct for this:
+
+        * **cash**: ``position = share * tvl - cumulative_position_fees``.
+          Subtracting the cumulative removes the prior fees baked into
+          ``tvl``, so position amounts purely reflect price-divergence;
+          ``cash`` accumulates the lifetime fee yield. ``balance`` lands
+          on the true on-chain claim ``share * post-fee_tvl``.
+        * **compound**: ``position = share * (tvl + fees)`` — current
+          bar's post-fee reserves. No cumulative tracking needed because
+          the next bar's pre-fee tvl already incorporates this bar's
+          fees automatically.
+
+        Both modes give identical ``balance`` (it's the on-chain truth);
+        they differ only in WHERE the fee yield lives — separately in
+        ``cash`` vs implicitly inside the position.
         """
         self._global_state = state
 
@@ -423,42 +440,29 @@ class UniswapV2LPEntity(BasePoolEntity):
             raise EntityException("Pool liquidity is 0.")
 
         share = self._internal_state.liquidity / self._global_state.liquidity
-        stable_reserve = self._global_state.tvl / 2
-        volatile_reserve = stable_reserve / self._global_state.price
-        bar_fees = self.calculate_fees()
+        bar_fee_value = self.calculate_fees()      # = share * state.fees in $
 
         if self.fees_compounding_model == "compound":
-            # Split this-bar fees 50/50 by VALUE at current price (mirrors
-            # V2's pool-ratio invariant) and accumulate into the buffer.
-            stable_delta = bar_fees / 2
-            volatile_delta = (bar_fees / 2) / self._global_state.price
-            if self.notional_side == "token0":
-                self._internal_state.compounded_token0_amount += stable_delta
-                self._internal_state.compounded_token1_amount += volatile_delta
-            else:
-                self._internal_state.compounded_token1_amount += stable_delta
-                self._internal_state.compounded_token0_amount += volatile_delta
-
-        # Position amounts: share-based (pre-fee tvl) + cumulative compound
-        # buffer. In ``"cash"`` mode the buffer stays at 0, so this matches
-        # the prior ``share * reserve`` semantics exactly.
-        if self.notional_side == "token0":
-            extra_t0 = self._internal_state.compounded_token0_amount
-            extra_t1 = self._internal_state.compounded_token1_amount
-            self._set_position_amounts(
-                share * stable_reserve + extra_t0,
-                share * volatile_reserve + extra_t1,
+            # Position = share * post-fee tvl. Per-bar; no state carries
+            # forward (next bar's pre-fee tvl includes this bar's fees).
+            position_value = share * (self._global_state.tvl + self._global_state.fees)
+        else:  # "cash"
+            # Position = share * tvl − cumulative_position_fees. The
+            # subtraction strips out prior bars' fees (already in tvl)
+            # so position amounts move only with price changes.
+            position_value = (
+                share * self._global_state.tvl
+                - self._internal_state.cumulative_position_fees
             )
-        else:
-            extra_t1 = self._internal_state.compounded_token1_amount
-            extra_t0 = self._internal_state.compounded_token0_amount
-            self._set_position_amounts(
-                share * stable_reserve + extra_t1,
-                share * volatile_reserve + extra_t0,
-            )
+            # Accrue this bar's fees: cash gets paid, cumulative tracks
+            # what we've subtracted from position over the lifetime.
+            self._internal_state.cumulative_position_fees += bar_fee_value
+            self._internal_state.cash += bar_fee_value
 
-        if self.fees_compounding_model == "cash":
-            self._internal_state.cash += bar_fees
+        # 50/50 split by value at the current pool ratio.
+        stable_amount = position_value / 2
+        volatile_amount = stable_amount / self._global_state.price
+        self._set_position_amounts(stable_amount, volatile_amount)
 
     @property
     def balance(self) -> float:

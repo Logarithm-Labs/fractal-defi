@@ -32,10 +32,13 @@ older floors.
     on-chain V2 where reserves grow but LP supply does not. `balance`
     matches the `"cash"` total; `impermanent_loss` becomes a
     fee-adjusted gap (pool yield offsets price-divergence cost).
-- **`UniswapV2LPInternalState.compounded_token0_amount` /
-  `compounded_token1_amount`** — cumulative buffer fields used by
-  the new compound mode. Stay 0 in `"cash"` mode; reset on
-  `action_close_position`.
+- **`UniswapV2LPInternalState.cumulative_position_fees`** — new
+  field tracking the total USD fee yield earned by the current
+  position. Used in `"cash"` mode to keep position-token amounts
+  purely price-divergence-driven (the cumulative is subtracted
+  from `share * tvl` to remove prior bars' fees that are otherwise
+  baked into the loader's pre-fee tvl). Always 0 in `"compound"`
+  mode. Resets on `action_close_position`.
 
 ### Dependencies (user-visible)
 
@@ -72,18 +75,34 @@ older floors.
   with guards that raise `RuntimeError` on malformed payload (non-
   object `payload` or non-object `data`) instead of silent NoneType
   drift downstream (closes Codex L1).
-- **V2 loader / entity `tvl` contract.**
-  `EthereumUniswapV2PoolDataLoader.transform()` now produces
-  **pre-fee tvl** (`tvl = reserveUSD - fees`). `UniswapV2LPEntity`
-  expects pre-fee tvl per its loader contract so that
-  `share * tvl + share * fees` reconstructs the post-fee position
-  correctly. Previously the loader passed `reserveUSD` through as-is
-  (= post-fee end-of-bar reserves), which combined with the entity's
-  `cash += calculate_fees()` step double-counted each bar's fees on
-  real-data backtests. Magnitude is small (1 bar's fees ≈
-  `volume × fee_tier`, on the order of 0.001-0.005% of TVL per hour
-  on USDC/WETH 30bps), but cumulative — equity curves shift by that
-  amount, no longer drift over long windows.
+- **V2 LP cumulative fee double-count.**
+  `UniswapV2LPEntity.update_state` was reading per-bar pool fees
+  twice on real-data backtests: once implicitly inside the
+  loader's `state.tvl` (which carries all prior bars' fees on-chain),
+  and again explicitly via `cash += calculate_fees()`. Effect was a
+  steady upward drift in `balance` of `share * sum_prior_fees` per
+  bar — small in any single bar (~0.001-0.005% of TVL on USDC/WETH
+  30bps) but compounds over long windows; ~2-5% inflation over a
+  90-day backtest, larger on high-volume pools.
+  - Loader contract is now explicit: `EthereumUniswapV2PoolDataLoader`
+    emits **pre-fee tvl** (`tvl = reserveUSD - fees`).
+  - Entity rewrites position from this contract correctly in both
+    modes:
+    - `"cash"`: `position = share * tvl - cumulative_position_fees`,
+      so the prior-bar fees baked into `state.tvl` are stripped out;
+      the position USD value stays equal to its no-fee baseline at
+      constant price.
+    - `"compound"`: `position = share * (tvl + fees)` — current-bar
+      post-fee reserves; no cumulative tracking needed because the
+      next bar's pre-fee tvl already incorporates this bar's
+      compound.
+  - **Migration impact:** existing real-data V2 backtests on
+    `cash` mode (the default) will report **slightly lower**
+    cumulative balance — this is the corrected number. New
+    `compound` mode lands with correct math from the start.
+  - Closed-form regression test added: balance in both modes after
+    N bars at constant price equals `balance_at_open + N * share *
+    bar_fees` exactly.
 
 ### Not included (deliberately deferred)
 

@@ -71,8 +71,7 @@ V2_ONLY_PUBLIC = {
 }
 
 V2_ONLY_INTERNAL_FIELDS = {
-    "compounded_token0_amount",
-    "compounded_token1_amount",
+    "cumulative_position_fees",
 }
 
 V2_ONLY_CONFIG_FIELDS = {
