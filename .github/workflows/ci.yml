@@ -32,7 +32,18 @@ jobs:
           cache-dependency-path: requirements.txt
       - name: Install runtime deps for pylint import resolution
         run: pip install -e ".[dev]"
-      - uses: pre-commit/[email protected]
+      # ``pre-commit/action`` was archived; running pre-commit
+      # directly is the maintainer-recommended approach. The cache
+      # below keeps hook envs warm across CI runs.
+      - name: Cache pre-commit hook environments
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-py3.12-${{ hashFiles('.pre-commit-config.yaml') }}
+          restore-keys: |
+            pre-commit-${{ runner.os }}-py3.12-
+      - name: Run pre-commit
+        run: pre-commit run --all-files --show-diff-on-failure
 
   # 2. Core test suite across the supported Python matrix.
   #    Default ``pytest`` (no ``-m``) → just the offline ``core`` layer
