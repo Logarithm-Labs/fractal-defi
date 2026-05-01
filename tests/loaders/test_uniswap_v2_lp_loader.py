@@ -1,4 +1,12 @@
-"""Real-API tests for the Uniswap V2 hourly pool-data loader."""
+"""Tests for the Uniswap V2 hourly pool-data loader.
+
+Mixes:
+
+* offline contract / lock-in tests (``@pytest.mark.core``) that fix
+  the loader/entity tvl invariant in code without hitting the network;
+* live integration tests (``@pytest.mark.integration``) that exercise
+  the real TheGraph endpoint.
+"""
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd

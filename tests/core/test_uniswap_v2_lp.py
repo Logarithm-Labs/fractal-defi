@@ -105,8 +105,8 @@ def test_calculate_fees(uniswap_lp_entity):
 
 # ─── fees_compounding_model tests ──────────────────────────────────
 
-def _open_lender(model: str = "cash") -> UniswapV2LPEntity:
-    """Helper: open a 500-notional V2 LP under the chosen fee model."""
+def _open_lp(model: str = "cash") -> UniswapV2LPEntity:
+    """Helper: open a 500-notional V2 LP position under the chosen fee model."""
     cfg = UniswapV2LPConfig(
         pool_fee_rate=0.003, slippage_pct=0.0,
         token0_decimals=6, token1_decimals=18,
@@ -155,7 +155,7 @@ def test_cash_mode_position_constant_at_constant_price():
     position. After 10 bars, position value is unchanged from open-time
     (only price divergence would move it).
     """
-    e = _open_lender(model="cash")
+    e = _open_lp(model="cash")
     pos_at_open = e.stable_amount + e.volatile_amount * e._global_state.price
     for state in _stream_states(R_0=10_000, bar_fees=10, bars=10):
         e.update_state(state)
@@ -171,7 +171,7 @@ def test_compound_mode_position_grows_each_bar():
     """In compound mode, position USD grows each bar by ``share * fees``;
     cash and cumulative-fee tracker remain at their open-time values.
     """
-    e = _open_lender(model="compound")
+    e = _open_lp(model="compound")
     cash_at_open = e.internal_state.cash
     pos_history = []
     for state in _stream_states(R_0=10_000, bar_fees=10, bars=5):
@@ -197,8 +197,8 @@ def test_both_modes_match_onchain_truth_at_constant_price():
     bars = 50
     bar_fees = 10.0
     R_0 = 10_000.0
-    cash_e = _open_lender(model="cash")
-    comp_e = _open_lender(model="compound")
+    cash_e = _open_lp(model="cash")
+    comp_e = _open_lp(model="compound")
     open_balance = cash_e.balance     # both modes start identical at open
     assert comp_e.balance == pytest.approx(open_balance, rel=1e-12)
 
@@ -221,7 +221,7 @@ def test_close_position_resets_cumulative_fees():
     """``action_close_position`` must zero ``cumulative_position_fees``
     so a subsequent ``open_position`` starts clean.
     """
-    e = _open_lender(model="cash")
+    e = _open_lp(model="cash")
     e.update_state(UniswapV2LPGlobalState(
         tvl=10_000, liquidity=10_000, fees=100, price=1000, volume=0,
     ))
@@ -239,8 +239,8 @@ def test_compound_mode_il_smaller_than_cash_mode_with_fee_accrual():
     purely price-divergence-driven and IL is the textbook (larger)
     figure.
     """
-    cash_e = _open_lender(model="cash")
-    comp_e = _open_lender(model="compound")
+    cash_e = _open_lp(model="cash")
+    comp_e = _open_lp(model="compound")
     state = UniswapV2LPGlobalState(
         tvl=10_000, liquidity=10_000, fees=50, price=1500, volume=0,
     )

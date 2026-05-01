@@ -86,10 +86,13 @@ class UniswapV2LPConfig:
               ``impermanent_loss`` becomes a fee-adjusted gap (pool
               yield offsets price-divergence cost).
 
-            Both modes assume the loader contract: ``GlobalState.tvl``
-            is the **pre-fee** pool TVL for the current bar (= reserves
-            BEFORE the bar's fees), and ``GlobalState.fees`` is the
-            absolute USD fees accrued during the bar.
+            Both modes assume the loader contract:
+            ``GlobalState.tvl + GlobalState.fees == post-fee reserveUSD``
+            for the bar (= the on-chain reserves USD at end of bar). In
+            other words ``tvl`` is "pool value excluding the bar's own
+            fees" and ``fees`` is the absolute USD fees accrued during
+            the bar. This is what :class:`EthereumUniswapV2PoolDataLoader`
+            emits.
     """
 
     pool_fee_rate: float = 0.003
@@ -403,27 +406,26 @@ class UniswapV2LPEntity(BasePoolEntity):
         """Apply pool snapshot, rebalance position amounts, route this-bar
         fees per :attr:`fees_compounding_model`.
 
-        Loader contract: ``state.tvl`` is the pre-fee TVL for the bar
-        (= on-chain reserves at the START of the bar = post-fee reserves
-        from the END of the previous bar). ``state.fees`` is the absolute
-        USD fees accrued during this bar.
+        Loader contract:
+        ``state.tvl + state.fees == post-fee reserveUSD`` for the bar.
+        That is, ``state.tvl`` is the pool's USD value EXCLUDING this
+        bar's fees (so ``tvl`` carries every PRIOR bar's fees but not
+        the current one), and ``state.fees`` is the absolute USD fees
+        accrued during this bar.
 
-        Crucially, ``state.tvl`` accumulates **all prior bars' fees** —
-        if bar n's fees were $f_n, then ``tvl_N = original_reserves +
-        sum(f_0..f_{N-1})``. Naive ``position = share * tvl + cash +=
-        share * fees`` therefore double-counts every prior bar's fees
-        (they appear once in ``tvl`` and again in ``cash``). Both modes
+        Naive ``position = share * tvl + cash += share * fees`` thus
+        double-counts every prior bar's fees (they appear once in
+        ``tvl`` and again as the cumulative running cash). Both modes
         below correct for this:
 
         * **cash**: ``position = share * tvl - cumulative_position_fees``.
           Subtracting the cumulative removes the prior fees baked into
           ``tvl``, so position amounts purely reflect price-divergence;
           ``cash`` accumulates the lifetime fee yield. ``balance`` lands
-          on the true on-chain claim ``share * post-fee_tvl``.
-        * **compound**: ``position = share * (tvl + fees)`` — current
-          bar's post-fee reserves. No cumulative tracking needed because
-          the next bar's pre-fee tvl already incorporates this bar's
-          fees automatically.
+          on the true on-chain claim ``share * (tvl + fees)``.
+        * **compound**: ``position = share * (tvl + fees)`` directly.
+          No cumulative tracking needed because the next bar's
+          ``state.tvl`` will already incorporate this bar's fees.
 
         Both modes give identical ``balance`` (it's the on-chain truth);
         they differ only in WHERE the fee yield lives — separately in
@@ -440,11 +442,11 @@ class UniswapV2LPEntity(BasePoolEntity):
             raise EntityException("Pool liquidity is 0.")
 
         share = self._internal_state.liquidity / self._global_state.liquidity
-        bar_fee_value = self.calculate_fees()      # = share * state.fees in $
 
         if self.fees_compounding_model == "compound":
-            # Position = share * post-fee tvl. Per-bar; no state carries
-            # forward (next bar's pre-fee tvl includes this bar's fees).
+            # Position = share * post-fee tvl. Per-bar; no cumulative
+            # state — next bar's ``state.tvl`` already incorporates this
+            # bar's fees by the loader contract.
             position_value = share * (self._global_state.tvl + self._global_state.fees)
         else:  # "cash"
             # Position = share * tvl − cumulative_position_fees. The
@@ -456,6 +458,7 @@ class UniswapV2LPEntity(BasePoolEntity):
             )
             # Accrue this bar's fees: cash gets paid, cumulative tracks
             # what we've subtracted from position over the lifetime.
+            bar_fee_value = self.calculate_fees()      # = share * state.fees in $
             self._internal_state.cumulative_position_fees += bar_fee_value
             self._internal_state.cash += bar_fee_value
 
