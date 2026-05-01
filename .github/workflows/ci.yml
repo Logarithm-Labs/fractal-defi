@@ -5,12 +5,10 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
-  # Manual trigger for the slow / integration / e2e jobs.
+  # Manual trigger for the heavy jobs (docs / slow / integration /
+  # smoke / e2e). Useful when you want to validate without opening
+  # a PR — pick a branch in Actions → CI → Run workflow.
   workflow_dispatch:
-  # Weekly run of the full pipeline (catches upstream API drift in
-  # Binance / Hyperliquid / Aave / TheGraph loaders).
-  schedule:
-    - cron: '0 6 * * 1'   # Monday 06:00 UTC
 
 # Cancel an in-flight run for the same ref when a new commit lands.
 concurrency:
@@ -18,6 +16,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # 0. Gitflow guard. Releases at this project are strictly
+  #    ``dev → main``: feature branches and hotfixes belong on ``dev``,
+  #    only ``dev`` is ever merged to ``main``. Any other source branch
+  #    targeting ``main`` is a workflow mistake and CI fails fast so
+  #    branch-protection rules can block the merge.
+  #
+  #    Only fires on PRs to main; push to main + workflow_dispatch are
+  #    not affected (they're not the gitflow signal).
+  guard-release-source:
+    name: Enforce gitflow (dev → main only)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+    steps:
+      - name: Reject non-dev source branch
+        run: |
+          head="${{ github.head_ref }}"
+          if [[ "$head" != "dev" ]]; then
+            echo "::error::Release PRs must come from 'dev'. Got '$head' → 'main'."
+            echo ""
+            echo "Open this PR from 'dev' instead — feature/hotfix work goes to 'dev' first,"
+            echo "then 'dev' → 'main' for the release. See CONTRIBUTING.md → Branching."
+            exit 1
+          fi
+          echo "PR head=$head → base=main ✓"
+
   # 1. Pre-commit: trailing whitespace, isort, flake8, pylint, etc.
   #    Same checks developers run locally — keeps CI in lockstep.
   lint:
@@ -48,9 +71,14 @@ jobs:
   # 2. Core test suite across the supported Python matrix.
   #    Default ``pytest`` (no ``-m``) → just the offline ``core`` layer
   #    via ``pytest.ini::addopts = -m "not integration and not slow"``.
+  #
+  #    Gated on lint so a 4× Python-version matrix doesn't burn compute
+  #    when style/type is already broken. Runs on every push and PR —
+  #    this is the universal "is the framework still working" gate.
   core-tests:
     name: Core tests (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    needs: lint
     strategy:
       fail-fast: false
       matrix:
@@ -67,9 +95,20 @@ jobs:
         run: pytest -q --no-header --maxfail=10
 
   # 3. Sphinx docs build with ``-W`` so any new warning fails CI.
+  #    Release-context only: push to main, manual dispatch, or any
+  #    PR targeting main. Skipped on regular dev pushes / PRs to keep
+  #    feedback fast — docstring drift gets caught on the next release
+  #    PR anyway.
   docs:
     name: Docs (Sphinx)
     runs-on: ubuntu-latest
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.pull_request.head.ref == 'dev')
+    needs: lint
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -90,13 +129,18 @@ jobs:
           retention-days: 14
 
   # 4. Real-data CSV-replay tests (~50 tests, ~50 s). No external API
-  #    calls; all data ships in ``examples/``. Runs on push to ``main``
-  #    + manual + weekly cron — skipped on PRs to keep PR feedback fast.
+  #    calls; all data ships in ``examples/``. Release-context only:
+  #    push to main, manual dispatch, or any PR targeting main.
   slow-tests:
     name: Slow real-data tests
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request'
-    needs: core-tests
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.pull_request.head.ref == 'dev')
+    needs: [lint, docs, core-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -110,13 +154,17 @@ jobs:
           THE_GRAPH_API_KEY: ${{ secrets.THE_GRAPH_API_KEY }}
 
   # 5. Live integration suite — hits Binance, Hyperliquid, Aave V3,
-  #    GMX, TheGraph (Uniswap V2/V3, Lido). Manual + weekly only:
-  #    flaky external APIs shouldn't block PR merges.
+  #    GMX, TheGraph (Uniswap V2/V3, Lido). Release-context only.
   integration-tests:
     name: Integration (live API) tests
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    needs: core-tests
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.pull_request.head.ref == 'dev')
+    needs: [lint, docs, core-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -136,8 +184,13 @@ jobs:
   smoke:
     name: Wheel smoke (build + install + tests)
     runs-on: ubuntu-latest
-    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'release-prep')
-    needs: core-tests
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.pull_request.head.ref == 'dev')
+    needs: [lint, docs, core-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -149,14 +202,33 @@ jobs:
         run: pip install build twine
       - name: Run smoke harness
         run: bash scripts/smoke/run.sh
+      # Keep the wheel + sdist that just passed smoke as a build
+      # artifact. Reviewer or release-engineer can download exactly
+      # that file from the workflow run page and upload it to PyPI /
+      # attach to the GitHub release without a local rebuild.
+      - name: Upload built distribution
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fractal-defi-dist
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+          retention-days: 30
+          if-no-files-found: error
 
   # 7. End-to-end MLflow harness: docker compose up MLflow, run all
-  #    four pipeline scripts, verify artifacts. Manual + weekly only.
+  #    four pipeline scripts, verify artifacts. Release-context only.
   e2e-mlflow:
     name: E2E MLflow harness (Docker)
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
-    needs: core-tests
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      || github.event_name == 'workflow_dispatch'
+      || (github.event_name == 'pull_request'
+          && github.event.pull_request.base.ref == 'main'
+          && github.event.pull_request.head.ref == 'dev')
+    needs: [lint, docs, core-tests]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

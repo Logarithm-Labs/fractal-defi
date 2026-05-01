@@ -227,15 +227,49 @@ defers the failure.
 `.github/workflows/ci.yml` runs on every PR and push to `main` or
 `dev`:
 
-| Job | When | What |
+| Job | Light (always) | Heavy (release-context only) |
 |---|---|---|
-| `lint` | always | `pre-commit run --all-files` (isort + flake8 + pylint + file-shape) |
-| `core-tests` | always | `pytest -m core` on Python 3.10, 3.11, 3.12, 3.13 |
-| `docs` | always | `sphinx-build -W` (warnings = errors) |
-| `slow-tests` | push to `main`/`dev` + weekly + manual | `pytest -m slow` (CSV-replay) |
-| `integration-tests` | weekly + manual | `pytest -m integration` (live APIs) |
-| `smoke` | push + weekly + PRs labelled `release-prep` | build wheel, install in throwaway venv, run imports + tests against it |
-| `e2e-mlflow` | weekly + manual | `bash tests/mlflow_tests/scripts/e2e.sh` |
+| `lint` (pre-commit) | ✓ every push + PR | |
+| `core-tests` (Python 3.10–3.13 matrix) | ✓ every push + PR | |
+| `docs` (Sphinx, `-W`) | | ✓ |
+| `slow-tests` (CSV-replay, `-m slow`) | | ✓ |
+| `integration-tests` (live APIs, `-m integration`) | | ✓ |
+| `smoke` (wheel build + install + tests) | | ✓ |
+| `e2e-mlflow` (Docker harness) | | ✓ |
+
+**Light jobs** (`lint`, `core-tests`) run on every push and pull-request
+— this is the universal "is the framework still working" gate. Total
+runtime ≈ 2-5 min.
+
+**Heavy jobs** (everything else) run only in **release-context**:
+
+- push to `main` (the post-merge run)
+- manual `workflow_dispatch` from the Actions UI
+- a pull request `dev → main` (the release PR)
+
+Gitflow at this project is strict: **only `dev` is ever merged to
+`main`**. Feature branches and hotfixes go to `dev` first. A guard
+job (`Enforce gitflow (dev → main only)`) auto-fails CI on any PR
+to `main` whose source branch is not `dev`, so a stray
+`feature → main` or `hotfix → main` PR is rejected before reviewers
+even look. Total release-context runtime ≈ 10-15 min.
+
+The `smoke` job uploads the freshly built ``dist/*.whl`` +
+``dist/*.tar.gz`` as a workflow artifact (``fractal-defi-dist``,
+30-day retention). Download it from the run page and attach to the
+GitHub Release / upload to PyPI without rebuilding locally —
+guarantees the artifact you publish is bit-identical to the one CI
+just smoke-tested.
+
+Execution graph:
+
+```
+lint  (always)
+  └─→ core-tests  (always — needs lint)
+        └─→  docs ┃ slow ┃ integration ┃ smoke ┃ e2e-mlflow
+             (release-context only — need [lint, docs, core-tests];
+              docs runs in parallel with core-tests when triggered)
+```
 
 PR feedback stays fast (lint + core + docs ≈ 2 min). Heavier suites
 that talk to the network or spin up Docker run on schedule + on demand
