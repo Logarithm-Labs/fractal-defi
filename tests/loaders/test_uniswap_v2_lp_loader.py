@@ -12,6 +12,7 @@ UTC = timezone.utc
 USDC_WETH_PAIR = "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"
 
 
+@pytest.mark.core
 def test_v2_loader_emits_pre_fee_tvl():
     """Offline lock-in: ``transform()`` subtracts this-bar fees from
     ``reserveUSD`` to produce the pre-fee ``tvl`` that
