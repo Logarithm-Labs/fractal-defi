@@ -234,6 +234,7 @@ defers the failure.
 | `docs` | always | `sphinx-build -W` (warnings = errors) |
 | `slow-tests` | push to `main`/`dev` + weekly + manual | `pytest -m slow` (CSV-replay) |
 | `integration-tests` | weekly + manual | `pytest -m integration` (live APIs) |
+| `smoke` | push + weekly + PRs labelled `release-prep` | build wheel, install in throwaway venv, run imports + tests against it |
 | `e2e-mlflow` | weekly + manual | `bash tests/mlflow_tests/scripts/e2e.sh` |
 
 PR feedback stays fast (lint + core + docs ≈ 2 min). Heavier suites

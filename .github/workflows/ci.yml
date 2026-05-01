@@ -118,7 +118,28 @@ jobs:
         env:
           THE_GRAPH_API_KEY: ${{ secrets.THE_GRAPH_API_KEY }}
 
-  # 6. End-to-end MLflow harness: docker compose up MLflow, run all
+  # 6. Smoke: build the wheel, install it into a throwaway venv,
+  #    verify imports + run core tests against the WHEEL (not the
+  #    editable repo). Catches packaging-side regressions: missing
+  #    re-exports, broken ``setup.py``, missing data files, etc.
+  smoke:
+    name: Wheel smoke (build + install + tests)
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'release-prep')
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - name: Install build tools
+        run: pip install build twine
+      - name: Run smoke harness
+        run: bash scripts/smoke/run.sh
+
+  # 7. End-to-end MLflow harness: docker compose up MLflow, run all
   #    four pipeline scripts, verify artifacts. Manual + weekly only.
   e2e-mlflow:
     name: E2E MLflow harness (Docker)

@@ -6,6 +6,17 @@
 # (``.github/workflows/ci.yml``) — anything you can run locally is
 # what CI will run on your PR.
 
+# Auto-load ``.env`` if present so ``make release`` /
+# ``make test-integration`` etc. pick up ``TWINE_USERNAME`` /
+# ``TWINE_PASSWORD`` / ``THE_GRAPH_API_KEY`` / ``MLFLOW_URI`` without
+# you sourcing the file manually. Format: plain ``KEY=value`` lines,
+# no quotes or spaces around ``=`` (GNU make ``include`` is strict).
+# ``.env`` is already gitignored.
+ifneq (,$(wildcard ./.env))
+    include .env
+    export
+endif
+
 VENV     := venv
 PYTHON   := python3
 
@@ -20,7 +31,7 @@ TESTS    := tests
 EXAMPLES := examples
 
 .PHONY: help setup install pre-commit format lint \
-        test test-slow test-integration test-all test-e2e \
+        test test-slow test-integration test-all test-e2e smoke \
         docs docs-strict docs-serve docs-clean \
         clean clean-runs clean-all \
         build release-test release
@@ -43,6 +54,7 @@ help:
 	@echo "    test-integration live-API tests (Binance / Hyperliquid / Aave / TheGraph)"
 	@echo "    test-all         every layer combined (core + slow + integration)"
 	@echo "    test-e2e         Docker MLflow end-to-end harness"
+	@echo "    smoke            build wheel, install in throwaway venv, run imports + tests against it"
 	@echo ""
 	@echo "  Docs:"
 	@echo "    docs             build Sphinx html (open docs/build/html/index.html)"
@@ -101,6 +113,9 @@ test-all:
 test-e2e:
 	bash tests/mlflow_tests/scripts/e2e.sh
 
+smoke:
+	bash scripts/smoke/run.sh
+
 # ─── docs ─────────────────────────────────────────────────────────
 docs:
 	$(MAKE) -C docs html
@@ -158,13 +173,29 @@ clean-runs:
 clean-all: clean clean-runs
 
 # ─── release ──────────────────────────────────────────────────────
+# Twine only knows the env vars ``TWINE_USERNAME`` and ``TWINE_PASSWORD``
+# (no per-repository variant). The targets below remap the project's
+# convention — ``TWINE_PASSWORD`` = prod PyPI token, ``TEST_TWINE_PASSWORD``
+# = TestPyPI token, both with ``TWINE_USERNAME=__token__`` — into the
+# pair twine actually reads, scoped to that one ``twine upload`` call.
+
 build: clean
 	$(PYTHON) -m build
 
 release-test: build
-	$(PYTHON) -m twine upload --repository testpypi dist/*
+	@if [ -z "$(TEST_TWINE_PASSWORD)" ]; then \
+	    echo "ERROR: TEST_TWINE_PASSWORD not set (put it in .env)"; exit 1; \
+	fi
+	TWINE_USERNAME=__token__ \
+	TWINE_PASSWORD="$(TEST_TWINE_PASSWORD)" \
+	    $(PYTHON) -m twine upload --repository testpypi dist/*
 
 release: build
-	$(PYTHON) -m twine upload dist/*
+	@if [ -z "$(TWINE_PASSWORD)" ]; then \
+	    echo "ERROR: TWINE_PASSWORD not set (put it in .env)"; exit 1; \
+	fi
+	TWINE_USERNAME=__token__ \
+	TWINE_PASSWORD="$(TWINE_PASSWORD)" \
+	    $(PYTHON) -m twine upload dist/*
 
 .DEFAULT_GOAL := help
