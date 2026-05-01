@@ -10,6 +10,13 @@ Coordinated dependency-floor bump + Codex audit follow-ups. No public-API change
 identically to v1.3.0. The supported install matrix narrows — flag
 this if you depend on the older floors.
 
+### Added
+
+- **`fractal.__version__`** — top-level version attribute, read via
+  `importlib.metadata` so there's a single source of truth (`setup.py`).
+  Matches the numpy/pandas/mlflow convention; useful for sanity-checks
+  like `print(f"fractal-defi {fractal.__version__}")` in notebooks.
+
 ### Dependencies (user-visible)
 
 - **Runtime floors raised.** `setup.py::install_requires` now requires:
