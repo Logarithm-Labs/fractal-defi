@@ -9,13 +9,18 @@ Detailed context goes in the body below.
 
 ## What changed
 
-<!-- Bullet list, one line per item. Group by area if helpful. -->
+<!--
+Tick the level(s) this PR touches and add a one-line note on each.
+Levels mirror the repo's mental model — same set on bug_report.md
+and feature_request.md, so reviewers can filter consistently.
+-->
 
-- [ ] entities:
-- [ ] strategies:
-- [ ] loaders:
-- [ ] pipeline / MLflow:
-- [ ] tests / docs:
+- [ ] **entity** — `fractal/core/entities/` (Aave, Hyperliquid, Uniswap, stETH, GMX, simple/*):
+- [ ] **strategy** — `fractal/strategies/` (BasisTrading, HyperliquidBasis, TauReset):
+- [ ] **loaders** — `fractal/loaders/` (Binance, Hyperliquid, Aave, GMX, TheGraph, sims):
+- [ ] **core** — `fractal/core/base/`, `fractal/core/pipeline.py` (Action / Observation / BaseStrategy / MLflow pipeline):
+- [ ] **infra** — `setup.py`, `Makefile`, `.github/`, `scripts/`, `docs/`, pre-commit, pyproject:
+- [ ] **tests** — `tests/` (core / loaders / mlflow_tests):
 
 ## Test plan
 

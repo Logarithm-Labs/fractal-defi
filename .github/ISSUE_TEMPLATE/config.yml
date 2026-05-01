@@ -1,0 +1,18 @@
+# When the user clicks "New issue", offer the structured templates
+# (bug / feature) and these contact links — but no "Open a blank
+# issue" escape hatch. Forces the right form to be picked up front,
+# which keeps the issue list scannable.
+blank_issues_enabled: false
+
+contact_links:
+  - name: Architecture & internals
+    url: https://github.com/Logarithm-Labs/fractal-defi/blob/main/ARCHITECTURE.md
+    about: Entity-as-state-machine semantics, InternalState/GlobalState split, pipeline internals.
+
+  - name: Contributing & release flow
+    url: https://github.com/Logarithm-Labs/fractal-defi/blob/main/CONTRIBUTING.md
+    about: Setup, branching (dev → main), testing pyramid, pre-commit / CI pipeline. Read before opening a PR.
+
+  - name: Examples
+    url: https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples
+    about: quick_start, basis, tau_reset, holder, agentic_trader — runnable references for the public API.
