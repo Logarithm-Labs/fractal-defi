@@ -68,8 +68,13 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
         df["time"] = pd.to_datetime(df["hourStartUnix"].astype(int), unit="s", utc=True)
         df["volume"] = df["hourlyVolumeUSD"].astype(float)
         df["liquidity"] = df["totalSupply"].astype(float)
-        df["tvl"] = df["reserveUSD"].astype(float)
         df["fees"] = df["volume"] * self.fee_tier
+        # ``reserveUSD`` from the subgraph is end-of-bar pool value
+        # (= on-chain reserves AFTER this bar's fees). ``UniswapV2LPEntity``
+        # expects ``tvl`` to be PRE-fee for the bar so that
+        # ``share * tvl + share * fees`` reconstructs the correct post-fee
+        # position. Subtract the bar's fees here so the contract holds.
+        df["tvl"] = df["reserveUSD"].astype(float) - df["fees"]
         df = df[cols].dropna()
         df = df[df["liquidity"] != 0]
         df = df.sort_values("time").drop_duplicates("time").reset_index(drop=True)

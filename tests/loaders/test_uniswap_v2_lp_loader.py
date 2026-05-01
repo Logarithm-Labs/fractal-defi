@@ -1,6 +1,7 @@
 """Real-API tests for the Uniswap V2 hourly pool-data loader."""
 from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 
 from fractal.loaders import EthereumUniswapV2PoolDataLoader, LoaderType, PoolHistory
@@ -9,6 +10,35 @@ UTC = timezone.utc
 
 # USDC/WETH 0.3% pair on Ethereum mainnet
 USDC_WETH_PAIR = "0xa43fe16908251ee70ef74718545e4fe6c5ccec9f"
+
+
+def test_v2_loader_emits_pre_fee_tvl():
+    """Offline lock-in: ``transform()`` subtracts this-bar fees from
+    ``reserveUSD`` to produce the pre-fee ``tvl`` that
+    :class:`UniswapV2LPEntity` expects per its loader contract.
+
+    Ground truth for one synthetic row: ``hourlyVolumeUSD=1_000_000``,
+    ``fee_tier=0.003`` ⇒ ``fees = 3_000``. ``reserveUSD = 10_000_000``
+    is the post-fee end-of-bar reserves; pre-fee tvl is therefore
+    ``10_000_000 - 3_000 = 9_997_000``.
+    """
+    loader = EthereumUniswapV2PoolDataLoader(
+        pool=USDC_WETH_PAIR, fee_tier=0.003, api_key="dummy",
+    )
+    loader._data = pd.DataFrame([{
+        "hourStartUnix": 1_700_000_000,
+        "hourlyVolumeUSD": "1000000",
+        "totalSupply": "12345.6",
+        "reserveUSD": "10000000",
+    }])
+    loader.transform()
+    df = loader._data
+    assert len(df) == 1
+    assert df.iloc[0]["volume"] == pytest.approx(1_000_000)
+    assert df.iloc[0]["fees"] == pytest.approx(3_000)
+    # Pre-fee invariant: tvl + fees == reserveUSD
+    assert df.iloc[0]["tvl"] == pytest.approx(9_997_000)
+    assert df.iloc[0]["tvl"] + df.iloc[0]["fees"] == pytest.approx(10_000_000)
 
 
 @pytest.mark.integration
