@@ -35,7 +35,7 @@ setup(
     version='1.3.0',
     packages=find_packages(),
     author='Logarithm Labs',
-    author_email='dev@logarithm.fi',
+    author_email='xboringwozniak@gmail.com',
     description=(
         'Open-source Python research library for DeFi strategies. '
         'Compose protocol-agnostic entities (lending, perps, DEX and LP) '
@@ -49,14 +49,13 @@ setup(
         'monte-carlo', 'protocol-agnostic', 'composable',
     ],
     project_urls={
-        'Documentation': 'https://logarithm-labs.gitbook.io/fractal',
         'Source': 'https://github.com/Logarithm-Labs/fractal-defi',
         'Changelog': 'https://github.com/Logarithm-Labs/fractal-defi/blob/main/CHANGELOG.md',
         'Issues': 'https://github.com/Logarithm-Labs/fractal-defi/issues',
     },
     long_description=Path('README.md').read_text(encoding='utf-8'),
     long_description_content_type='text/markdown',
-    url='https://github.com/Logarithm-Labs/Fractal',
+    url='https://github.com/Logarithm-Labs/fractal-defi',
     include_package_data=True,
     python_requires=">=3.10, <3.14",
     install_requires=RUNTIME_REQUIRES,
