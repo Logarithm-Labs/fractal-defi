@@ -5,6 +5,7 @@ from fractal.loaders.binance.binance_prices import (
     BinanceKlinesLoader,
     BinanceMinutePriceLoader,
     BinancePriceLoader,
+    BinanceSpotPriceLoader,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "BinanceDayPriceLoader",
     "BinanceHourPriceLoader",
     "BinanceMinutePriceLoader",
+    "BinanceSpotPriceLoader",
 ]

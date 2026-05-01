@@ -6,6 +6,7 @@ from fractal.loaders.binance import (
     BinanceHourPriceLoader,
     BinanceKlinesLoader,
     BinancePriceLoader,
+    BinanceSpotPriceLoader,
 )
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
@@ -79,4 +80,5 @@ __all__ = [
     "HyperLiquidPerpsPricesLoader",
     "BinanceKlinesLoader",
     "BinancePriceLoader",
+    "BinanceSpotPriceLoader",
 ]

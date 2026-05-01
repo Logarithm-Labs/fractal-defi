@@ -14,7 +14,7 @@ import pandas as pd
 
 from fractal.loaders._dt import to_ms, to_utc, utcnow
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.binance.binance_client import FUTURES_SECTION, BinanceHttp
+from fractal.loaders.binance.binance_client import FUTURES_SECTION, SPOT_SECTION, BinanceHttp
 from fractal.loaders.structs import KlinesHistory, PriceHistory
 
 _REQUEST_SLEEP_SECONDS = 0.0  # Binance is generous; bump if 429s appear
@@ -30,6 +30,10 @@ class BinancePriceLoader(Loader):
 
     _MAX_LIMIT = 1000  # Binance hard cap per /klines request
     _DEFAULT_LOOKBACK_DAYS = 365
+    # Section + path are class attrs so subclasses (BinanceSpotPriceLoader)
+    # can hit the spot endpoint by overriding two constants instead of
+    # duplicating the whole loader.
+    _SECTION = FUTURES_SECTION
     _KLINES_ENDPOINT = "/fapi/v1/klines"
     _INTERVAL_MS: Dict[str, int] = {
         "m": 60 * 1000,
@@ -114,7 +118,7 @@ class BinancePriceLoader(Loader):
                 "startTime": cursor,
                 "endTime": window_end,
             }
-            data = self.http.get(FUTURES_SECTION, self._KLINES_ENDPOINT, params)
+            data = self.http.get(self._SECTION, self._KLINES_ENDPOINT, params)
             if not data:
                 # No data in this window — advance one step and try again.
                 cursor += step_ms
@@ -244,3 +248,16 @@ class BinanceKlinesLoader(BinancePriceLoader):
             close=self._data["close"].astype(float).values,
             volume=self._data["volume"].astype(float).values,
         )
+
+
+class BinanceSpotPriceLoader(BinancePriceLoader):
+    """Spot-market price loader — hits ``api.binance.com/api/v3/klines``.
+
+    Same response shape as the futures endpoint, so all parsing /
+    pagination / caching is inherited unchanged. Useful when the
+    ticker isn't listed on USDT-M futures (low-cap / non-perp pairs)
+    or when you want spot pricing explicitly.
+    """
+
+    _SECTION = SPOT_SECTION
+    _KLINES_ENDPOINT = "/api/v3/klines"
