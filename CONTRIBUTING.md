@@ -222,6 +222,33 @@ If a hook fails, **fix the underlying issue** rather than passing
 `--no-verify`. The same checks run in CI; bypassing locally just
 defers the failure.
 
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every PR and push to `main` or
+`dev`:
+
+| Job | When | What |
+|---|---|---|
+| `lint` | always | `pre-commit run --all-files` (isort + flake8 + pylint + file-shape) |
+| `core-tests` | always | `pytest -m core` on Python 3.10, 3.11, 3.12, 3.13 |
+| `docs` | always | `sphinx-build -W` (warnings = errors) |
+| `slow-tests` | push to `main`/`dev` + weekly + manual | `pytest -m slow` (CSV-replay) |
+| `integration-tests` | weekly + manual | `pytest -m integration` (live APIs) |
+| `e2e-mlflow` | weekly + manual | `bash tests/mlflow_tests/scripts/e2e.sh` |
+
+PR feedback stays fast (lint + core + docs ≈ 2 min). Heavier suites
+that talk to the network or spin up Docker run on schedule + on demand
+to avoid blocking PRs on flaky upstreams.
+
+To trigger a manual run, go to **Actions → CI → Run workflow** and
+pick the branch. To run only one job from a PR, push a draft commit
+and watch the matrix.
+
+If you need a `THE_GRAPH_API_KEY` for the integration / slow-tests
+jobs, set it as a repository secret (Settings → Secrets and variables
+→ Actions). Most loaders work without it — only the TheGraph
+Uniswap/Lido subset requires the key.
+
 ## Examples
 
 Adding an example under `examples/<name>/`:

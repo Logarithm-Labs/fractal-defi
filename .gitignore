@@ -167,14 +167,24 @@ local_run.*
 catboost_info
 .DS_Store
 
-# mlflow and artifacts
-/runs
-/mlruns
-/mlartifact
-/fractal_data
+# Runtime artifacts (these accumulate ANYWHERE — strategy logs go
+# under ``runs/`` cwd-relative, loader cache goes under
+# ``fractal_data/`` cwd-relative). Without the leading slash these
+# rules match at any depth (e.g. ``examples/tau_reset/runs/``).
+runs/
+mlruns/
+mlartifacts/
+fractal_data/
+
+# MLflow Docker harness state (sqlite + artifact tree)
+tests/mlflow_tests/mlflow-data/
+tests/mlflow_tests/output/
+
 /.idea
 *.db
-REVIEW.md
-entities_review.md
-strategies_review.md
-codex_review.md
+
+# Internal review notes — never part of the public docs surface.
+# Case-insensitive glob via character classes catches REVIEW.md,
+# ENTITIES_REVIEW.md, etc. — any file
+# whose name contains "review" in any case and ends in .md.
+*[Rr][Ee][Vv][Ii][Ee][Ww]*.md

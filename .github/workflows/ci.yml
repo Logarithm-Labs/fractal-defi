@@ -1,0 +1,137 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+  # Manual trigger for the slow / integration / e2e jobs.
+  workflow_dispatch:
+  # Weekly run of the full pipeline (catches upstream API drift in
+  # Binance / Hyperliquid / Aave / TheGraph loaders).
+  schedule:
+    - cron: '0 6 * * 1'   # Monday 06:00 UTC
+
+# Cancel an in-flight run for the same ref when a new commit lands.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # 1. Pre-commit: trailing whitespace, isort, flake8, pylint, etc.
+  #    Same checks developers run locally — keeps CI in lockstep.
+  lint:
+    name: Lint (pre-commit)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - name: Install runtime deps for pylint import resolution
+        run: pip install -e ".[dev]"
+      - uses: pre-commit/[email protected]
+
+  # 2. Core test suite across the supported Python matrix.
+  #    Default ``pytest`` (no ``-m``) → just the offline ``core`` layer
+  #    via ``pytest.ini::addopts = -m "not integration and not slow"``.
+  core-tests:
+    name: Core tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - name: Run core tests
+        run: pytest -q --no-header --maxfail=10
+
+  # 3. Sphinx docs build with ``-W`` so any new warning fails CI.
+  docs:
+    name: Docs (Sphinx)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - name: Build docs
+        run: |
+          cd docs
+          make html SPHINXOPTS="-W"
+      - name: Upload built HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: sphinx-html
+          path: docs/build/html
+          retention-days: 14
+
+  # 4. Real-data CSV-replay tests (~50 tests, ~50 s). No external API
+  #    calls; all data ships in ``examples/``. Runs on push to ``main``
+  #    + manual + weekly cron — skipped on PRs to keep PR feedback fast.
+  slow-tests:
+    name: Slow real-data tests
+    runs-on: ubuntu-latest
+    if: github.event_name != 'pull_request'
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - run: pytest -m slow -q --no-header --maxfail=5
+        env:
+          THE_GRAPH_API_KEY: ${{ secrets.THE_GRAPH_API_KEY }}
+
+  # 5. Live integration suite — hits Binance, Hyperliquid, Aave V3,
+  #    GMX, TheGraph (Uniswap V2/V3, Lido). Manual + weekly only:
+  #    flaky external APIs shouldn't block PR merges.
+  integration-tests:
+    name: Integration (live API) tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - run: pytest -m integration -q --no-header --maxfail=10
+        env:
+          THE_GRAPH_API_KEY: ${{ secrets.THE_GRAPH_API_KEY }}
+
+  # 6. End-to-end MLflow harness: docker compose up MLflow, run all
+  #    four pipeline scripts, verify artifacts. Manual + weekly only.
+  e2e-mlflow:
+    name: E2E MLflow harness (Docker)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    needs: core-tests
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - name: Run e2e MLflow pipeline
+        run: bash tests/mlflow_tests/scripts/e2e.sh

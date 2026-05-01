@@ -9,7 +9,11 @@ from setuptools import find_packages, setup
 RUNTIME_REQUIRES = [
     "mlflow>=2.14.1",
     "pandas>=2.2.2",
-    "numpy>=1.16.0",
+    # ``numpy>=1.26.0`` covers the Python 3.10–3.13 matrix without
+    # upper-bound thrashing. The previous ``numpy<2,>=1.16.0`` pin in
+    # v1.1.0 forced pip onto numpy 1.26.4 — which has no Python 3.13
+    # wheel and required a C compiler at install time.
+    "numpy>=1.26.0",
     "loguru>=0.7.2",
     "requests>=2.32.3",
     "scikit-learn>=1.5.0",
@@ -54,7 +58,7 @@ setup(
     long_description_content_type='text/markdown',
     url='https://github.com/Logarithm-Labs/Fractal',
     include_package_data=True,
-    python_requires=">=3.10, <3.13",
+    python_requires=">=3.10, <3.14",
     install_requires=RUNTIME_REQUIRES,
     extras_require={
         "dev": DEV_REQUIRES,
@@ -71,6 +75,7 @@ setup(
         'Programming Language :: Python :: 3.10',
         'Programming Language :: Python :: 3.11',
         'Programming Language :: Python :: 3.12',
+        'Programming Language :: Python :: 3.13',
         'Topic :: Office/Business :: Financial',
         'Topic :: Office/Business :: Financial :: Investment',
         'Topic :: Scientific/Engineering',

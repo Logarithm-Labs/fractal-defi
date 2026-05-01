@@ -1,5 +1,6 @@
 # Fractal
 
+[![CI](https://github.com/Logarithm-Labs/fractal-defi/actions/workflows/ci.yml/badge.svg)](https://github.com/Logarithm-Labs/fractal-defi/actions/workflows/ci.yml)
 [![PyPI version](https://badge.fury.io/py/fractal-defi.svg)](https://badge.fury.io/py/fractal-defi)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
@@ -76,7 +77,7 @@ cd fractal-defi
 pip install -e ".[dev]"
 ```
 
-Requires Python 3.10–3.12.
+Requires Python 3.10–3.13.
 
 ## Quick start
 

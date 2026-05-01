@@ -120,10 +120,16 @@ green.
 
 ### Packaging
 
-- **Python ≥ 3.10** (PEP 604 unions are now used in runtime code).
+- **Python 3.10–3.13** supported (PEP 604 unions are used in runtime
+  code; every runtime dep ships 3.13 wheels).
+- **`numpy>=1.26.0` floor.** v1.1.0 had `numpy<2,>=1.16.0` which
+  forced pip onto numpy 1.26.4 — that release has no Python 3.13
+  wheel, so installs without a C compiler failed at build time. The
+  upper bound is gone and the floor moved to 1.26.0 so pip resolves
+  cleanly to numpy 2.x on Python 3.13.
 - **Runtime / dev split via `extras_require`.** `pytest`, `pylint`,
-  `flake8`, `pre-commit`, `sphinx` moved out of `install_requires`
-  into the `dev` extra.
+  `flake8`, `isort`, `pre-commit`, `sphinx` moved out of
+  `install_requires` into the `dev` extra.
 - **License metadata corrected** — README badge now matches BSD-3-Clause.
 
 ### Tests, examples and docs
@@ -147,9 +153,15 @@ green.
 - **`ARCHITECTURE.md`** added documenting entity-as-state-machine
   semantics, IS/GS split, delegate-resolved actions, notional
   conventions and pipeline internals.
-- **Pre-commit hooks** wired up — `flake8`, `pylint` (fractal + tests),
-  `pytest -m core` plus standard file-shape checks. Install once with
-  `pre-commit install` after `pip install -e ".[dev]"`.
+- **Pre-commit hooks** wired up — `isort`, `flake8`, `pylint` (fractal +
+  tests) plus standard file-shape checks; `pytest -m core` lives on the
+  manual stage. Install once with `pre-commit install` after
+  `pip install -e ".[dev]"`.
+- **GitHub Actions CI** under `.github/workflows/ci.yml`. PR + push
+  to `main`/`dev` runs lint and core tests on Python 3.10–3.13, plus
+  a Sphinx build with warnings-as-errors. Slow real-data tests run
+  on push-to-default-branch and weekly; integration (live API) and
+  e2e MLflow Docker harness run on manual dispatch and weekly cron.
 
 ## [v1.2.1] — 2025
 
