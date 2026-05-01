@@ -15,6 +15,7 @@ RUNTIME_REQUIRES = [
 DEV_REQUIRES = [
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
+    "pytest-cov>=5.0.0",
     "pylint>=4.0.5",
     "flake8>=7.3.0",
     "isort>=8.0.1",

@@ -1,7 +1,8 @@
 # Fractal
 
 [![CI](https://github.com/Logarithm-Labs/fractal-defi/actions/workflows/ci.yml/badge.svg)](https://github.com/Logarithm-Labs/fractal-defi/actions/workflows/ci.yml)
-[![PyPI version](https://badge.fury.io/py/fractal-defi.svg)](https://badge.fury.io/py/fractal-defi)
+[![Coverage](https://codecov.io/gh/Logarithm-Labs/fractal-defi/branch/main/graph/badge.svg)](https://codecov.io/gh/Logarithm-Labs/fractal-defi)
+[![PyPI version](https://img.shields.io/pypi/v/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
 [![Downloads](https://pepy.tech/badge/fractal-defi)](https://pepy.tech/project/fractal-defi)
