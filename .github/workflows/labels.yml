@@ -1,0 +1,50 @@
+name: Sync labels
+
+# Apply ``.github/labels.yml`` to the repo's actual GitHub label set.
+#
+# Triggers on push to main when ONLY the labels file changes — the
+# main CI workflow runs PR-only (no push triggers), but labels are a
+# different beast: they should reflect the canonical state of main
+# AFTER merge, not be validated on PRs (which would attempt to apply
+# unmerged labels).
+#
+# Manual dispatch is also wired up so you can re-sync without a
+# commit (Actions → Sync labels → Run workflow).
+on:
+  push:
+    branches: [main]
+    paths: ['.github/labels.yml']
+  workflow_dispatch:
+
+# Cancel in-flight runs for the same ref so back-to-back commits to
+# labels.yml don't double-apply.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ``EndBug/label-sync`` needs ``issues: write`` to create / update
+# / (optionally) delete labels via the REST API.
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  sync:
+    name: Apply labels.yml to repo
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync GitHub labels with .github/labels.yml
+        uses: EndBug/label-sync@v2
+        with:
+          config-file: .github/labels.yml
+          # ``false`` keeps any out-of-band labels that exist in the
+          # repo but aren't in our YAML (e.g. legacy ones that issues
+          # still reference). Flip to ``true`` once the repo's label
+          # set is fully migrated and you want labels.yml to be
+          # authoritative.
+          delete-other-labels: false
+          # Print the diff before applying — easy to audit in the
+          # workflow log.
+          dry-run: false

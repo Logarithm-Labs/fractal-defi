@@ -1,0 +1,110 @@
+# Dependabot — automated version-bump PRs.
+#
+# Every update opens a PR against ``dev`` (per the gitflow rule that
+# only ``dev`` is ever merged into ``main``), labelled and grouped
+# so the PR list stays scannable.
+#
+# Cadence:
+#   weekly  → things we want to keep current (runtime libs, GH Actions)
+#   monthly → lower-volatility surfaces (example sandboxes, Docker
+#             base images) — less noise, still catches CVEs
+#
+# Grouping: bumps for related ecosystems land in a SINGLE PR rather
+# than 5 separate ones. Major-version bumps still split out (default
+# behavior) so a breaking change doesn't ride along quietly.
+#
+# Updating this file: ``dependabot.yml`` is validated by GitHub on
+# push; mistakes show up under Insights → Dependency graph →
+# Dependabot. The schema lives at:
+# https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+version: 2
+
+updates:
+  # ─── Python deps (setup.py runtime + [dev] extras) ──────────────
+  # Dependabot reads ``setup.py``'s ``install_requires`` and
+  # ``extras_require``; it does NOT distinguish [dev] from runtime,
+  # so we split them into groups by name patterns instead.
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      runtime:
+        # Things end users get when they ``pip install fractal-defi``.
+        # Bumps here can break consumers — review carefully.
+        patterns:
+          - "mlflow"
+          - "pandas"
+          - "numpy"
+          - "loguru"
+          - "requests"
+          - "scikit-learn"
+      dev:
+        # Dev tooling under [dev] extra — only contributors see it.
+        # Safer to batch and merge.
+        patterns:
+          - "pytest*"
+          - "pylint"
+          - "flake8"
+          - "isort"
+          - "pre-commit"
+          - "sphinx*"
+
+  # Agentic-trader example has its own ``requirements.txt`` (LLM
+  # SDKs etc.) — orthogonal to the core library, monthly is enough.
+  - package-ecosystem: "pip"
+    directory: "/examples/agentic_trader"
+    schedule:
+      interval: "monthly"
+    target-branch: "dev"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "deps(agentic_trader)"
+
+  # ─── GitHub Actions ─────────────────────────────────────────────
+  # Bumps actions/checkout, setup-python, cache, upload-artifact, etc.
+  # All into one PR per week — these almost always go in together.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    target-branch: "dev"
+    open-pull-requests-limit: 3
+    labels:
+      - "dependencies"
+      - "infra"
+    commit-message:
+      prefix: "ci"
+    groups:
+      actions:
+        patterns:
+          - "*"
+
+  # ─── Docker (MLflow harness base image) ─────────────────────────
+  # Picks up new ``python:3.x`` / ``mlflow`` base-image versions in
+  # ``tests/mlflow_tests/Dockerfile``. Monthly cadence — the harness
+  # only runs in the e2e job, low blast radius.
+  - package-ecosystem: "docker"
+    directory: "/tests/mlflow_tests"
+    schedule:
+      interval: "monthly"
+    target-branch: "dev"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "tests"
+    commit-message:
+      prefix: "deps(docker)"

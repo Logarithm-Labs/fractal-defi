@@ -1,0 +1,116 @@
+# Canonical GitHub label set for the repo.
+#
+# Format is the one consumed by ``EndBug/label-sync`` and
+# ``crazy-max/ghaction-github-labeler``. If you don't run a sync
+# action yet, this file is documentation — apply it manually via:
+#
+#     # one-shot bulk apply (requires gh CLI authenticated):
+#     yq -r '.[] | "gh label create \"\(.name)\" --color \(.color) --description \"\(.description)\" --force"' \
+#         .github/labels.yml | bash
+#
+# Label families:
+#   * type:   bug / enhancement / documentation / question
+#             — what kind of issue or PR (mutually exclusive in practice)
+#   * area:   the 6-level repo taxonomy (entity / strategy / loaders /
+#             core / infra / tests) — same set the issue + PR templates
+#             surface; multiple can apply
+#   * status: needs-triage, help wanted, good first issue, blocked, …
+#   * meta:   dependencies, breaking-change, performance, security,
+#             release — orthogonal cross-cuts
+
+# ─── type ───────────────────────────────────────────────────────
+- name: "bug"
+  color: "d73a4a"
+  description: "Something works incorrectly or crashes."
+
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New entity / strategy / loader / capability."
+
+- name: "documentation"
+  color: "0075ca"
+  description: "Docs, docstrings, README, ARCHITECTURE, examples copy."
+
+- name: "question"
+  color: "d876e3"
+  description: "Usage question — consider Discussions instead."
+
+# ─── area (6-level taxonomy from issue + PR templates) ──────────
+# Single muted color across the family so they read as a group.
+- name: "area: entity"
+  color: "bfd4f2"
+  description: "fractal/core/entities/ — Aave, Hyperliquid, Uniswap, stETH, GMX, simple/*."
+
+- name: "area: strategy"
+  color: "bfd4f2"
+  description: "fractal/strategies/ — BasisTrading, HyperliquidBasis, TauReset."
+
+- name: "area: loaders"
+  color: "bfd4f2"
+  description: "fractal/loaders/ — Binance, Hyperliquid, Aave, GMX, TheGraph, sims."
+
+- name: "area: core"
+  color: "bfd4f2"
+  description: "fractal/core/base/, fractal/core/pipeline.py — contracts + MLflow pipeline."
+
+- name: "area: infra"
+  color: "bfd4f2"
+  description: "setup.py, Makefile, .github/, scripts/, docs/, pre-commit, pyproject."
+
+- name: "area: tests"
+  color: "bfd4f2"
+  description: "tests/ — core, loaders, mlflow_tests."
+
+# ─── status / lifecycle ─────────────────────────────────────────
+- name: "needs-triage"
+  color: "fbca04"
+  description: "New issue — maintainer hasn't reviewed yet."
+
+- name: "blocked"
+  color: "b60205"
+  description: "Cannot progress until something external resolves."
+
+- name: "help wanted"
+  color: "008672"
+  description: "Maintainers welcome a contributor PR for this."
+
+- name: "good first issue"
+  color: "7057ff"
+  description: "Scoped narrowly; safe entry point for newcomers."
+
+- name: "wontfix"
+  color: "ffffff"
+  description: "Out of scope or by-design — closing without action."
+
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "Already reported elsewhere — pointing to the canonical issue."
+
+- name: "invalid"
+  color: "e4e669"
+  description: "Not actionable as filed (insufficient repro, misuse, etc.)."
+
+# ─── meta / cross-cuts ──────────────────────────────────────────
+- name: "dependencies"
+  color: "0366d6"
+  description: "Bumps from Dependabot or manual dep changes."
+
+- name: "breaking-change"
+  color: "b60205"
+  description: "Public API change — needs a major version bump."
+
+- name: "performance"
+  color: "ff8c00"
+  description: "Throughput / memory / latency — backtest runtime."
+
+- name: "security"
+  color: "ee0701"
+  description: "Vulnerability or hardening — see SECURITY.md."
+
+- name: "release"
+  color: "5319e7"
+  description: "Release coordination — version bumps, CHANGELOG, PyPI."
+
+- name: "research"
+  color: "0e8a16"
+  description: "Notebook / study / strategy write-up under examples/ — research artifact, not framework code."
