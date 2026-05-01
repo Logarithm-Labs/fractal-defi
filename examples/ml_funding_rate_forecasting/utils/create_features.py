@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import linregress
-from statsmodels.tsa.stattools import acf, pacf
+from statsmodels.tsa.stattools import acf
 
 
 def extract_time_series_features(funding_rate_series: pd.Series) -> dict:
@@ -95,7 +95,11 @@ def mfi(data: pd.DataFrame, period: int = 14) -> pd.Series:
 
 def ema(data: pd.DataFrame, period: int = 14) -> pd.Series:
     alpha = 2 / (period + 1)
-    ema_values = [data["close_futr"][0]]
-    for price in data["close_futr"][1:]:
+    # Use positional access (``.iloc`` / ``.to_numpy()``) so this works
+    # on DataFrames whose index isn't a clean 0..N RangeIndex (e.g.
+    # post-merge / post-filter slices the notebook hands in).
+    prices = data["close_futr"].to_numpy()
+    ema_values = [prices[0]]
+    for price in prices[1:]:
         ema_values.append((price * alpha) + (ema_values[-1] * (1 - alpha)))
     return pd.Series(ema_values, index=data.index)

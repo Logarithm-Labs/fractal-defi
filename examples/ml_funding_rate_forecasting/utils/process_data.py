@@ -65,11 +65,13 @@ def process_ticker(ticker_name):
     df = df.merge(df_rate, on="open_time", how="left")
 
     df["open_time"] = df["open_time"].str[:-6]
-    df.sort_values(by="open_time", ascending=False, inplace=True)
     df.drop(columns=["ticker"], inplace=True)
 
+    # Sort ASCENDING first so ffill() propagates the last known
+    # funding rate FORWARD in time (carry-forward semantics, not
+    # backwards-into-the-past).
+    df.sort_values(by="open_time", ascending=True, inplace=True)
     df["fundingRate"] = df["fundingRate"].ffill()
     df.dropna(inplace=True)
-    df.sort_values(by="open_time", ascending=True, inplace=True)
 
     return df
