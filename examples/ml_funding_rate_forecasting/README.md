@@ -14,10 +14,15 @@ This directory contains an example project for forecasting funding rates in DeFi
 ## Using Pipeline
 
 1. **Install Dependencies**
-    Ensure you have Python 3.8+ installed. Install required packages using (local requirements in this directory):
+    Requires Python 3.10–3.13 (matches `fractal-defi`'s `python_requires`).
+    Install from this directory:
     ```bash
     pip install -r requirements.txt
     ```
+    The file pulls in `fractal-defi>=1.3.1` and a small set of ML
+    extras the framework doesn't ship (scipy, statsmodels, catboost,
+    hdbscan, tqdm). Runtime libraries (numpy / pandas / mlflow / etc.)
+    come transitively through `fractal-defi` at the floors it pins.
 
 2. **Download and Prepare Data**
     Just run notebook `notebooks/simple_research.ipynb` and get data in the first section with functions `list_top_n_tickers()` and `download_spot_future_fr_data()`. Processing (join) by `process_ticker()`
@@ -36,5 +41,6 @@ SMAPE
 
 ## Requirements
 
-- Python 3.8+
-- Libraries: See `requirements.txt` for a complete list.
+- Python 3.10–3.13
+- Libraries: see `requirements.txt`. Notebook needs `BinanceSpotPriceLoader`,
+  which is part of `fractal-defi>=1.3.1`.

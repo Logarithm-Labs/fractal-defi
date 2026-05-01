@@ -1,14 +1,20 @@
-mlflow>=2.14.1
-pandas>=2.2.2
-numpy>=1.16.0
-loguru>=0.7.2
-pytest>=8.2.2
-pylint>=3.2.5
-flake8>=7.1.0
-requests>=2.32.3
-scipy==1.14.0
-black==25.1.0
-statsmodels==0.14.4
-catboost==1.2.8
-tqdm==4.67.1
-hdbscan==0.8.40
+# Example-only dependencies.
+#
+# Runtime libraries (mlflow, pandas, numpy, loguru, requests,
+# scikit-learn) come transitively through ``fractal-defi`` itself
+# at the floors set in its ``setup.py::install_requires``. Listing
+# them here too would only risk resolver conflicts (e.g. the old
+# ``numpy>=1.16.0`` floor that previously lived in this file is
+# incompatible with ``pandas>=2.2.2``, which ``fractal-defi``
+# already requires).
+#
+# This notebook calls :class:`BinanceSpotPriceLoader`, which lands
+# in 1.3.1+ — anything older won't import.
+fractal-defi>=1.3.1
+
+# ML / stats extras the framework doesn't ship:
+scipy>=1.14.0           # linregress in create_features.py
+statsmodels>=0.14.4     # acf / pacf in create_features.py
+catboost>=1.2.8         # gradient-boosted regressor in the notebook
+hdbscan>=0.8.40         # density-based clustering in the notebook
+tqdm>=4.67.1            # progress bars in get_data.py
