@@ -2,12 +2,12 @@
 # installed dependencies come from ``setup.py::install_requires`` /
 # ``extras_require[dev]``; this file mirrors them for ``pip install -r``
 # convenience.
-mlflow>=2.14.1
-pandas>=2.2.2
-numpy>=1.26.0
-loguru>=0.7.2
-requests>=2.32.3
-scikit-learn>=1.5.0
+mlflow>=3.11.1
+pandas>=2.3.3
+numpy>=2.2.6
+loguru>=0.7.3
+requests>=2.33.1
+scikit-learn>=1.7.2
 pytest>=8.2.2
 pytest-timeout>=2.3.0
 pylint>=3.2.5
