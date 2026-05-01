@@ -69,95 +69,125 @@ tests/
 pip install fractal-defi
 ```
 
-Or from source:
+Or from source (latest unreleased ``dev`` branch):
 
 ```bash
 git clone https://github.com/Logarithm-Labs/fractal-defi.git
 cd fractal-defi
-pip install -e ".[dev]"
+pip install .
 ```
 
 Requires Python 3.10–3.13.
 
-## Quick start
-
-The smallest end-to-end DeFi example — a passive lender accruing 5% APY for
-a year — is in `examples/quick_start.py`:
+Contributors and anyone running the test suite want the editable
+install with the dev extras (pulls in pytest, pylint, flake8, isort,
+pre-commit, sphinx). See [`CONTRIBUTING.md`](CONTRIBUTING.md):
 
 ```bash
-PYTHONPATH=. python examples/quick_start.py
+pip install -e ".[dev]"
+pre-commit install
 ```
 
-Output:
+## Quick start
+
+A passive Aave-style lender accruing 5% APY for a year, no network or
+MLflow needed. After installing, write the file below as
+`quick_start.py` and run it:
+
+```python
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
+from typing import List
+
+from fractal.core.base import (Action, ActionToTake, BaseStrategy,
+                               BaseStrategyParams, NamedEntity, Observation)
+from fractal.core.entities import SimpleLendingEntity, SimpleLendingGlobalState
+
+
+@dataclass
+class LendingParams(BaseStrategyParams):
+    INITIAL_BALANCE: float = 10_000.0
+    LENDING_APY: float = 0.05
+
+
+class PassiveLender(BaseStrategy[LendingParams]):
+    def set_up(self) -> None:
+        self.register_entity(NamedEntity("LENDING", SimpleLendingEntity()))
+        self._funded = False
+
+    def predict(self) -> List[ActionToTake]:
+        if self._funded:
+            return []
+        self._funded = True
+        return [ActionToTake("LENDING", Action(
+            "deposit", {"amount_in_notional": self._params.INITIAL_BALANCE},
+        ))]
+
+
+hours = 365 * 24
+start = datetime(2024, 1, 1, tzinfo=UTC)
+observations = [
+    Observation(timestamp=start + timedelta(hours=i), states={
+        "LENDING": SimpleLendingGlobalState(
+            collateral_price=1.0, debt_price=1.0,
+            lending_rate=0.05 / hours, borrowing_rate=0.0,
+        ),
+    })
+    for i in range(hours + 1)
+]
+
+result = PassiveLender(params=LendingParams()).run(observations)
+print(result.get_default_metrics())
+```
 
 ```
-simulating 8761 hourly observations (1 year @ 5% APY)
-metrics: StrategyMetrics(accumulated_return=0.05127, apy=0.05127, sharpe=0.0, max_drawdown=0.0)
-final balance: 10,512.7095
-closed-form  : 10,512.7095
-mismatch     : 7.6e-11
+StrategyMetrics(accumulated_return=0.05127, apy=0.05127, sharpe=0.0, max_drawdown=0.0)
 ```
 
-The 80-line script demonstrates the full lifecycle: typed `BaseStrategyParams`,
-`BaseStrategy[Params]` generic, `register_entity`, `predict`,
-`strategy.run(observations)`, metrics extraction, CSV dump.
+The same script lives at [`examples/quick_start.py`](examples/quick_start.py)
+in the repo. The repo also ships heavier examples covering basis trading,
+LP rebalancing, agentic trading and a toy hodler — see below.
 
 ## Examples
 
 | Path | What it shows |
 |---|---|
-| [`examples/quick_start.py`](examples/quick_start.py) | Hello-Fractal: passive lending position with hourly compounding |
+| [`examples/quick_start.py`](examples/quick_start.py) | Hello-Fractal: passive lending with hourly compounding |
 | [`examples/holder/`](examples/holder/) | Toy spot HODL with simple buy / sell triggers |
 | [`examples/basis/`](examples/basis/) | Hyperliquid basis trade — perp short hedged against spot long |
 | [`examples/tau_reset/`](examples/tau_reset/) | Active Uniswap V3 LP with τ-reset rebalancing |
 | [`examples/agentic_trader/`](examples/agentic_trader/) | LLM-driven trading agent over historical klines |
 
-Run any example from the repo root:
+After cloning the repo and installing the package, run an example
+directly:
 
 ```bash
-PYTHONPATH=. python examples/<name>/backtest.py     # single backtest
-PYTHONPATH=. python examples/<name>/grid.py         # MLflow grid search
+python examples/quick_start.py
+python examples/basis/backtest.py
+python examples/tau_reset/backtest.py
 ```
 
-The grid-search variants need a running MLflow server. The simplest local
-setup ships with the repo:
+The grid-search variants (`examples/<name>/grid.py`) log results to
+MLflow. The repo ships a self-contained Docker MLflow stack — bring it
+up, point your shell at it, run the grid:
 
 ```bash
-bash tests/mlflow_tests/scripts/start_mlflow.sh   # docker compose up MLflow on :5500
+bash tests/mlflow_tests/scripts/start_mlflow.sh   # MLflow on :5500
 export MLFLOW_URI=http://localhost:5500
-PYTHONPATH=. python examples/basis/grid.py
-```
-
-## Tests
-
-```bash
-pytest                 # default = offline core suite (~1100 tests, ~10s)
-pytest -m slow         # add real-data CSV replays (~50 tests, ~50s)
-pytest -m integration  # live API tests; requires THE_GRAPH_API_KEY for some
-```
-
-End-to-end MLflow harness (Docker-based):
-
-```bash
-bash tests/mlflow_tests/scripts/e2e.sh             # full pipeline cycle
+python examples/basis/grid.py
 ```
 
 ## Documentation
 
-- **Sphinx API reference.** Build locally with `cd docs && make html`,
-  then open `docs/build/html/index.html` (or
-  `python3 -m http.server -d docs/build/html 8000` and browse
-  http://localhost:8000).
-- **Architecture & design notes.** See [`ARCHITECTURE.md`](ARCHITECTURE.md)
-  for entity-as-state-machine semantics, the InternalState / GlobalState
-  split, delegate-resolved actions, notional accounting and pipeline
-  internals.
-- **Changelog.** See [`CHANGELOG.md`](CHANGELOG.md).
-- **Contributing.** PRs are welcome — see
-  [`CONTRIBUTING.md`](CONTRIBUTING.md) for setup, branching, the
-  testing pyramid (what kind of tests are required for what kind of
-  change), and the pre-commit pipeline. Run `pre-commit install`
-  once after cloning so hooks fire on every commit.
+- [`ARCHITECTURE.md`](ARCHITECTURE.md) — entity-as-state-machine
+  semantics, the `InternalState` / `GlobalState` split,
+  delegate-resolved actions, notional accounting, pipeline internals.
+- [`CHANGELOG.md`](CHANGELOG.md) — release notes.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — setup, branching, the
+  testing pyramid, the pre-commit / CI pipeline. Required reading
+  before opening a PR.
+- Sphinx API reference can be built locally from the repo
+  (`make docs`); a hosted version is on the project's docs site.
 
 ## License
 
