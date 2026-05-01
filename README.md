@@ -145,25 +145,30 @@ print(result.get_default_metrics())
 StrategyMetrics(accumulated_return=0.05127, apy=0.05127, sharpe=0.0, max_drawdown=0.0)
 ```
 
-The same script lives at [`examples/quick_start.py`](examples/quick_start.py)
-in the repo. The repo also ships heavier examples covering basis trading,
-LP rebalancing, agentic trading and a toy hodler — see below.
+The same script lives at [`examples/quick_start/quick_start.py`](examples/quick_start/quick_start.py)
+in the repo, alongside [`quick_start.ipynb`](examples/quick_start/quick_start.ipynb)
+— a notebook that walks the same example then layers on a Uniswap V2
+LP entity-as-model demo (with an IL chart) and a real-data ETH/USDC V2
+hold-and-fees backtest. The repo also ships heavier examples covering
+basis trading, LP rebalancing, agentic trading and a toy hodler — see
+below.
 
 ## Examples
 
 | Path | What it shows |
 |---|---|
-| [`examples/quick_start.py`](examples/quick_start.py) | Hello-Fractal: passive lending with hourly compounding |
+| [`examples/quick_start/`](examples/quick_start/) | Hello-Fractal + Uniswap V2 IL demo + real-data V2 backtest (script + notebook) |
 | [`examples/holder/`](examples/holder/) | Toy spot HODL with simple buy / sell triggers |
 | [`examples/basis/`](examples/basis/) | Hyperliquid basis trade — perp short hedged against spot long |
 | [`examples/tau_reset/`](examples/tau_reset/) | Active Uniswap V3 LP with τ-reset rebalancing |
 | [`examples/agentic_trader/`](examples/agentic_trader/) | LLM-driven trading agent over historical klines |
+| [`examples/ml_funding_rate_forecasting/`](examples/ml_funding_rate_forecasting/) | ML pipeline: forecasting Binance funding rates with feature engineering + CatBoost |
 
 After cloning the repo and installing the package, run an example
 directly:
 
 ```bash
-python examples/quick_start.py
+python examples/quick_start/quick_start.py
 python examples/basis/backtest.py
 python examples/tau_reset/backtest.py
 ```
