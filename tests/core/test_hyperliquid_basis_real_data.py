@@ -14,7 +14,7 @@ from fractal.strategies.hyperliquid_basis import HyperliquidBasis  # noqa: E402
 
 
 _FIXTURES_DIR = (Path(__file__).resolve().parents[2]
-                 / "examples" / "managed_basis_strategy")
+                 / "examples" / "basis")
 
 
 @dataclass

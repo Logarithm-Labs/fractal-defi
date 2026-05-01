@@ -14,7 +14,7 @@ from fractal.strategies.tau_reset_strategy import (  # noqa: E402
 
 
 _FIXTURE = (Path(__file__).resolve().parents[2]
-            / "examples" / "tau_strategy" / "tau_strategy_result.csv")
+            / "examples" / "tau_reset" / "tau_strategy_result.csv")
 
 
 def _load_observations(*, n):

@@ -51,8 +51,7 @@ class AgentTradingStrategy(BaseStrategy[AgentTradingStrategyParams]):
         exchange = self.get_entity('exchange')
         exchange.action_deposit(self._params.INITIAL_BALANCE)
 
-    def predict(self) -> ActionToTake:
-
+    def predict(self) -> List[ActionToTake]:
         if self._window_size == 0:
             exchange: SimpleSpotExchange = self.get_entity('exchange')
             internal_state: SimpleSpotExchangeInternalState = exchange.internal_state

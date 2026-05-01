@@ -1,13 +1,12 @@
-"""Lock-in tests for Hyperliquid Phase 3 cleanup fixes.
+"""Lock-ins for ``HyperliquidEntity`` clearing / zero-amount edges.
 
-* **B4 (H-6)**: ``_clearing`` preserves the **incoming** position's
-  ``max_leverage`` when a flip-direction trade leaves a remainder.
-  Previously hard-coded to ``self.MAX_LEVERAGE``, silently overwriting
-  per-position leverage.
-* **B5 (H-5)**: ``leverage`` returns ``+inf`` when ``balance <= 0`` with
-  a non-zero position, instead of negative or numerical garbage.
-* **B6 (H-4)**: ``action_open_position(0)`` is a no-op — does not push
-  a zero-amount position onto the list, does not call ``_clearing``.
+* ``_clearing`` preserves the incoming position's ``max_leverage`` when
+  a flip-direction trade leaves a remainder (previously hard-coded to
+  ``self.MAX_LEVERAGE``, silently overwriting per-position leverage).
+* ``leverage`` returns ``+inf`` when ``balance <= 0`` with a non-zero
+  position, instead of a negative or numerical garbage value.
+* ``action_open_position(0)`` is a no-op — does not push a zero-amount
+  position onto the list and does not call ``_clearing``.
 """
 import math
 
@@ -78,7 +77,7 @@ def test_leverage_inf_when_balance_negative_with_position():
     not a negative ratio.
 
     Built by directly inserting the position; ``action_open_position``
-    rejects this setup post-H4 because it exceeds ``max_leverage`` at
+    rejects this setup because it exceeds ``max_leverage`` at
     the time of opening (this test is about leverage math under water,
     not about whether it could have been opened).
     """

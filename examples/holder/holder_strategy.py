@@ -30,7 +30,7 @@ class HodlerStrategy(BaseStrategy[HolderStrategyParams]):
         if self._params is not None:
             self.__deposit_into_exchange()
 
-    def predict(self) -> ActionToTake:
+    def predict(self) -> List[ActionToTake]:
         exchange: BaseSpotEntity = self.get_entity('exchange')
         if exchange.global_state.price < self._params.BUY_PRICE:
             # Spend a fraction of available cash on the buy.

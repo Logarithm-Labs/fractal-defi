@@ -1,111 +1,115 @@
-import numpy as np
-import pandas as pd
+"""Hello-Fractal: passive lending position with accruing APY.
 
+The smallest end-to-end DeFi example — one lending entity, one strategy,
+synthetic observations, no MLflow. Demonstrates Fractal's primitives in
+~80 lines:
+
+* a typed params dataclass (``BaseStrategyParams`` subclass)
+* a strategy class with the generic argument (``BaseStrategy[Params]``)
+  so ``set_params`` knows which dataclass to coerce dict-shaped grid
+  cells into
+* one entity registered in ``set_up`` (``SimpleLendingEntity``: deposit
+  collateral, optionally borrow, interest accrues per ``update_state``)
+* a ``predict`` that emits a single :class:`ActionToTake` on the first
+  observation (deposit ``INITIAL_BALANCE`` as collateral) and nothing
+  afterwards — collateral compounds at the configured ``LENDING_APY``
+* hand-rolled hourly observations (no loader / network) so the result
+  matches the closed-form compound-interest formula bit-for-bit
+* a single ``strategy.run(observations)`` call returning
+  :class:`StrategyResult` with ``get_default_metrics()`` /
+  ``to_dataframe()``
+
+The scenario: deposit $10,000 of USDC into a lending market that pays a
+flat 5% APY, watch it compound hourly for a year, compare against the
+closed-form ``P · (1 + r/n)^n``.
+
+Run from the repo root:
+
+    PYTHONPATH=. python examples/quick_start.py
+"""
+from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import List
-from datetime import datetime, UTC
-from sklearn.model_selection import ParameterGrid
 
-from fractal.loaders import PriceHistory, RateHistory
-from fractal.loaders import HyperliquidFundingRatesLoader, HyperLiquidPerpsPricesLoader
-
-from fractal.core.base import Observation
-from fractal.core.pipeline import (
-    DefaultPipeline, MLFlowConfig, ExperimentConfig)
-from fractal.core.entities import UniswapV3LPGlobalState, HyperLiquidGlobalState
-
-from fractal.strategies.hyperliquid_basis import HyperliquidBasis
+from fractal.core.base import (Action, ActionToTake, BaseStrategy,
+                               BaseStrategyParams, NamedEntity, Observation)
+from fractal.core.entities import SimpleLendingEntity, SimpleLendingGlobalState
 
 
-def get_observations(
-        rate_data: RateHistory, price_data: PriceHistory,
-        start_time: datetime = None, end_time: datetime = None
-    ) -> List[Observation]:
+@dataclass
+class LendingParams(BaseStrategyParams):
+    """Hyperparams for :class:`PassiveLenderStrategy`."""
+    INITIAL_BALANCE: float = 10_000.0
+    LENDING_APY: float = 0.05            # 5% annual on the supplied side
+
+
+class PassiveLenderStrategy(BaseStrategy[LendingParams]):
+    """Deposit ``INITIAL_BALANCE`` once, then sit and accrue.
+
+    Pure compounding demo — no rebalancing, no borrowing, no liquidation
+    risk. The framework drives the entity's ``update_state`` each tick,
+    which applies the per-step ``lending_rate`` to ``collateral``.
     """
-    Get observations from the pool and price data for the ManagedBasisStrategy.
 
-    Returns:
-        List[Observation]: The observation list for ManagedBasisStrategy.
+    def set_up(self) -> None:
+        self.register_entity(NamedEntity(
+            entity_name='LENDING',
+            entity=SimpleLendingEntity(),
+        ))
+        self._funded: bool = False
+
+    def predict(self) -> List[ActionToTake]:
+        # First observation: deposit the entire initial balance as
+        # collateral. Every subsequent tick is a no-op — the framework
+        # still calls ``update_state`` which compounds the position.
+        if self._funded:
+            return []
+        self._funded = True
+        return [ActionToTake('LENDING', Action(
+            'deposit', {'amount_in_notional': self._params.INITIAL_BALANCE},
+        ))]
+
+
+def build_observations(apy: float, days: int = 365) -> List[Observation]:
+    """One year of hourly snapshots with a flat lending rate.
+
+    APY is converted to a per-step rate via ``apy / hours_per_year`` —
+    the simple-interest convention :class:`SimpleLendingEntity` uses on
+    each ``update_state`` (compounding emerges from repeated ticks).
+    Collateral price is held at 1.0 (USD-stable supply asset).
     """
-    observations_df: pd.DataFrame = price_data.join(rate_data)
-    observations_df['rate'] = observations_df['rate'].fillna(0)
-    observations_df = observations_df.loc[start_time:end_time]
-    observations_df = observations_df.dropna()
-    start_time = observations_df.index.min()
-    if end_time is None:
-        end_time = observations_df.index.max()
-    observations_df = observations_df.sort_index()
+    hours = days * 24
+    per_step_rate = apy / hours
+    start = datetime(2024, 1, 1, tzinfo=UTC)
     return [
-        Observation(
-            timestamp=timestamp,
-            states={
-                'SPOT': UniswapV3LPGlobalState(price=price, tvl=0, volume=0, fees=0, liquidity=0),  # we need only spot price
-                'HEDGE': HyperLiquidGlobalState(mark_price=price, funding_rate=rate)
-            }
-        ) for timestamp, (price, rate) in observations_df.iterrows()
+        Observation(timestamp=start + timedelta(hours=i), states={
+            'LENDING': SimpleLendingGlobalState(
+                collateral_price=1.0,
+                debt_price=1.0,
+                lending_rate=per_step_rate,
+                borrowing_rate=0.0,
+            ),
+        })
+        for i in range(hours + 1)
     ]
-
-
-def build_observations(
-        ticker: str, start_time: datetime = None, end_time: datetime = None,
-    ) -> List[Observation]:
-    """
-    Build observations for the ManagedBasisStrategy from the given start and end time.
-    """
-    rate_data: RateHistory = HyperliquidFundingRatesLoader(
-          ticker, start_time=start_time, end_time=end_time).read(with_run=True)
-    prices: PriceHistory = HyperLiquidPerpsPricesLoader(
-          ticker, interval='1h', start_time=start_time, end_time=end_time).read(with_run=True)
-    return get_observations(rate_data, prices, start_time, end_time)
-
-
-def build_grid():
-    raw_grid = ParameterGrid({
-        'MIN_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'TARGET_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'MAX_LEVERAGE': np.arange(1, 12, 1).tolist(),
-        'INITIAL_BALANCE': [1_000_000]
-    })
-
-    valid_grid = [
-        params for params in raw_grid
-        if round(params['MIN_LEVERAGE'], 1) < round(params['TARGET_LEVERAGE'], 1) < round(params['MAX_LEVERAGE'], 1)
-    ]
-    return valid_grid
 
 
 if __name__ == '__main__':
-    # Strategy environment
-    ticker: str = 'BTC'
-    start_time = datetime(2025, 1, 1, tzinfo=UTC)
-    end_time = datetime(2025, 3, 1, tzinfo=UTC)
-    experiment_name = f'hl_basis_{ticker}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
-    # Per-asset Hyperliquid margin cap (entity config — distinct from the
-    # ``MAX_LEVERAGE`` rebalance trigger inside ``params_grid``). 45 is
-    # within Hyperliquid's BTC tier; default is 10 if you omit this line.
-    HyperliquidBasis.MAX_LEVERAGE = 45
+    params = LendingParams(INITIAL_BALANCE=10_000.0, LENDING_APY=0.05)
+    observations = build_observations(apy=params.LENDING_APY, days=365)
+    print(f'simulating {len(observations)} hourly observations '
+          f'(1 year @ {params.LENDING_APY:.0%} APY)')
 
-    # Mlflow setup
-    mlflow_config: MLFlowConfig = MLFlowConfig(
-        mlflow_uri='http://127.0.0.1:8080',
-        experiment_name=experiment_name,
-    )
+    strategy = PassiveLenderStrategy(params=params)
+    result = strategy.run(observations)
+    print(f'metrics: {result.get_default_metrics()}')
 
-    # Load data and build observations
-    observations = build_observations(ticker, start_time, end_time)
-    assert len(observations) > 0
+    df = result.to_dataframe()
+    df.to_csv('quick_start_result.csv', index=False)
 
-    # Experiment setup
-    experiment_config: ExperimentConfig = ExperimentConfig(
-        strategy_type=HyperliquidBasis,
-        backtest_observations=observations,
-        window_size=24,  # number of scenarios from history
-        params_grid=build_grid(),
-        debug=True,
-    )
-
-    # Run the DefualtPipeline
-    pipeline: DefaultPipeline = DefaultPipeline(
-        experiment_config=experiment_config,
-        mlflow_config=mlflow_config
-    )
-    pipeline.run()
+    initial = params.INITIAL_BALANCE
+    final = float(df['net_balance'].iloc[-1])
+    closed_form = initial * (1 + params.LENDING_APY / (365 * 24)) ** (365 * 24)
+    print(f'final balance: {final:,.4f}')
+    print(f'closed-form  : {closed_form:,.4f}')
+    print(f'mismatch     : {abs(final - closed_form):.6e}')

@@ -264,7 +264,7 @@ def test_hl_maintenance_margin_uses_current_mark():
 
 @pytest.mark.core
 def test_hl_position_is_dataclass():
-    """Phase 4 (H-8): HyperLiquidPosition uses @dataclass — equality and
+    """HyperLiquidPosition uses @dataclass — equality and
     repr work cleanly."""
     p1 = HyperLiquidPosition(amount=1.0, entry_price=3000, max_leverage=50)
     p2 = HyperLiquidPosition(amount=1.0, entry_price=3000, max_leverage=50)

@@ -8,7 +8,8 @@ from sklearn.model_selection import ParameterGrid
 from fractal.core.pipeline import (
     DefaultPipeline, MLFlowConfig, ExperimentConfig)
 
-from mb_hl_strategy import HyperliquidBasis, build_observations
+from backtest import build_observations
+from fractal.strategies.hyperliquid_basis import HyperliquidBasis
 
 warnings.filterwarnings('ignore')
 
@@ -61,9 +62,9 @@ if __name__ == '__main__':
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=HyperliquidBasis,
         backtest_observations=observations,
-        window_size=24 * 30,
+        # window_size=24 * 30,
         params_grid=build_grid(),
-        debug=True,
+        # debug=True,
     )
     pipeline: DefaultPipeline = DefaultPipeline(
         experiment_config=experiment_config,

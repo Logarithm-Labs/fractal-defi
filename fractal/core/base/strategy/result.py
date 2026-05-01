@@ -68,7 +68,7 @@ class StrategyResult:
         else:
             raise ValueError("notional_price must be None, str or float")
 
-        # H6 guards: avoid divide-by-zero / inf / nan from degenerate inputs.
+        # Guards against divide-by-zero / inf / nan from degenerate inputs.
         if isinstance(notional_price, np.ndarray):
             if (notional_price == 0).any() or (~np.isfinite(notional_price)).any():
                 return self._zero_metrics()

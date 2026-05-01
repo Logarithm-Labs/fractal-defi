@@ -26,7 +26,7 @@ from fractal.core.entities.protocols.hyperliquid import (HyperliquidEntity,
 
 @pytest.mark.core
 def test_positive_funding_saves_short_from_would_be_liquidation():
-    """X-2: with funding-first ordering, a positive-funding tick on a short
+    """With funding-first ordering, a positive-funding tick on a short
     credits collateral BEFORE the liquidation check — preserving a position
     that would otherwise be wiped on the same bar.
 
@@ -50,7 +50,7 @@ def test_positive_funding_tips_long_into_liquidation_same_bar():
     funding cost in the SAME bar (not next bar).
 
     Setup: long 1 ETH at $3000, collateral=$80 (leverage=37.5x ≤ max_lev=50,
-    H4 lets it open). MM=30. Apply funding_rate=+2% with no price move:
+    within max_leverage). MM=30. Apply funding_rate=+2% with no price move:
     collateral -= 60 → 20. MM=30 (unchanged). 20 < 30 → liquidate.
     """
     e = HyperliquidEntity(trading_fee=0.0, max_leverage=50.0)
@@ -152,7 +152,7 @@ def test_funding_uses_alive_size_before_potential_liquidation():
     on its full alive size FIRST (could push further into liquidation),
     not on size=0 after wipe.
 
-    Setup: long 1 ETH @ 3000, coll=80 (leverage=37.5x, H4 lets it open),
+    Setup: long 1 ETH @ 3000, coll=80 (leverage=37.5x, within max_leverage),
     walk price to 2900. Without funding:
     balance = 80 + (2900-3000) = -20 < MM(29) → liquidate, position wiped.
     Funding then would settle on size=0 in old order → no-op, collateral
@@ -197,7 +197,7 @@ def test_hyperliquid_matches_simple_perp_funding_order():
     """Both entities apply funding before liquidation check.
 
     Identical setup (long 1 unit at $3000, coll=$80 → 37.5x ≤ max_lev=50,
-    H4 lets it open); funding_rate=+2% drains 60 → coll=20 < MM(SP)=60
+    within max_leverage); funding_rate=+2% drains 60 → coll=20 < MM(SP)=60
     and < MM(HL)=30. Both wipe in the same bar.
     """
     from fractal.core.entities.simple.perp import (SimplePerpEntity,

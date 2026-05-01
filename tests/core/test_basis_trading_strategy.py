@@ -161,7 +161,7 @@ def test_rebalance_liquidated_branch_returns_four_actions():
 
 @pytest.mark.core
 def test_rebalance_liquidated_branch_orders_hedge_deposit_before_spot_withdraw():
-    # Both actions share the SPOT.cash delegate; withdraw must come AFTER deposit (B-1).
+    # Both actions share the SPOT.cash delegate; withdraw must come AFTER deposit.
     s = _make_strategy(target_lev=3.0)
     _force_liquidated_state(s)
     actions = s._rebalance()
@@ -348,7 +348,7 @@ def test_e2e_downtrend_triggers_rebalance_when_leverage_drops_below_min():
 @pytest.mark.core
 def test_e2e_hedge_liquidation_then_recovery_no_silent_equity_loss():
     # 60% spike liquidates the short. Spot still holds 25 ETH @ 4800 = 120K;
-    # post-rebalance must preserve that. With B-1 unfixed total ≈ 50K.
+    # post-rebalance must preserve that. Pre-fix total ≈ 50K.
     s = _make_strategy(target_lev=3.0, max_lev=5.0)
     t0 = datetime(2024, 1, 1)
     obs = [

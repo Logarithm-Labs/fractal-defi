@@ -1,0 +1,29 @@
+# MLflow tracking server for end-to-end tests.
+#
+# Bring up:    docker compose -f tests/mlflow_tests/docker-compose.yml up -d
+# Bring down:  docker compose -f tests/mlflow_tests/docker-compose.yml down
+# Wipe state:  rm -rf tests/mlflow_tests/mlflow-data
+#
+# The host-side ``mlflow-data/`` mount holds:
+#   * ``mlflow.db``    — sqlite backend store
+#   * ``artifacts/``   — file-based artifact store (logged CSVs, run logs)
+#
+# Run scripts default to ``MLFLOW_URI=http://localhost:5500``.
+
+services:
+  mlflow:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fractal-mlflow-e2e
+    ports:
+      - "5500:5000"
+    volumes:
+      - ./mlflow-data:/mlflow
+    healthcheck:
+      test: ["CMD-SHELL", "python -c 'import urllib.request; urllib.request.urlopen(\"http://localhost:5000/health\")'"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+    restart: unless-stopped

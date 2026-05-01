@@ -59,12 +59,17 @@ def build_observations(
     if fidelity == 'hour':
         pool_data: PoolHistory = UniswapV3EthereumPoolHourDataLoader(
             api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=True)
-        binance_prices: PriceHistory = BinanceHourPriceLoader(ticker, loader_type=LoaderType.CSV).read(with_run=True)
+        binance_prices: PriceHistory = BinanceHourPriceLoader(
+            ticker, loader_type=LoaderType.CSV,
+            start_time=start_time, end_time=end_time,
+        ).read(with_run=True)
     elif fidelity == 'minute':
         pool_data: PoolHistory = UniswapV3EthereumPoolMinuteDataLoader(
             api_key, pool_address, loader_type=LoaderType.CSV).read(with_run=True)
-        binance_prices: PriceHistory = BinanceMinutePriceLoader(ticker, loader_type=LoaderType.CSV,
-                                                                start_time=start_time, end_time=end_time).read(with_run=True)
+        binance_prices: PriceHistory = BinanceMinutePriceLoader(
+            ticker, loader_type=LoaderType.CSV,
+            start_time=start_time, end_time=end_time,
+        ).read(with_run=True)
     else:
         raise ValueError("Fidelity must be either 'hour' or 'minute'.")
     return get_observations(pool_data, binance_prices, start_time, end_time)
@@ -81,7 +86,7 @@ if __name__ == '__main__':
         THE_GRAPH_API_KEY, loader_type=LoaderType.CSV).get_pool_decimals(pool_address)
 
     # Init the strategy. Pool config flows through constructor kwargs
-    # (T-1) — instance state, parallel-safe; preferred over the legacy
+    # — instance state, parallel-safe; preferred over the legacy
     # class-level mutation pattern.
     params: TauResetParams = TauResetParams(TAU=90, INITIAL_BALANCE=1_000_000)
     strategy: TauResetStrategy = TauResetStrategy(

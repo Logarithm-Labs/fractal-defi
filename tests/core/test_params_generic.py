@@ -97,7 +97,7 @@ def test_params_none_on_untyped_strategy_falls_back_to_empty_namespace():
 # ---------------------------------------------- C) other params shapes
 @pytest.mark.core
 def test_params_dict_on_typed_strategy_coerced_to_dataclass():
-    """M10: when the strategy declares ``BaseStrategy[Params]``, a dict
+    """When the strategy declares ``BaseStrategy[Params]``, a dict
     must be splatted into ``PARAMS_CLS(**dict)`` so dataclass defaults,
     type hints and unknown-key rejection apply — not silently wrapped
     in a generic ``BaseStrategyParams``."""
@@ -110,7 +110,7 @@ def test_params_dict_on_typed_strategy_coerced_to_dataclass():
 
 @pytest.mark.core
 def test_params_dict_with_unknown_key_rejected_on_typed_strategy():
-    """M10: typo in dict key must fail loudly via dataclass ``__init__``
+    """A typo in a dict key must fail loudly via dataclass ``__init__``
     rather than silently land in an untyped namespace."""
     with pytest.raises(TypeError):
         _StratWithDefaults(params={"BUY_THRSHOLD": 9000.0})  # typo
@@ -118,11 +118,39 @@ def test_params_dict_with_unknown_key_rejected_on_typed_strategy():
 
 @pytest.mark.core
 def test_params_dict_on_untyped_strategy_wraps_in_basestrategyparams():
-    """M10: without ``PARAMS_CLS`` we keep the historical fallback —
+    """Without ``PARAMS_CLS`` we keep the historical fallback —
     a dict is wrapped in a generic ``BaseStrategyParams``."""
     s = _UntypedStrat(params={"foo": 1})
     assert isinstance(s._params, BaseStrategyParams)
     assert s._params.foo == 1
+
+
+@dataclass
+class _ExtParams(_ParamsWithDefaults):
+    EXECUTION_COST: float = 0.0005
+
+
+class _ExtStrat(_StratWithDefaults):
+    """Subclass that adds extra params via an explicit ``PARAMS_CLS`` override."""
+    PARAMS_CLS = _ExtParams
+
+
+@pytest.mark.core
+def test_subclass_explicit_params_cls_override_accepts_extended_dict():
+    """Regression: an ``sklearn.model_selection.ParameterGrid`` cell
+    (a plain dict) for a strategy whose ``PARAMS_CLS`` extends the
+    parent's params with extra fields must be coerced into the SUBCLASS
+    params dataclass — not the parent's. The original symptom was
+    ``HyperliquidBasis`` inheriting PARAMS_CLS from its parent and
+    rejecting ``EXECUTION_COST`` from a grid cell.
+    """
+    grid_cell = {"BUY_THRESHOLD": 9000.0, "EXECUTION_COST": 0.001}
+    s = _ExtStrat(params=grid_cell)
+    assert isinstance(s._params, _ExtParams)
+    assert s._params.BUY_THRESHOLD == 9000.0
+    assert s._params.EXECUTION_COST == 0.001
+    # default for unspecified field still flows through
+    assert s._params.SELL_THRESHOLD == 2500.0
 
 
 @pytest.mark.core

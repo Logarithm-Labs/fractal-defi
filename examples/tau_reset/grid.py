@@ -10,7 +10,7 @@ from sklearn.model_selection import ParameterGrid
 from fractal.core.pipeline import (
     DefaultPipeline, MLFlowConfig, ExperimentConfig)
 
-from tau_strategy import TauResetStrategy, build_observations, THE_GRAPH_API_KEY
+from examples.tau_reset.backtest import TauResetStrategy, build_observations, THE_GRAPH_API_KEY
 
 
 def build_grid():
@@ -28,11 +28,11 @@ if __name__ == '__main__':
     fidelity = 'minute'
     experiment_name = f'rtau_{fidelity}_{ticker}_{pool_address}_{start_time.strftime("%Y-%m-%d")}_{end_time.strftime("%Y-%m-%d")}'
     # Pool config — class-level fallback works for backward compat,
-    # but the constructor-kwargs path (T-1) is cleaner because it
-    # avoids cross-instance class-state mutation. The launcher inside
-    # the pipeline currently constructs with positional ``params``
-    # only, so we still set class attributes here; switch to
-    # constructor kwargs once the launcher exposes them.
+    # but the constructor-kwargs path is cleaner because it avoids
+    # cross-instance class-state mutation. The launcher inside the
+    # pipeline currently constructs with positional ``params`` only,
+    # so we still set class attributes here; switch to constructor
+    # kwargs once the launcher exposes them.
     TauResetStrategy.token0_decimals = 6
     TauResetStrategy.token1_decimals = 18
     TauResetStrategy.tick_spacing = 60

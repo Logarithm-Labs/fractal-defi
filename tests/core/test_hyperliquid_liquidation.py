@@ -100,7 +100,7 @@ def test_liquidation_triggers_at_exact_liq_price_clean_fp():
     ``maintenance_margin`` are bit-exact equal → ``<=`` triggers.
 
     Setup: short 1 unit at entry=$3, collateral=$3 (leverage 1x = max_lev,
-    H4 lets it open) → balance(p)=6−p, mm(p)=0.5p, liq=4 exactly.
+    within max_leverage) → balance(p)=6−p, mm(p)=0.5p, liq=4 exactly.
     """
     e = _make(collateral=3.0, size=-1.0, entry=3.0, max_leverage=1.0)
     assert e.liquidation_price == 4.0  # clean fp
@@ -163,7 +163,7 @@ def test_short_does_not_liquidate_on_small_price_rise():
 
 @pytest.mark.core
 def test_leverage_change_red_test_now_green():
-    """Original P0-0.1 regression. Build position, then withdraw collateral
+    """Build position, then withdraw collateral
     until balance == maintenance_margin exactly. ``_check_liquidation``
     must return ``True`` at boundary (``<=`` semantics)."""
     e = HyperliquidEntity(trading_fee=0.0)

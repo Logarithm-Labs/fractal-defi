@@ -48,7 +48,7 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
     can be supplied either via constructor kwargs (preferred — instance
     state, safe under parallel runs) or via class attributes (legacy
     pattern). Constructor kwargs take precedence; class-level fallback
-    is preserved for backwards compatibility (T-1).
+    is preserved for backwards compatibility.
     """
 
     # Pool-specific constants. Class-level defaults used as a fallback when

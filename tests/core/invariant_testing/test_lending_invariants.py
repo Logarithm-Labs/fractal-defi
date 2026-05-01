@@ -129,7 +129,7 @@ def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
 
 @pytest.mark.core
 def test_aave_rejects_liq_thr_below_max_ltv():
-    """A-6: ``liq_thr >= max_ltv`` invariant validated at construction."""
+    """``liq_thr >= max_ltv`` invariant validated at construction."""
     with pytest.raises(EntityException, match="liq_thr.*must be >="):
         AaveEntity(max_ltv=0.8, liq_thr=0.7)
 
@@ -239,7 +239,7 @@ def test_ltv_correct_with_debt_simple():
 
 @pytest.mark.core
 def test_aave_ltv_inf_when_collateral_zero_with_debt():
-    """A-7 lock-in: LTV = inf, calculate_repay raises."""
+    """LTV = inf, calculate_repay raises."""
     e = AaveEntity()
     e.update_state(AaveGlobalState(collateral_price=1, debt_price=1))
     e._internal_state.collateral = 0

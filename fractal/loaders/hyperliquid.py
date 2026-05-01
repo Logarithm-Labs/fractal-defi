@@ -190,7 +190,16 @@ class HyperLiquidPerpsPricesLoader(HyperliquidBaseLoader):
                 }
             )
             if not batch:
-                break
+                # Hyperliquid's ``candleSnapshot`` silently returns an empty
+                # array for windows older than its retained history (a few
+                # hundred days, undocumented and asset-dependent). Don't
+                # ``break`` — advance past this window so we still pick up
+                # any later (more recent) chunks the user requested.
+                if all_rows:
+                    break
+                cursor = window_end
+                time.sleep(_REQUEST_SLEEP_SECONDS)
+                continue
             new_rows = [row for row in batch if row["t"] not in seen_t]
             for row in new_rows:
                 seen_t.add(row["t"])

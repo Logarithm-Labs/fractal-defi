@@ -52,7 +52,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
     #: Set to ``True`` after the initial deposit fires. Guards against
     #: silently re-depositing ``INITIAL_BALANCE`` if the strategy is
     #: ever fully wiped (both HEDGE and SPOT balances at zero) — that
-    #: would print money out of thin air (B-3).
+    #: would print money out of thin air.
     _deposited: bool = False
 
     def set_up(self):
@@ -128,7 +128,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
                 )
             # Same delegate is reused on HEDGE.deposit and SPOT.withdraw —
             # deposit must come first, otherwise the withdraw zeroes
-            # SPOT.cash before the delegate resolves on deposit (B-1).
+            # SPOT.cash before the delegate resolves on deposit.
             return [
                 ActionToTake(
                     entity_name='SPOT',
@@ -165,7 +165,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
                     f"delta_spot>0 branch invariant violated: delta_hedge={delta_hedge}, "
                     "expected < 0 (delta_hedge = -delta_spot by construction)"
                 )
-            # B-4: pre-check free margin on HEDGE before issuing the withdraw.
+            # Pre-check free margin on HEDGE before issuing the withdraw.
             # Without this guard, the underlying perp entity raises a generic
             # "withdrawal would drop balance below maintenance margin" — wrap
             # it in a strategy-level message that points at the configuration.

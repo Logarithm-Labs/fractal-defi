@@ -1,6 +1,5 @@
 from typing import List
 from datetime import datetime, UTC
-from dataclasses import dataclass
 
 import pandas as pd
 
@@ -11,16 +10,7 @@ from fractal.loaders.structs import PriceHistory, RateHistory
 
 from fractal.core.base import Observation
 from fractal.core.entities import UniswapV3LPGlobalState, HyperLiquidGlobalState
-from fractal.strategies.basis_trading_strategy import BasisTradingStrategyHyperparams
-from fractal.strategies.hyperliquid_basis import HyperliquidBasis
-
-
-@dataclass
-class HyperliquidBasisParams(BasisTradingStrategyHyperparams):
-    """
-    Parameters for the HyperliquidBasis strategy.
-    """
-    EXECUTION_COST: float
+from fractal.strategies.hyperliquid_basis import HyperliquidBasis, HyperliquidBasisParams
 
 
 def get_observations(
@@ -53,11 +43,20 @@ def get_observations(
 
 
 def build_observations(
-        ticker: str, start_time: datetime = None, end_time: datetime = None, fidelity: str = '1h',
-        use_binance_data: bool = False,
+        ticker: str, start_time: datetime = None, end_time: datetime = None,
+        fidelity: str = '1h', use_binance_data: bool = True,
     ) -> List[Observation]:
-    """
-    Build observations for the ManagedBasisStrategy from the given start and end time.
+    """Build observations for the basis strategy from the given window.
+
+    Two data sources:
+
+    * ``use_binance_data=True`` (default) — Binance public REST for both
+      perp prices and funding rates. Has multi-year history and no rate
+      limit on tickers, so it's the safe choice for any window.
+    * ``use_binance_data=False`` — Hyperliquid's ``candleSnapshot`` and
+      ``fundingHistory`` info endpoints. ``candleSnapshot`` only retains
+      the last few hundred days (asset-dependent); requests further back
+      return empty.
     """
     if use_binance_data:
         prices: PriceHistory = BinancePriceLoader(
@@ -66,12 +65,9 @@ def build_observations(
         rate_data: RateHistory = BinanceFundingLoader(
             ticker=ticker+'USDT', start_time=start_time, end_time=end_time).read(with_run=True)
     else:
-        # use binance data for larger timestampe (HL provides only 5k klines)
-        # prices: PriceHistory = BinancePriceLoader(
-        #     ticker+'USDT', interval=fidelity, loader_type=LoaderType.CSV,
-        #     start_time=start_time, end_time=end_time).read(with_run=True)
         prices: PriceHistory = HyperLiquidPerpsPricesLoader(
-            ticker=ticker, interval=fidelity, start_time=start_time, end_time=end_time).read(with_run=True)
+            ticker=ticker, interval=fidelity,
+            start_time=start_time, end_time=end_time).read(with_run=True)
         rate_data: RateHistory = HyperliquidFundingRatesLoader(
             ticker=ticker, start_time=start_time, end_time=end_time).read(with_run=True)
 
@@ -90,9 +86,9 @@ if __name__ == '__main__':
     MIN_LVG = 1
     TARGET_LVG = 3
     MAX_LVG = 5
-    # Hyperliquid per-asset margin cap (entity config). Default after
-    # HB-1 is also 10 — this line is for explicitness; remove it to
-    # use the default.
+    # Hyperliquid per-asset margin cap (entity config). Default is
+    # also 10 — this line is for explicitness; remove it to use the
+    # default.
     HyperliquidBasis.MAX_LEVERAGE = 10
 
     # Init the strategy

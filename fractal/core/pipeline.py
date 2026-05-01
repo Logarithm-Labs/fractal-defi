@@ -9,17 +9,16 @@ scenarios — each writes its artifacts into one MLflow run.
 Design notes:
 
 * MLflow is **lazily connected** on the first call to ``run`` or
-  ``grid_step`` (P2-5.5). Construction does not require network access,
+  ``grid_step``. Construction does not require network access,
   which makes the pipeline trivially testable and importable.
 * AWS credentials in ``MLFlowConfig`` are only injected into the
-  environment when explicitly provided — they no longer overwrite
+  environment when explicitly provided — they do not overwrite
   pre-existing ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` with
-  empty strings (P1-5.1).
-* ``mlflow.log_params`` requires a ``Mapping``; we coerce
-  ``BaseStrategyParams`` (and its dataclass subclasses) via
-  ``_params_to_dict`` so logging never crashes (P1-5.2).
-* ``ExperimentConfig.step_size`` exposes the sliding-window stride that
-  was previously hardcoded inside ``Launcher.run_scenario`` (P2-5.4).
+  empty strings.
+* ``mlflow.log_params`` requires a ``Mapping``; ``BaseStrategyParams``
+  and its dataclass subclasses are coerced via ``_params_to_dict`` so
+  logging never crashes.
+* ``ExperimentConfig.step_size`` exposes the sliding-window stride.
 """
 import os
 from abc import ABC, abstractmethod
@@ -134,8 +133,8 @@ class Pipeline(ABC):
         """Inject AWS credentials into the environment iff configured.
 
         Empty strings or ``None`` leave the existing env vars (or AWS
-        profile chain) intact — fixes P1-5.1, where the previous
-        unconditional assignment clobbered host credentials with ``""``.
+        profile chain) intact — assigning unconditionally would clobber
+        host credentials with ``""``.
         """
         if self._mlflow_config.aws_access_key_id:
             os.environ["AWS_ACCESS_KEY_ID"] = self._mlflow_config.aws_access_key_id
@@ -155,7 +154,7 @@ class Pipeline(ABC):
         mlflow.set_experiment(self._mlflow_config.experiment_name)
 
     def _ensure_connected(self) -> None:
-        """Connect on first invocation; subsequent calls are no-ops (P2-5.5)."""
+        """Connect on first invocation; subsequent calls are no-ops."""
         if not self._connected:
             self._connect_mlflow()
             self._connected = True

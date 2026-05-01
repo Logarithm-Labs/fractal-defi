@@ -46,6 +46,24 @@ def test_hyperliquid_basis_class_level_override_still_takes_effect():
 
 
 @pytest.mark.core
+def test_hyperliquid_basis_execution_cost_split_evenly_across_legs():
+    """``EXECUTION_COST`` represents the total round-trip basis spread;
+    ``set_up`` charges half on each leg so the sum recovers the configured
+    value on a single open. Lock-in for the per-leg ⇒ total semantics
+    change."""
+    from fractal.strategies.hyperliquid_basis import HyperliquidBasisParams
+    s = HyperliquidBasis(params=HyperliquidBasisParams(
+        MIN_LEVERAGE=1.0, TARGET_LEVERAGE=3.0, MAX_LEVERAGE=5.0,
+        INITIAL_BALANCE=100_000.0, EXECUTION_COST=0.001,
+    ))
+    hedge_fee = s.get_entity('HEDGE').trading_fee
+    spot_fee = s.get_entity('SPOT').trading_fee
+    assert hedge_fee == pytest.approx(0.0005)
+    assert spot_fee == pytest.approx(0.0005)
+    assert hedge_fee + spot_fee == pytest.approx(0.001)
+
+
+@pytest.mark.core
 def test_tau_reset_accepts_constructor_kwargs():
     s = TauResetStrategy(
         params=TauResetParams(TAU=15, INITIAL_BALANCE=100_000.0),

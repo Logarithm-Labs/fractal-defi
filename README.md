@@ -230,13 +230,13 @@ Explore our example strategies to jumpstart your DeFi research:
   [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/holder)
 
 - **Tau Reset Strategy:** Focused on active liquidity management within Uniswap V3.  
-  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/tau_strategy)
+  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/tau_reset)
 
-- **Managed Basis Strategy:** Strategies addressing basis management.  
-  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/managed_basis_strategy)
+- **Basis Strategy:** Strategies addressing basis management.  
+  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/basis)
 
-- **Agent Trading Backtesting:** A comprehensive guide for backtesting AI agent trading strategies.  
-  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/agent_trader)
+- **Agentic Trading Backtesting:** A comprehensive guide for backtesting AI agent trading strategies.  
+  [View Example](https://github.com/Logarithm-Labs/fractal-defi/tree/main/examples/agentic_trader)
 
 ## Documentation
 

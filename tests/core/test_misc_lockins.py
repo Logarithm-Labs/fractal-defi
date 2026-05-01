@@ -1,4 +1,6 @@
-"""Lock-in tests for the review-pass fixes B2-B20 (B1/B16/B20 deferred)."""
+"""Cross-cutting lock-ins for ``Observation`` equality, ``BaseStrategy``
+construction, ``SQLiteObservationsStorage`` lifecycle and a few small
+strategy/entity invariants."""
 from datetime import datetime, timezone
 from dataclasses import dataclass
 

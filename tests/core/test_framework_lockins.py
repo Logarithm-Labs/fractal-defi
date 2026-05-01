@@ -1,16 +1,20 @@
-"""Lock-in tests for the codex-review pass.
+"""Cross-cutting framework lock-ins.
 
-Each test pins a specific finding from ``codex_review.md``:
-
-* M2 — ``DefaultLogger`` no longer wipes the global ``loguru`` sink list.
-* M5 — ``BaseStrategy.step`` validates the observation BEFORE writing it
-        to ``observations_storage``; rejected observations stay out.
-* M6 — neither the loader cache root nor the logger output root reads
-        ``PYTHONPATH`` (it's a colon-separated import list, not a directory).
+* ``DefaultLogger`` does not wipe the global ``loguru`` sink list and
+  does not duplicate strategy debug output to stderr.
+* ``BaseStrategy.step`` validates the observation BEFORE writing it to
+  ``observations_storage``; rejected observations stay out.
+* Neither the loader cache root nor the logger output root reads
+  ``PYTHONPATH`` (it's a colon-separated import list, not a directory).
+* ``get_all_available_entities`` returns a read-only mapping view.
+* GraphQL loaders validate EVM-shape addresses up front.
+* ``UniswapV3LPEntity.update_state`` rejects degenerate snapshots.
+* ``UniswapV3Loader`` lifecycle methods raise ``NotImplementedError``.
 """
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 
@@ -35,10 +39,9 @@ class _Strat(BaseStrategy[BaseStrategyParams]):
         return []
 
 
-# ----------------------------------------------------------------- M5
 @pytest.mark.core
 def test_invalid_observation_does_not_reach_storage(tmp_path):
-    """M5: an observation that fails validation must NOT be persisted —
+    """An observation that fails validation must NOT be persisted —
     storage write happens only after ``_validate_observation`` succeeds."""
     db = tmp_path / "obs.db"
     storage = SQLiteObservationsStorage(str(db))
@@ -54,7 +57,7 @@ def test_invalid_observation_does_not_reach_storage(tmp_path):
 
 @pytest.mark.core
 def test_valid_observation_is_persisted_once(tmp_path):
-    """M5 follow-on: a valid observation is written exactly once."""
+    """A valid observation is written to storage exactly once per step."""
     db = tmp_path / "obs.db"
     storage = SQLiteObservationsStorage(str(db))
     s = _Strat(observations_storage=storage)
@@ -66,12 +69,11 @@ def test_valid_observation_is_persisted_once(tmp_path):
     storage.close()
 
 
-# ----------------------------------------------------------------- M2
 @pytest.mark.core
 def test_default_logger_does_not_wipe_external_sink(tmp_path, monkeypatch):
-    """M2: creating a debug-mode strategy must NOT remove sinks added by
-    other code in the same process. Earlier ``DefaultLogger._setup_logger``
-    called the global ``logger.remove()`` which silently deleted everything.
+    """Creating a debug-mode strategy must NOT remove sinks added by
+    other code in the same process. An earlier implementation called
+    the global ``logger.remove()`` which silently deleted every sink.
     """
     from loguru import logger
 
@@ -92,10 +94,33 @@ def test_default_logger_does_not_wipe_external_sink(tmp_path, monkeypatch):
     assert "hello-from-external-test" in contents
 
 
-# ----------------------------------------------------------------- M6
+@pytest.mark.core
+def test_default_logger_does_not_print_strategy_debug_to_stderr(
+        tmp_path, monkeypatch, capsys):
+    """``debug=True`` must keep the strategy's own debug output OUT of
+    stderr — only the per-instance file sink should receive it.
+
+    Loguru installs a default stderr sink at handler id 0 on import.
+    An earlier fix stopped wiping ALL sinks but left that default in
+    place, which fanned every ``self._debug(...)`` call out to the
+    console. ``DefaultLogger`` now strips handler 0 once per process.
+    """
+    monkeypatch.setenv("FRACTAL_RUNS_PATH", str(tmp_path))
+    s = _Strat(debug=True)
+    s._debug("strategy-private-debug-line")
+    captured = capsys.readouterr()
+    assert "strategy-private-debug-line" not in captured.err
+    assert "strategy-private-debug-line" not in captured.out
+
+    log_files = list(Path(s.logger.logs_path).glob("*.log"))
+    assert log_files, f"no log file under {s.logger.logs_path}"
+    contents = log_files[0].read_text(encoding="utf-8")
+    assert "strategy-private-debug-line" in contents
+
+
 @pytest.mark.core
 def test_loader_base_path_ignores_pythonpath(monkeypatch, tmp_path):
-    """M6: ``PYTHONPATH`` (colon-separated import list) must NOT be used
+    """``PYTHONPATH`` (colon-separated import list) must NOT be used
     as a single filesystem root. With no ``DATA_PATH`` set, the cache
     must fall back to the current working directory."""
     from fractal.loaders.base_loader import Loader, LoaderType
@@ -121,7 +146,7 @@ def test_loader_base_path_ignores_pythonpath(monkeypatch, tmp_path):
 
 @pytest.mark.core
 def test_logger_runs_path_ignores_pythonpath(monkeypatch, tmp_path):
-    """M6: same for the logger's runs/ directory — uses
+    """Same for the logger's runs/ directory — uses
     ``FRACTAL_RUNS_PATH`` or cwd, never ``PYTHONPATH``."""
     from fractal.core.base.strategy.logger import DefaultLogger
 
@@ -139,7 +164,7 @@ def test_logger_runs_path_ignores_pythonpath(monkeypatch, tmp_path):
 
 @pytest.mark.core
 def test_logger_runs_path_honors_fractal_runs_path(monkeypatch, tmp_path):
-    """M6: ``FRACTAL_RUNS_PATH`` is the explicit knob and wins over cwd."""
+    """``FRACTAL_RUNS_PATH`` is the explicit knob and wins over cwd."""
     from fractal.core.base.strategy.logger import DefaultLogger
 
     explicit = tmp_path / "explicit_runs"
@@ -152,10 +177,9 @@ def test_logger_runs_path_honors_fractal_runs_path(monkeypatch, tmp_path):
         lg.close()
 
 
-# ----------------------------------------------------------------- L2
 @pytest.mark.core
 def test_get_all_available_entities_returns_read_only_view():
-    """L2: external callers must not be able to bypass ``register_entity``
+    """External callers must not be able to bypass ``register_entity``
     by mutating the registry through this getter."""
     s = _Strat()
     view = s.get_all_available_entities()
@@ -164,7 +188,6 @@ def test_get_all_available_entities_returns_read_only_view():
         view["Y"] = SimpleSpotExchange(trading_fee=0.0)  # type: ignore[index]
 
 
-# ----------------------------------------------------------------- M7
 @pytest.mark.core
 def test_validate_evm_address_accepts_canonical_address():
     from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
@@ -186,17 +209,16 @@ def test_validate_evm_address_rejects_short_or_garbage():
 
 @pytest.mark.core
 def test_aave_loader_rejects_non_address_asset():
-    """M7 lock-in via Aave loader: bogus asset_address raises at __init__."""
+    """Lock-in via Aave loader: a bogus asset_address raises at __init__."""
     from fractal.loaders.aave import AaveV3ArbitrumLoader
     from fractal.loaders.thegraph.base_graph_loader import GraphLoaderException
     with pytest.raises(GraphLoaderException, match="asset_address"):
         AaveV3ArbitrumLoader(asset_address="not-an-address")
 
 
-# ----------------------------------------------------------------- M8
 @pytest.mark.core
 def test_uniswap_v3_lp_update_state_rejects_non_positive_price():
-    """M8: ``update_state`` with an open position must reject ``price <= 0``
+    """``update_state`` with an open position must reject ``price <= 0``
     rather than silently producing nonsense token amounts."""
     from fractal.core.base.entity import EntityException
     from fractal.core.entities.protocols.uniswap_v3_lp import (
@@ -229,10 +251,9 @@ def test_uniswap_v3_lp_update_state_rejects_negative_liquidity():
                                               fees=0, liquidity=-1.0))
 
 
-# ----------------------------------------------------------------- L3
 @pytest.mark.core
 def test_uniswap_v3_loader_lifecycle_methods_raise_not_implemented():
-    """L3: ``UniswapV3Loader`` (the abstract layer) must not silently
+    """``UniswapV3Loader`` (the abstract layer) must not silently
     ``pass`` — subclasses that forget to override should fail loudly."""
     from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import (
         UniswapV3Loader)

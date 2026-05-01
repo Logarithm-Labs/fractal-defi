@@ -13,7 +13,7 @@ from fractal.core.entities.simple.spot import SimpleSpotExchangeGlobalState
 from fractal.core.pipeline import (
     DefaultPipeline, MLFlowConfig, ExperimentConfig)
 
-from agent_strategy import AgentTradingStrategy
+from examples.agentic_trader.backtest import AgentTradingStrategy
 from prompts import BULLISH_PROMPT, BEARISH_PROMPT, NEUTRAL_PROMPT
 
 

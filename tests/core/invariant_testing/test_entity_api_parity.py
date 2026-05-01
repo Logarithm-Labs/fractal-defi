@@ -1,11 +1,11 @@
-"""Lock-in tests for D-2, D-3, D-5 gardening fixes.
+"""Cross-cutting entity-API parity lock-ins.
 
-* **D-2**: ``effective_fee_rate`` property on spot/LST entities (parity
-  with pool entities for polymorphic strategy code).
-* **D-3**: ``max_borrow_amount`` and ``liquidation_price`` helpers on
-  Aave / SimpleLending.
-* **D-5**: ``TRADING_FEE`` / ``MAX_LEVERAGE`` UPPERCASE → lowercase rename
-  on Hyperliquid + SimplePerp, with deprecated UPPERCASE property aliases.
+* ``effective_fee_rate`` property on spot/LST entities — parity with
+  pool entities for polymorphic strategy code.
+* ``max_borrow_amount`` and ``liquidation_price`` helpers on Aave /
+  SimpleLending.
+* ``TRADING_FEE`` / ``MAX_LEVERAGE`` UPPERCASE → lowercase rename on
+  Hyperliquid + SimplePerp, with deprecated UPPERCASE property aliases.
 """
 import math
 import warnings
