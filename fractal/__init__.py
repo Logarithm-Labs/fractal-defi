@@ -9,7 +9,7 @@ Idiomatic — matches the convention used by numpy / pandas / mlflow:
 
     >>> import fractal
     >>> fractal.__version__
-    '1.3.1'
+    'x.y.z'
 """
 from importlib.metadata import PackageNotFoundError, version
 
