@@ -25,7 +25,7 @@ This directory contains an example project for forecasting funding rates in DeFi
     come transitively through `fractal-defi` at the floors it pins.
 
 2. **Download and Prepare Data**
-    Just run notebook `notebooks/simple_research.ipynb` and get data in the first section with functions `list_top_n_tickers()` and `download_spot_future_fr_data()`. Processing (join) by `process_ticker()`
+    Just run notebook `notebooks/baseline_research.ipynb` and get data in the first section with functions `list_top_n_tickers()` and `download_spot_future_fr_data()`. Processing (join) by `process_ticker()`
 
 3. **Train Model**
     In the section "research, modeling" build a model with our features
