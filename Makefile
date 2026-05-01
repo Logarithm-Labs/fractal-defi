@@ -188,7 +188,7 @@ release-test: build
 	fi
 	TWINE_USERNAME=__token__ \
 	TWINE_PASSWORD="$(TEST_TWINE_PASSWORD)" \
-	    $(PYTHON) -m twine upload --repository testpypi dist/*
+	    $(PYTHON) -m twine upload --verbose --repository testpypi dist/*
 
 release: build
 	@if [ -z "$(TWINE_PASSWORD)" ]; then \
@@ -196,6 +196,6 @@ release: build
 	fi
 	TWINE_USERNAME=__token__ \
 	TWINE_PASSWORD="$(TWINE_PASSWORD)" \
-	    $(PYTHON) -m twine upload dist/*
+	    $(PYTHON) -m twine upload --verbose dist/*
 
 .DEFAULT_GOAL := help
