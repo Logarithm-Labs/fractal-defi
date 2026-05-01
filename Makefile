@@ -34,7 +34,7 @@ EXAMPLES := examples
         test test-slow test-integration test-all test-e2e smoke \
         docs docs-strict docs-serve docs-clean \
         clean clean-runs clean-all \
-        build release-test release
+        build release-test release post-release
 
 help:
 	@echo "Fractal Makefile targets"
@@ -71,6 +71,7 @@ help:
 	@echo "    build            sdist + wheel via ``python -m build``"
 	@echo "    release-test     upload dist/* to test PyPI"
 	@echo "    release          upload dist/* to PyPI"
+	@echo "    post-release     hard-reset dev to main + force-push (run AFTER squash-merging dev→main)"
 
 # ─── setup ─────────────────────────────────────────────────────────
 setup:
@@ -197,5 +198,66 @@ release: build
 	TWINE_USERNAME=__token__ \
 	TWINE_PASSWORD="$(TWINE_PASSWORD)" \
 	    $(PYTHON) -m twine upload --verbose dist/*
+
+# ─── post-release ────────────────────────────────────────────────
+# After a squash-merge ``dev → main`` PR, ``main`` carries one new
+# release commit while ``dev`` still references the original commits
+# — same content, different histories. The next PR from ``dev`` then
+# reports "N commits ahead" + "Can't automatically merge". This
+# target re-aligns ``dev`` to ``main`` by hard-reset + force-push.
+#
+# Run AFTER the release PR has been squash-merged AND no new dev
+# work has landed since. Three guards run before anything destructive:
+#   (1) must be on local ``dev``
+#   (2) working tree must be clean
+#   (3) ``origin/main`` and ``origin/dev`` must have identical content
+#       (i.e. nothing on dev that isn't already on main)
+# If you've already verified the divergence is just stale history
+# (main is canonical), bypass the third guard with ``FORCE=1``.
+# Followed by an interactive y/N prompt before the force-push.
+post-release:
+	@set -e; \
+	echo "fetching origin…"; \
+	git fetch --quiet origin; \
+	branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" != "dev" ]; then \
+	    echo "ERROR: must be on dev branch (currently on '$$branch')"; \
+	    echo "  run: git checkout dev"; exit 1; \
+	fi; \
+	if ! git diff-index --quiet HEAD --; then \
+	    echo "ERROR: uncommitted changes — commit or stash first"; \
+	    git status --short; exit 1; \
+	fi; \
+	if ! git diff --quiet origin/main origin/dev; then \
+	    if [ -z "$(FORCE)" ]; then \
+	        echo "ERROR: origin/dev has content not on origin/main."; \
+	        echo "  This target syncs dev AFTER a release; if dev has"; \
+	        echo "  unreleased work, do NOT run it — open a release PR"; \
+	        echo "  first. Diff summary:"; \
+	        git diff --stat origin/main origin/dev | cat; \
+	        echo ""; \
+	        echo "  If you've verified main is the canonical state and"; \
+	        echo "  the divergence is just stale dev history, re-run:"; \
+	        echo "      make post-release FORCE=1"; \
+	        exit 1; \
+	    fi; \
+	    echo "FORCE=1 — skipping content-equality guard. Diff:"; \
+	    git diff --stat origin/main origin/dev | cat; \
+	fi; \
+	main_sha=$$(git rev-parse --short origin/main); \
+	dev_sha=$$(git rev-parse --short origin/dev); \
+	echo ""; \
+	echo "About to:"; \
+	echo "  git reset --hard origin/main      # dev $$dev_sha -> $$main_sha"; \
+	echo "  git push --force-with-lease origin dev"; \
+	echo ""; \
+	printf "Continue? [y/N] "; \
+	read ans; \
+	case "$$ans" in y|Y|yes|YES) ;; *) echo "aborted"; exit 1 ;; esac; \
+	git reset --hard origin/main; \
+	git push --force-with-lease origin dev; \
+	echo ""; \
+	echo "dev re-aligned to main ($$main_sha). Next dev -> main PR"; \
+	echo "will show only post-release commits."
 
 .DEFAULT_GOAL := help
