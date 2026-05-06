@@ -4,6 +4,25 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [v1.3.2] — 2026-05-06
+
+Citation infrastructure for academic use. No functional code changes;
+existing strategies, entities, loaders and pipeline behaviour are
+identical to v1.3.1.
+
+### Added
+
+- **`CITATION.cff`** — Citation File Format metadata in the repo
+  root. GitHub renders a "Cite this repository" button on the project
+  page that exports BibTeX and APA forms automatically.
+- **`README.md` Citation section** — pre-formatted BibTeX block and
+  pointer to `CITATION.cff` for users who want to cite Fractal in
+  publications.
+- **Zenodo archival enabled** — releases from this version onward
+  are automatically archived on Zenodo with a permanent DOI, so
+  Fractal can be cited as a first-class scholarly artifact in
+  CrossRef / Google Scholar.
+
 ## [v1.3.1] — 2026-05-01
 
 Dependency floors aligned with the actually-tested matrix, Uniswap V2

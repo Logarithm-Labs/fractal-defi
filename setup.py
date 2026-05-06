@@ -29,7 +29,7 @@ DEV_REQUIRES = [
 
 setup(
     name='fractal-defi',
-    version='1.3.1',
+    version='1.3.2',
     packages=find_packages(),
     author='Logarithm Labs',
     author_email='xboringwozniak@gmail.com',
