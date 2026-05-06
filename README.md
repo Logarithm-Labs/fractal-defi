@@ -195,6 +195,26 @@ python examples/basis/grid.py
 - Sphinx API reference can be built locally from the repo
   (`make docs`); a hosted version is on the project's docs site.
 
+## Citation
+
+If you use Fractal in academic work, please cite it. Citation
+metadata lives in [`CITATION.cff`](CITATION.cff) — GitHub renders a
+"Cite this repository" button on the repo page that exports BibTeX
+and APA forms automatically.
+
+BibTeX:
+
+```bibtex
+@software{fractal_defi,
+  author    = {Krestenko, Anatoly and {the Fractal contributors}},
+  title     = {Fractal: A Python Research Library for {DeFi} Strategies},
+  version   = {1.3.2},
+  year      = {2026},
+  url       = {https://github.com/Logarithm-Labs/fractal-defi},
+  license   = {BSD-3-Clause}
+}
+```
+
 ## License
 
 BSD 3-Clause. See [`LICENSE`](LICENSE).
