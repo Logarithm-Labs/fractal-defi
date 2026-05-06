@@ -16,8 +16,13 @@ authors:
 version: 1.3.2
 date-released: 2026-05-06
 license: BSD-3-Clause
+doi: 10.5281/zenodo.20049904
 repository-code: "https://github.com/Logarithm-Labs/fractal-defi"
 url: "https://github.com/Logarithm-Labs/fractal-defi"
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.20049905
+    description: "Archived snapshot of version 1.3.2 on Zenodo"
 keywords:
   - defi
   - backtesting

@@ -5,6 +5,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
 [![Python Versions](https://img.shields.io/pypi/pyversions/fractal-defi.svg)](https://pypi.org/project/fractal-defi/)
 [![License: BSD 3-Clause](https://img.shields.io/badge/License-BSD%203--Clause-blue.svg)](https://opensource.org/licenses/BSD-3-Clause)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20049904.svg)](https://doi.org/10.5281/zenodo.20049904)
 [![Downloads](https://pepy.tech/badge/fractal-defi)](https://pepy.tech/project/fractal-defi)
 [![Downloads](https://pepy.tech/badge/fractal-defi/month)](https://pepy.tech/project/fractal-defi)
 
@@ -210,7 +211,8 @@ BibTeX:
   title     = {Fractal: A Python Research Library for {DeFi} Strategies},
   version   = {1.3.2},
   year      = {2026},
-  url       = {https://github.com/Logarithm-Labs/fractal-defi},
+  doi       = {10.5281/zenodo.20049904},
+  url       = {https://doi.org/10.5281/zenodo.20049904},
   license   = {BSD-3-Clause}
 }
 ```
