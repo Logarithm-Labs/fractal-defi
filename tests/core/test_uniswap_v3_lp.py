@@ -90,3 +90,68 @@ def test_price_to_tick(uniswap_lp_entity):
 def test_tick_to_price(uniswap_lp_entity):
     price = uniswap_lp_entity.tick_to_price(0)
     assert price >= 0
+
+
+@pytest.mark.core
+def test_gas_cost_per_mint_haircut_on_open():
+    """``gas_cost_per_mint`` is deducted flat from cash on open, on top of
+    whatever swap-fee cost the zap-in would incur."""
+    baseline = UniswapV3LPEntity(config=UniswapV3LPConfig())
+    baseline.update_state(UniswapV3LPGlobalState(price=1.0))
+    baseline.action_deposit(1000)
+    baseline.action_open_position(500, 0.9, 1.1)
+
+    with_gas = UniswapV3LPEntity(
+        config=UniswapV3LPConfig(gas_cost_per_mint=7.5)
+    )
+    with_gas.update_state(UniswapV3LPGlobalState(price=1.0))
+    with_gas.action_deposit(1000)
+    with_gas.action_open_position(500, 0.9, 1.1)
+
+    # Difference is exactly the gas haircut — gas doesn't touch swap math.
+    assert with_gas._internal_state.cash == pytest.approx(
+        baseline._internal_state.cash - 7.5
+    )
+    # Position composition is identical (gas does not affect mint amounts).
+    assert with_gas._internal_state.liquidity == pytest.approx(
+        baseline._internal_state.liquidity
+    )
+
+
+@pytest.mark.core
+def test_gas_cost_burn_and_collect_haircut_on_close():
+    """``gas_cost_per_burn + gas_cost_per_collect`` is deducted on close."""
+    cfg = UniswapV3LPConfig(gas_cost_per_burn=4.0, gas_cost_per_collect=3.0)
+    e = UniswapV3LPEntity(config=cfg)
+    e.update_state(UniswapV3LPGlobalState(price=1.0))
+    e.action_deposit(1000)
+    e.action_open_position(500, 0.9, 1.1)
+    cash_before_close = e._internal_state.cash
+
+    e.action_close_position()
+
+    baseline = UniswapV3LPEntity(config=UniswapV3LPConfig())
+    baseline.update_state(UniswapV3LPGlobalState(price=1.0))
+    baseline.action_deposit(1000)
+    baseline.action_open_position(500, 0.9, 1.1)
+    baseline_cash_before_close = baseline._internal_state.cash
+    baseline.action_close_position()
+
+    # Each leg's close-side proceeds match the baseline; difference is exactly 7.0.
+    delta_after = baseline._internal_state.cash - e._internal_state.cash
+    delta_before = baseline_cash_before_close - cash_before_close
+    assert delta_after - delta_before == pytest.approx(7.0)
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    "field",
+    ["gas_cost_per_mint", "gas_cost_per_burn", "gas_cost_per_collect"],
+)
+def test_negative_gas_cost_rejected(field):
+    """Each gas field must be non-negative — mirrors pool_fee_rate / slippage_pct."""
+    from fractal.core.base.entity import EntityException
+
+    cfg = UniswapV3LPConfig(**{field: -1.0})
+    with pytest.raises(EntityException):
+        UniswapV3LPEntity(config=cfg)

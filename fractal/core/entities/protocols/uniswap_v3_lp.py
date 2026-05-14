@@ -64,12 +64,28 @@ class UniswapV3LPConfig:
             ``"token1"`` — is the notional/stable side. Default ``"token0"``.
             Pass ``GlobalState.price`` and ``price_lower`` / ``price_upper``
             in the same convention: **notional per non-notional unit**.
+        gas_cost_per_mint (float): Flat gas cost in notional units deducted
+            from ``cash`` on ``action_open_position``. Default ``0.0`` (no
+            gas accounting — preserves legacy behaviour). The caller converts
+            ``gas_units × gas_price × native_token_price`` into notional
+            before constructing the config; the entity treats it as an
+            opaque flat haircut so this stays chain-agnostic.
+        gas_cost_per_burn (float): Flat gas cost in notional units deducted
+            on the burn portion of ``action_close_position``. Default ``0.0``.
+        gas_cost_per_collect (float): Flat gas cost in notional units
+            deducted on the collect portion of ``action_close_position``.
+            Default ``0.0``. Modelled separately from burn so callers can
+            represent fee-collection-without-close on chains that bill
+            them as distinct transactions.
     """
     pool_fee_rate: float = 0.003
     slippage_pct: float = 0.0
     token0_decimals: int = 18
     token1_decimals: int = 18
     notional_side: str = "token0"
+    gas_cost_per_mint: float = 0.0
+    gas_cost_per_burn: float = 0.0
+    gas_cost_per_collect: float = 0.0
 
 
 class UniswapV3LPEntity(BasePoolEntity):
@@ -99,6 +115,11 @@ class UniswapV3LPEntity(BasePoolEntity):
 
     Lower-level pair-based mint / burn are exposed as ``_open_from_pair``
     and ``_close_to_pair``.
+
+    Cost model: zap-in / zap-out optionally apply a flat gas haircut on
+    ``cash`` via ``gas_cost_per_mint``, ``gas_cost_per_burn`` and
+    ``gas_cost_per_collect``. Defaults are ``0.0`` so existing configs are
+    unaffected. See :class:`UniswapV3LPConfig` for details.
     """
 
     _internal_state: UniswapV3LPInternalState
@@ -117,6 +138,18 @@ class UniswapV3LPEntity(BasePoolEntity):
             raise EntityException(
                 f"slippage_pct must be >= 0, got {config.slippage_pct}"
             )
+        if config.gas_cost_per_mint < 0:
+            raise EntityException(
+                f"gas_cost_per_mint must be >= 0, got {config.gas_cost_per_mint}"
+            )
+        if config.gas_cost_per_burn < 0:
+            raise EntityException(
+                f"gas_cost_per_burn must be >= 0, got {config.gas_cost_per_burn}"
+            )
+        if config.gas_cost_per_collect < 0:
+            raise EntityException(
+                f"gas_cost_per_collect must be >= 0, got {config.gas_cost_per_collect}"
+            )
         # Set config BEFORE super so any subclass override of
         # ``_initialize_states`` can rely on these.
         self.pool_fee_rate: float = config.pool_fee_rate
@@ -124,6 +157,9 @@ class UniswapV3LPEntity(BasePoolEntity):
         self.token0_decimals: int = config.token0_decimals
         self.token1_decimals: int = config.token1_decimals
         self.notional_side: str = config.notional_side
+        self.gas_cost_per_mint: float = config.gas_cost_per_mint
+        self.gas_cost_per_burn: float = config.gas_cost_per_burn
+        self.gas_cost_per_collect: float = config.gas_cost_per_collect
         super().__init__(*args, **kwargs)
 
     def _initialize_states(self):
@@ -396,6 +432,11 @@ class UniswapV3LPEntity(BasePoolEntity):
                 cash_leftover += token0_leftover * p * (1 - fee)
 
         self._internal_state.cash += cash_leftover
+        # Flat gas haircut on cash. Default ``0.0`` is a no-op so legacy
+        # configs see no change. Cash may turn negative — strategies are
+        # responsible for affordability checks before issuing the action.
+        if self.gas_cost_per_mint > 0:
+            self._internal_state.cash -= self.gas_cost_per_mint
 
     def action_close_position(self) -> None:
         """Zap-out: burn V3 LP, swap volatile leg back to notional (with fee).
@@ -418,6 +459,10 @@ class UniswapV3LPEntity(BasePoolEntity):
         volatile_proceeds = volatile_back * p * (1 - fee) if volatile_back > 0 else 0.0
 
         self._internal_state.cash += stable_back + volatile_proceeds
+        # Flat gas haircut for burn + collect. Default both ``0.0`` ⇒ no-op.
+        gas_close = self.gas_cost_per_burn + self.gas_cost_per_collect
+        if gas_close > 0:
+            self._internal_state.cash -= gas_close
 
     def update_state(self, state: UniswapV3LPGlobalState) -> None:
         """Apply pool snapshot, rebalance position by V3 formula, accrue fees.

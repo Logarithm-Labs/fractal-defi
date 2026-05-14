@@ -55,11 +55,19 @@ SHARED_PUBLIC_API = {
     "notional_side",
 }
 
-# Members allowed only on V3 (range/tick math).
+# Members allowed only on V3 (range/tick math + V3-specific gas fields).
+# ``gas_cost_per_{mint,burn,collect}`` are V3-only because V3 has a distinct
+# on-chain ``collect`` step that V2 lacks (V2 fees auto-flow via reserves
+# growth and surface in the entity via ``update_state`` rather than an
+# explicit collect call). A V2 extension covering mint+burn gas only is a
+# follow-up — until then these three live on V3 alone.
 V3_ONLY_PUBLIC = {
     "is_in_range",
     "price_to_tick",
     "tick_to_price",
+    "gas_cost_per_mint",
+    "gas_cost_per_burn",
+    "gas_cost_per_collect",
 }
 
 # Members allowed only on V2. V3 has different fee accrual mechanics
@@ -76,6 +84,14 @@ V2_ONLY_INTERNAL_FIELDS = {
 
 V2_ONLY_CONFIG_FIELDS = {
     "fees_compounding_model",
+}
+
+# Config fields allowed only on V3 — same rationale as ``V3_ONLY_PUBLIC``
+# above (gas is V3-only until V2 grows a matching mint+burn extension).
+V3_ONLY_CONFIG_FIELDS = {
+    "gas_cost_per_mint",
+    "gas_cost_per_burn",
+    "gas_cost_per_collect",
 }
 
 
@@ -151,7 +167,7 @@ def test_v2_v3_configs_have_same_fields():
     v2_fields = {f.name for f in fields(UniswapV2LPConfig)}
     v3_fields = {f.name for f in fields(UniswapV3LPConfig)}
     shared_v2 = v2_fields - V2_ONLY_CONFIG_FIELDS
-    shared_v3 = v3_fields  # currently no V3-only config fields
+    shared_v3 = v3_fields - V3_ONLY_CONFIG_FIELDS
     assert shared_v2 == shared_v3, (
         f"Config fields differ outside the declared V2/V3-only sets — "
         f"V2-only: {shared_v2 - shared_v3}, V3-only: {shared_v3 - shared_v2}"
