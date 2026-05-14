@@ -15,11 +15,13 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidPerpsPricesLoader,
     HyperLiquidPerpsPricesLoader,
 )
+from fractal.loaders.pendle import PendleMarketLoader
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
     FundingHistory,
     KlinesHistory,
     LendingHistory,
+    PendleMarketHistory,
     PoolHistory,
     PriceHistory,
     RateHistory,
@@ -49,6 +51,8 @@ __all__ = [
     "RateHistory",
     "LendingHistory",
     "KlinesHistory",
+    "PendleMarketHistory",
+    "PendleMarketLoader",
     "TrajectoryBundle",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",

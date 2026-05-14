@@ -98,6 +98,36 @@ class PoolHistory(pd.DataFrame):
 TrajectoryBundle = List[PriceHistory]
 
 
+class PendleMarketHistory(pd.DataFrame):
+    """Pendle Principal-Token market snapshots indexed by UTC time.
+
+    Columns:
+        ``pt_price`` — mark price of 1 PT in the underlying numeraire
+            (typically USDC).
+        ``implied_yield`` — annualised fixed yield encoded in
+            ``pt_price`` (decimal, ``0.14`` = 14% APY).
+        ``seconds_to_expiry`` — seconds remaining until PT redeem
+            unlocks.
+        ``pool_liquidity`` — total Pendle pool liquidity in numeraire.
+    """
+
+    def __init__(
+        self,
+        pt_prices,
+        implied_yields,
+        seconds_to_expiry,
+        pool_liquidity,
+        time,
+    ):
+        data = {
+            "pt_price": np.asarray(pt_prices, dtype=float),
+            "implied_yield": np.asarray(implied_yields, dtype=float),
+            "seconds_to_expiry": np.asarray(seconds_to_expiry, dtype=float),
+            "pool_liquidity": np.asarray(pool_liquidity, dtype=float),
+        }
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
 class KlinesHistory(pd.DataFrame):
     """
     OHLCV klines. Columns: ``open``, ``high``, ``low``, ``close``, ``volume``.

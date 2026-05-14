@@ -4,6 +4,28 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [Unreleased]
+
+### Added
+
+- **`PendleMarketLoader`** — REST-backed loader for Pendle fixed-yield
+  markets. Hits the public `api-v2.pendle.finance/core/v1/{chainId}/markets/{address}/historical-data`
+  endpoint and returns an hourly `PendleMarketHistory` frame with
+  columns `pt_price`, `implied_yield`, `seconds_to_expiry`,
+  `pool_liquidity`. PT price is reconstructed from `impliedApy` via
+  the linear approximation `pt = 1 - y · τ` (clamped to `[0, 1]`) when
+  the upstream payload does not carry an explicit PT price field.
+- **`PendleMarketHistory`** — new struct in
+  `fractal.loaders.structs`, exposed at the package level alongside
+  the existing `PriceHistory` / `RateHistory` family. Frame-typed
+  return value of `PendleMarketLoader`.
+- Offline pytest suite covering the price-reconstruction helper, the
+  `_transform_payload` row shaping, the empty-payload short-circuit
+  and the strict-monotonicity invariant on `seconds_to_expiry`. Lives
+  in `tests/loaders/test_pendle_loader_offline.py` and uses the
+  existing `@pytest.mark.core` marker — no network access, runs in
+  ~50 ms on the standard CI matrix.
+
 ## [v1.3.2] — 2026-05-06
 
 Citation infrastructure for academic use. No functional code changes;
