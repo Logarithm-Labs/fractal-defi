@@ -243,3 +243,10 @@ green.
 
 Last release before the v1.3.0 review pass. See git history for
 incremental changes.
+
+## [Unreleased]
+
+### Added
+- `PanopticStraddleStrategy`: long-straddle strategy on Panoptic over
+  Uniswap V3; entry signal based on rolling realised volatility percentile;
+  three exit rules (take profit, stop loss, time stop); passive LP baseline.
