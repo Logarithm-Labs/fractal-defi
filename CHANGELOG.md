@@ -4,6 +4,68 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [Unreleased]
+
+Pendle PT carry-loop stack: three new protocol entities (Pendle PT,
+Morpho Blue, perpetual-funding hedge) and three new historical-data
+loaders (Pendle, Morpho, Boros), all with typed `*History` structs and
+offline test coverage. Adds first-class primitives for fixed-yield
+leveraged carry strategies on Pendle / Morpho / Boros stacks.
+
+### Added — Entities (`fractal.core.entities.protocols`)
+
+- **`PendlePTEntity`** — Pendle Principal Token position. Tracks a PT
+  face amount, an AMM cash leg, and exposes `action_buy_pt` /
+  `action_sell_pt` (with `amm_fee_rate` + linear `slippage_factor`
+  scaled by trade-to-pool ratio) and `action_redeem` (1:1 at expiry,
+  optionally `sy_price_in_usdc < 1` to model underlying depeg at
+  redeem). Linear `pt = 1 - implied_yield · tau` pricing matches
+  Morpho's PT oracle convention for cross-stack consistency.
+  Closed-form helper `compute_pt_price` for scenario projection.
+- **`MorphoEntity`** — Morpho Blue isolated lending market. Extends
+  `BaseLendingEntity`. Single `lltv` parameter per instance, debt
+  accrues at `borrowing_rate * dt`, post-mutation LLTV guard on
+  `action_borrow` / `action_withdraw` (atomic rollback on violation),
+  latching `is_liquidated` flag when an observation pushes
+  `ltv > lltv`.
+- **`FundingHedgeEntity`** — abstract perpetual-funding carry leg.
+  Linear PnL accrual `s · notional · funding_rate · dt`, `s ∈ {±1}`
+  via `FundingHedgeConfig.direction`. Models Pendle Boros tokens or a
+  delta-neutral Hyperliquid funding hedge without booking the
+  spot/futures offset leg (assumed perfect and free).
+
+### Added — Loaders (`fractal.loaders`)
+
+- **`PendleMarketLoader`** — REST-backed loader for Pendle fixed-yield
+  markets. Hits the keyless
+  `api-v2.pendle.finance/core/v1/{chain_id}/markets/{address}/historical-data`
+  endpoint and returns hourly `PendleMarketHistory` (columns:
+  `pt_price`, `implied_yield`, `seconds_to_expiry`, `pool_liquidity`).
+- **`MorphoMarketLoader`** — GraphQL-backed loader for Morpho Blue
+  isolated markets. Hits the keyless `blue-api.morpho.org/graphql`
+  endpoint and returns hourly `MorphoMarketHistory` (columns:
+  `borrowing_rate`, `utilization`, `supply_apy`). Chain routing:
+  `ethereum` / `arbitrum` / `base`.
+- **`BorosMarketLoader`** — REST-backed loader for Pendle Boros
+  funding-rate-forward markets. Returns recent `BorosMarketHistory`
+  (columns: `mark_apr`, `observed_funding`, `mark_apr_7d_ma`,
+  `mark_apr_30d_ma`). Endpoint returns ~500 most recent bars
+  irrespective of `from` / `to` — recent-only coverage documented in
+  the module docstring.
+
+### Added — Typed structs (`fractal.loaders.structs`)
+
+- `PendleMarketHistory`, `MorphoMarketHistory`, `BorosMarketHistory`
+  alongside the existing `PriceHistory` / `RateHistory` family.
+
+### Added — Tests
+
+- 6 new offline pytest modules under `@pytest.mark.core`, 47 new test
+  cases in total (no network access). Coverage spans
+  fee/slippage round-trips, LLTV guards and rollback atomicity,
+  PnL accrual closed-forms, payload-parsing edge cases, struct
+  contracts and chain routing. Total runtime ~0.4 s.
+
 ## [v1.3.2] — 2026-05-06
 
 Citation infrastructure for academic use. No functional code changes;

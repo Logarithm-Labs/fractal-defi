@@ -98,6 +98,93 @@ class PoolHistory(pd.DataFrame):
 TrajectoryBundle = List[PriceHistory]
 
 
+class PendleMarketHistory(pd.DataFrame):
+    """Pendle Principal-Token market snapshots indexed by UTC time.
+
+    Columns:
+        ``pt_price`` — mark price of 1 PT in the underlying numeraire
+            (typically USDC).
+        ``implied_yield`` — annualised fixed yield encoded in
+            ``pt_price`` (decimal, ``0.14`` = 14% APY).
+        ``seconds_to_expiry`` — seconds remaining until PT redeem
+            unlocks.
+        ``pool_liquidity`` — total Pendle pool liquidity in numeraire.
+    """
+
+    def __init__(
+        self,
+        pt_prices,
+        implied_yields,
+        seconds_to_expiry,
+        pool_liquidity,
+        time,
+    ):
+        data = {
+            "pt_price": np.asarray(pt_prices, dtype=float),
+            "implied_yield": np.asarray(implied_yields, dtype=float),
+            "seconds_to_expiry": np.asarray(seconds_to_expiry, dtype=float),
+            "pool_liquidity": np.asarray(pool_liquidity, dtype=float),
+        }
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
+class MorphoMarketHistory(pd.DataFrame):
+    """Morpho Blue isolated-market historical state indexed by UTC time.
+
+    Columns:
+        ``borrowing_rate`` — annualised borrow APY (decimal,
+            ``0.05`` = 5% APY).
+        ``utilization`` — fraction of supplied debt currently
+            borrowed, in ``[0, 1]``.
+        ``supply_apy`` — annualised supply APY (decimal), exposed
+            for completeness; PT-collateral markets pay no supplier
+            yield, but other markets do.
+    """
+
+    def __init__(
+        self,
+        borrowing_rates,
+        utilization,
+        supply_apys,
+        time,
+    ):
+        data = {
+            "borrowing_rate": np.asarray(borrowing_rates, dtype=float),
+            "utilization": np.asarray(utilization, dtype=float),
+            "supply_apy": np.asarray(supply_apys, dtype=float),
+        }
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
+class BorosMarketHistory(pd.DataFrame):
+    """Pendle Boros funding-rate-forward market bars indexed by UTC time.
+
+    Columns:
+        ``mark_apr`` — close mark APR (annualised decimal). Long-Boros
+            holders receive this as funding per unit of time.
+        ``observed_funding`` — close observed funding rate
+            (annualised decimal).
+        ``mark_apr_7d_ma`` — 7-day moving average of observed funding.
+        ``mark_apr_30d_ma`` — 30-day moving average of observed funding.
+    """
+
+    def __init__(
+        self,
+        mark_apr,
+        observed_funding,
+        mark_apr_7d_ma,
+        mark_apr_30d_ma,
+        time,
+    ):
+        data = {
+            "mark_apr": np.asarray(mark_apr, dtype=float),
+            "observed_funding": np.asarray(observed_funding, dtype=float),
+            "mark_apr_7d_ma": np.asarray(mark_apr_7d_ma, dtype=float),
+            "mark_apr_30d_ma": np.asarray(mark_apr_30d_ma, dtype=float),
+        }
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
 class KlinesHistory(pd.DataFrame):
     """
     OHLCV klines. Columns: ``open``, ``high``, ``low``, ``close``, ``volume``.
