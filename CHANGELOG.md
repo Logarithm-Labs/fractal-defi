@@ -20,11 +20,11 @@ with one-line bullets per change.
   the existing `PriceHistory` / `RateHistory` family. Frame-typed
   return value of `PendleMarketLoader`.
 - Offline pytest suite covering the price-reconstruction helper, the
-  `_transform_payload` row shaping, the empty-payload short-circuit
-  and the strict-monotonicity invariant on `seconds_to_expiry`. Lives
-  in `tests/loaders/test_pendle_loader_offline.py` and uses the
-  existing `@pytest.mark.core` marker — no network access, runs in
-  ~50 ms on the standard CI matrix.
+  `transform()` row shaping, the empty-payload short-circuit and the
+  strict-monotonicity invariant on `seconds_to_expiry`. Lives in
+  `tests/loaders/test_pendle_loader_offline.py` and uses the existing
+  `@pytest.mark.core` marker — no network access, runs in ~50 ms on
+  the standard CI matrix.
 
 ## [v1.3.2] — 2026-05-06
 

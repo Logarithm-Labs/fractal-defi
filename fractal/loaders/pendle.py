@@ -112,7 +112,13 @@ class PendleMarketLoader(Loader):
         implied = payload.get("impliedApy") or []
         tvl = payload.get("tvl") or []
         if not timestamps:
-            self._data = PendleMarketHistory([], [], [], [], [])
+            self._data = PendleMarketHistory(
+                pt_prices=[],
+                implied_yields=[],
+                seconds_to_expiry=[],
+                pool_liquidity=[],
+                time=[],
+            )
             return
 
         n = min(len(timestamps), len(implied), len(tvl))
