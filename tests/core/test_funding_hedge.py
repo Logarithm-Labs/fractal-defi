@@ -1,8 +1,8 @@
 """Offline tests for :class:`FundingHedgeEntity`.
 
-Cover the linear PnL accrual, the long/short sign flip, and the
-invariant that withdrawing notional does not unwind already-realised
-funding payments.
+Cover the linear PnL accrual, the long/short sign flip, the
+direction-config validation and the invariant that withdrawing
+notional does not unwind already-realised funding payments.
 """
 import math
 
@@ -89,3 +89,16 @@ def test_balance_equals_accrued_pnl():
     e = FundingHedgeEntity()
     e._internal_state.accrued_pnl = 123.45
     assert e.balance == 123.45
+
+
+@pytest.mark.core
+def test_config_rejects_unknown_direction():
+    """A typo in ``direction`` must raise at construction, not silently flip sign."""
+    with pytest.raises(EntityException):
+        FundingHedgeEntity(FundingHedgeConfig(direction="lng"))  # type: ignore[arg-type]
+
+
+@pytest.mark.core
+def test_config_rejects_uppercase_long():
+    with pytest.raises(EntityException):
+        FundingHedgeEntity(FundingHedgeConfig(direction="LONG"))  # type: ignore[arg-type]

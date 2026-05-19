@@ -1,46 +1,5 @@
-"""Morpho isolated-market lending entity — Session 2.
-
-Morpho Blue exposes one isolated market per (collateral, loan) pair.
-For our strategy the relevant market is **PT-sUSDe → USDC**:
-deposit PT as collateral, borrow USDC against it, with a fixed
-liquidation loan-to-value (LLTV) parameter set per market (typically
-0.86 or 0.915 for PT collateral).
-
-This entity is intentionally close in shape to ``fractal.core.entities.protocols.aave.AaveEntity``
-(borrowed style, dropped the ``collateral_is_volatile`` knob since our
-collateral is PT and direction is fixed: collateral = PT, debt = USDC).
-
-* ``GlobalState`` — collateral price (PT mark in USDC), debt price (USDC = 1),
-  borrowing rate, utilization, observation timestamp.
-* ``InternalState`` — collateral amount (PT face), debt amount (USDC),
-  last accrual timestamp, liquidation flag.
-* Actions:
-  - ``action_deposit`` — add PT collateral (in face units).
-  - ``action_withdraw`` — remove PT collateral.
-  - ``action_borrow`` — draw USDC against collateral.
-  - ``action_repay`` — pay back USDC debt.
-
-Session 2 mechanics:
-    * ``update_state`` accrues debt at ``borrowing_rate * dt`` between
-      successive observations (continuous-compounding approximated by a
-      single per-step multiplier — close enough at our 1h/1d granularity).
-    * ``action_withdraw`` and ``action_borrow`` reject mutations that
-      would push ``ltv`` above the market LLTV. Failed actions revert
-      the partial mutation so the entity never holds half-applied state.
-    * Once an observation pushes ``ltv > lltv`` (e.g. via a collateral
-      price drop), the entity sets ``is_liquidated = True`` and every
-      subsequent action raises. Realistic seizure/penalty modeling is
-      deferred to Session 5; the flag is enough for strategy logic.
-
-We deliberately do NOT accrue a "supplier" yield on the collateral side:
-the collateral is PT face amount, not a yield-bearing deposit. PT pays
-off via its price climbing to 1 at expiry — that effect lives on
-``MorphoGlobalState.collateral_price``, not on the internal balance.
-"""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
+from typing import Optional
 
 from fractal.core.base.entity import (
     EntityException,
@@ -102,7 +61,7 @@ class MorphoInternalState(InternalState):
 
     collateral: float = 0.0
     debt: float = 0.0
-    last_timestamp: float | None = None
+    last_timestamp: Optional[float] = None
     is_liquidated: bool = False
 
 
@@ -113,13 +72,14 @@ class MorphoConfig:
     Attributes:
         market_id: Morpho's 32-byte market identifier (hex string).
             Informational at backtest level.
-        lltv: Liquidation loan-to-value threshold for this market.
-            When ``ltv > lltv`` the position is liquidatable.
-            Typical Morpho PT markets: 0.86 or 0.915.
-        liquidation_penalty: Bonus paid to liquidators on seized collateral.
-            Typical Morpho: 0.05–0.075. Used in Session 5 for realistic
-            liquidation modeling (seizure at penalty); Session 2 only
-            flags the position.
+        lltv: Liquidation loan-to-value threshold for this market,
+            in ``(0, 1]``. When ``ltv > lltv`` the position is
+            liquidatable. Typical Morpho PT markets: 0.86 or 0.915.
+            Validated by :class:`MorphoEntity.__init__`.
+        liquidation_penalty: Bonus paid to liquidators on seized
+            collateral. Typical Morpho: 0.05–0.075. Reserved for future
+            liquidation-penalty modelling; the entity only flags
+            ``is_liquidated`` today.
     """
 
     market_id: str = "0x" + "00" * 32
@@ -138,8 +98,18 @@ class MorphoEntity(BaseLendingEntity):
     _internal_state: MorphoInternalState
     _global_state: MorphoGlobalState
 
-    def __init__(self, config: MorphoConfig | None = None) -> None:
-        self._config = config or MorphoConfig()
+    def __init__(self, config: Optional[MorphoConfig] = None) -> None:
+        cfg = config or MorphoConfig()
+        if not 0.0 < cfg.lltv <= 1.0:
+            raise EntityException(
+                f"MorphoConfig.lltv must be in (0, 1], got {cfg.lltv!r}"
+            )
+        if cfg.liquidation_penalty < 0.0:
+            raise EntityException(
+                "MorphoConfig.liquidation_penalty must be non-negative, "
+                f"got {cfg.liquidation_penalty!r}"
+            )
+        self._config = cfg
         super().__init__()
 
     def _initialize_states(self) -> None:
@@ -158,8 +128,8 @@ class MorphoEntity(BaseLendingEntity):
                *previously stored* borrowing rate-equivalent — here we
                use ``state.borrowing_rate`` directly because the IRM
                provides a forward-looking rate for the next interval at
-               the start of that interval. (For backtest granularity
-               1h/1d this is indistinguishable from end-of-step accrual.)
+               the start of that interval. (At 1h / 1d granularity this
+               is indistinguishable from end-of-step accrual.)
             3. After accrual, if ``ltv > lltv`` we flag the position as
                liquidated. The flag latches: subsequent actions raise.
         """
@@ -193,13 +163,15 @@ class MorphoEntity(BaseLendingEntity):
     def ltv(self) -> float:
         """Current loan-to-value ratio.
 
-        Returns 0.0 when collateral is zero (debt should also be zero by
-        invariant; if not, the position is already insolvent — Session 2
-        will treat that case as ``ltv = +inf`` via a separate check).
+        * Both legs zero → ``0.0`` (well-defined, "no position").
+        * Collateral non-positive but debt positive → ``+inf``
+          (insolvent: any LLTV check fails, latching the liquidation
+          flag on the next ``update_state``).
+        * Otherwise → ``debt_value / collateral_value``.
         """
         cv = self.collateral_value
         if cv <= 0:
-            return 0.0
+            return float("inf") if self.debt_value > 0 else 0.0
         return self.debt_value / cv
 
     @property

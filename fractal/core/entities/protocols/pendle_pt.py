@@ -1,82 +1,6 @@
-"""Pendle Principal Token (PT) entity — Session 2 math.
-
-A PT is a transferable claim on one unit of the underlying SY
-(standardized yield token, e.g. sUSDe) redeemable 1:1 at expiry.
-Before expiry, PT trades at a discount on Pendle's bespoke AMM; the
-discount is the *implied yield* the market is currently pricing.
-
-This entity tracks one PT position on a single (market, expiry) pair.
-
-* ``GlobalState`` — current PT mark price, implied yield, seconds-to-expiry.
-* ``InternalState`` — PT face amount held, USDC cash leftover.
-* Actions:
-  - ``action_deposit`` — accept USDC into cash.
-  - ``action_buy_pt`` — swap USDC -> PT through the Pendle AMM.
-  - ``action_sell_pt`` — swap PT -> USDC (used for early exit / unwind).
-  - ``action_redeem`` — redeem PT 1:1 for the underlying at/after expiry.
-  - ``action_withdraw`` — return USDC cash to the caller.
-
-Session 2 modelling choices
----------------------------
-PT pricing.
-    Pendle's actual AMM uses a logarithmic SY/PT curve parameterised by
-    a scalar root and an anchor implied rate; replicating that in a
-    research backtest gives us false precision (we lack the per-block
-    pool reserves). Instead we treat ``pt_price`` as a function of the
-    quoted implied yield and time-to-expiry. Two parametric forms are
-    exposed via ``pricing_mode``:
-
-    * ``"linear"`` (default) — :math:`P_{PT} = 1 - r_{impl}\\,\\tau`,
-      clamped to :math:`[0, 1]`. Cheap, monotone, exact at expiry.
-    * ``"exponential"`` — :math:`P_{PT} = e^{-r_{impl}\\,\\tau}`,
-      continuous-compounding analogue. Closer to a zero-coupon bond
-      and what Pendle's own UI displays for "fixed yield".
-
-    For first-order analysis the two agree to within
-    :math:`O((r\\tau)^2)` (Taylor): a 14% APY one-year PT differs by
-    ~1.0 cent between the two forms, well below sampling noise.
-
-Real-data path (``derive_pt_price=False``, default).
-    When backtesting against historical Pendle quotes the caller passes
-    the observed ``pt_price`` straight into ``update_state``; we trust
-    that price and only cache ``implied_yield`` for reporting. This is
-    the production path.
-
-Stress / scenario path (``derive_pt_price=True``).
-    When projecting forward without quote data (e.g. "what if APY drops
-    to 8% by week 3?") we let the entity recompute ``pt_price`` from
-    the passed implied yield and time-to-expiry under ``pricing_mode``.
-
-AMM swaps.
-    Pendle pools quote a price plus per-pool fee and incur slippage in
-    the size of the swap relative to the pool. We model this as:
-
-    .. math::
-
-        \\mathit{slip} = \\sigma \\cdot \\frac{\\text{trade size}}
-                                              {\\text{pool liquidity}}
-
-    where :math:`\\sigma` is :attr:`PendlePTConfig.slippage_factor`.
-    A swap consuming the full pool incurs :math:`\\sigma` (50% by
-    default) of mid-price impact — a deliberately conservative sanity
-    scaling, since real Pendle slippage is concave but we only need
-    monotone-in-size for backtest realism. Fees are charged on the
-    notional input side and slippage moves the effective execution
-    price against the trader.
-
-Storage / inheritance note.
-    We use ``fractal.core.base.entity.BaseEntity`` directly because no
-    existing fractal-defi base captures "fixed-yield discount bond" —
-    the existing spot / LP / lending / perp bases assume different
-    mechanics. If the YT entity (variant 3) later materialises with
-    enough overlap we'll extract a ``BaseDiscountBondEntity``.
-"""
-
-from __future__ import annotations
-
 import math
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional
 
 from fractal.core.base.entity import (
     BaseEntity,
@@ -149,11 +73,12 @@ class PendlePTGlobalState(GlobalState):
             USDC equivalent. Used to estimate slippage on swaps.
         sy_price_in_usdc: Price of 1 unit of the underlying SY token
             (sUSDe, weETH, USDe, …) in USDC. Used by ``action_redeem``
-            to convert PT face → USDC at expiry. Defaults to 1.0 so
-            existing tests behave identically (SY = stablecoin at peg).
-            When the underlying depegs, this captures the realised loss
-            on the SY-side at expiry — addresses the linear-pricing
-            limitation flagged in the original whitepaper.
+            to convert PT face → USDC at expiry. Defaults to 1.0
+            (SY = stablecoin at peg). When the underlying depegs, this
+            captures the realised loss on the SY-side at expiry. Also
+            consulted by :meth:`PendlePTEntity.balance` after expiry to
+            mark PT face at the prevailing SY/USDC quote, so the NAV
+            curve reflects the depeg before redemption is called.
     """
 
     pt_price: float = 1.0
@@ -211,13 +136,14 @@ class PendlePTEntity(BaseEntity[PendlePTGlobalState, PendlePTInternalState]):
     """Pendle Principal Token position.
 
     Notional unit: USDC. A PT with face amount ``N`` is currently worth
-    ``N * pt_price`` USDC and will redeem for ``N`` USDC at expiry.
+    ``N * pt_price`` USDC and will redeem for ``N * sy_price_in_usdc``
+    USDC at expiry (``sy_price_in_usdc`` defaults to 1.0 = no depeg).
     """
 
     _internal_state: PendlePTInternalState
     _global_state: PendlePTGlobalState
 
-    def __init__(self, config: PendlePTConfig | None = None) -> None:
+    def __init__(self, config: Optional[PendlePTConfig] = None) -> None:
         self._config = config or PendlePTConfig()
         super().__init__()
 
@@ -236,7 +162,8 @@ class PendlePTEntity(BaseEntity[PendlePTGlobalState, PendlePTInternalState]):
 
         1. ``seconds_to_expiry <= 0`` — snap ``pt_price`` to 1.0 and
            ``seconds_to_expiry`` to 0.0 regardless of caller input.
-           PT face-value is constant after expiry by construction.
+           PT face-value is constant in SY units after expiry. The
+           USDC-side mark uses ``sy_price_in_usdc`` from :attr:`balance`.
         2. ``derive_pt_price=True`` — overwrite ``pt_price`` with the
            closed-form from :func:`compute_pt_price`. Used in scenario
            projection.
@@ -255,11 +182,22 @@ class PendlePTEntity(BaseEntity[PendlePTGlobalState, PendlePTInternalState]):
 
     @property
     def balance(self) -> float:
-        """Mark-to-market equity of the entity in USDC."""
-        return (
-            self._internal_state.cash
-            + self._internal_state.pt_face_amount * self._global_state.pt_price
-        )
+        """Mark-to-market equity of the entity in USDC.
+
+        Pre-expiry: ``cash + pt_face_amount * pt_price``. The PT mark
+        already embeds the implied yield, so SY-side depeg is implicit
+        in the AMM quote and we don't multiply by ``sy_price_in_usdc``.
+
+        Post-expiry: ``cash + pt_face_amount * sy_price_in_usdc``. PT
+        face is locked to 1 SY per face, so the USDC mark IS the SY/USDC
+        quote — the depeg flows straight into NAV even before
+        ``action_redeem`` is called.
+        """
+        cash = self._internal_state.cash
+        face = self._internal_state.pt_face_amount
+        if self._global_state.seconds_to_expiry <= 0:
+            return cash + face * self._global_state.sy_price_in_usdc
+        return cash + face * self._global_state.pt_price
 
     # ------------------------------------------------------------------
     # Action methods
@@ -366,7 +304,7 @@ class PendlePTEntity(BaseEntity[PendlePTGlobalState, PendlePTInternalState]):
         :meth:`update_state`). PT redeems 1:1 for SY at expiry; the
         SY → USDC conversion happens at the prevailing SY price
         carried on ``global_state.sy_price_in_usdc`` (defaults to 1.0,
-        which gives the old "stablecoin always at peg" behaviour). When
+        which gives the "stablecoin always at peg" behaviour). When
         the underlying SY has depegged (e.g. USDe in December 2025 or
         eETH in April 2024), redeem realises that loss correctly.
         """

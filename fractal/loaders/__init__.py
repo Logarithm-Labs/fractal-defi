@@ -19,13 +19,13 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
 from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.morpho import MorphoMarketLoader
 from fractal.loaders.pendle import PendleMarketLoader
+from fractal.loaders.pendle_ohlcv import PendleOHLCVLoader
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
     BorosMarketHistory,
     FundingHistory,
     KlinesHistory,
     LendingHistory,
-    MorphoMarketHistory,
     PendleMarketHistory,
     PoolHistory,
     PriceHistory,
@@ -63,7 +63,7 @@ __all__ = [
     "KlinesHistory",
     "PendleMarketHistory",
     "PendleMarketLoader",
-    "MorphoMarketHistory",
+    "PendleOHLCVLoader",
     "MorphoMarketLoader",
     "BorosMarketHistory",
     "BorosMarketLoader",
