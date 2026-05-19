@@ -1,60 +1,5 @@
-"""Funding-rate hedge entity — Session 6.
-
-A *funding-rate carry* leg: a notional long (or short) position whose
-PnL stream is the cumulative perpetual-funding cashflow,
-
-.. math::
-
-    \\Delta\\text{PnL} = s \\cdot N \\cdot r_f \\cdot \\Delta t,
-
-where :math:`N` is the notional, :math:`r_f` is the annualised funding
-rate, :math:`\\Delta t` is in years, and :math:`s \\in \\{+1, -1\\}` is
-the side sign (``+1`` for the long-funding side that *receives* funding
-when the rate is positive).
-
-Why this matters for the PT-sUSDe loop
---------------------------------------
-The PT-sUSDe collateral pays a fixed yield (the PT discount unwinding
-to par at expiry), but the *implied yield* market — the price at which
-new PT trades — can drift between deposit and exit. That drift mirrors
-the perpetual-funding regime for sUSDe-style assets: the same demand
-for delta-neutral USD carry that drives Pendle's implied yield is what
-drives perp funding on hyperliquid USDe / sUSDe pairs. A long-funding
-position therefore acts as a partial hedge on implied-yield risk.
-
-Pendle's *Boros* product tokenises exactly this leg (a tradable claim
-on a funding-rate stream); for our backtest we model the stream
-directly rather than wrapping it in a token, since the position is
-held passively and never traded out into a token-market secondary.
-
-Scope / non-goals
------------------
-* No price exposure is modelled. This is purely the carry abstraction
-  — the funding-leg PnL stream, decoupled from the underlying mark.
-  In production we'd close the delta with a spot or futures offset; in
-  the backtest we assume that hedge is perfect and free, which is the
-  standard idealisation for funding-rate carry research.
-* No funding-payment cadence is enforced. Hyperliquid funds hourly,
-  but the loader is responsible for *annualising* the per-hour rate
-  before pushing it into :class:`FundingHedgeGlobalState`. The entity
-  only sees the smooth annualised rate.
-* ``accrued_pnl`` is signed and may go negative — that is the whole
-  point of the hedge: under inverted-funding regimes (short crowded)
-  a long-funding position loses money, and that loss must reach the
-  equity curve.
-
-Storage / inheritance note
---------------------------
-We inherit from :class:`fractal.core.base.entity.BaseEntity` directly
-because the funding-leg has no analog among the existing fractal-defi
-lending / LP / spot bases — it is a pure cashflow accrual with no
-balance-sheet beyond its own PnL.
-"""
-
-from __future__ import annotations
-
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Optional
 
 from fractal.core.base.entity import (
     BaseEntity,
@@ -109,7 +54,10 @@ class FundingHedgeInternalState(InternalState):
 
     notional: float = 0.0
     accrued_pnl: float = 0.0
-    last_timestamp: float | None = None
+    last_timestamp: Optional[float] = None
+
+
+_ALLOWED_DIRECTIONS = ("long", "short")
 
 
 @dataclass
@@ -121,8 +69,8 @@ class FundingHedgeConfig:
             funding when ``funding_rate > 0`` — the side a Boros
             funding-token holder takes. ``"short"`` flips the sign:
             the position *pays* funding when the rate is positive.
-            Used in tests to flip the carry leg side; in the live
-            strategy we always hold long-funding against PT carry.
+            Any other value is rejected by :class:`FundingHedgeEntity`
+            at construction.
     """
 
     direction: Literal["long", "short"] = "long"
@@ -141,8 +89,14 @@ class FundingHedgeEntity(
     _internal_state: FundingHedgeInternalState
     _global_state: FundingHedgeGlobalState
 
-    def __init__(self, config: FundingHedgeConfig | None = None) -> None:
-        self._config = config or FundingHedgeConfig()
+    def __init__(self, config: Optional[FundingHedgeConfig] = None) -> None:
+        cfg = config or FundingHedgeConfig()
+        if cfg.direction not in _ALLOWED_DIRECTIONS:
+            raise EntityException(
+                f"FundingHedgeConfig.direction must be one of "
+                f"{_ALLOWED_DIRECTIONS}, got {cfg.direction!r}"
+            )
+        self._config = cfg
         super().__init__()
 
     def _initialize_states(self) -> None:

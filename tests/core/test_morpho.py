@@ -1,8 +1,9 @@
 """Offline tests for :class:`MorphoEntity`.
 
 Cover the LLTV-bounded mutations, the borrow-rate accrual at hourly
-granularity, the latching liquidation flag and the derived health
-factor / LTV properties.
+granularity, the latching liquidation flag, derived health-factor /
+LTV properties (including the insolvent inf branch) and the config
+validation on construction.
 """
 import math
 
@@ -46,8 +47,7 @@ def test_borrow_rejects_above_lltv():
     e.update_state(MorphoGlobalState(collateral_price=1.0, timestamp_seconds=0.0))
     e.action_deposit(1000.0)
     with pytest.raises(EntityException):
-        e.action_borrow(900.0)  # 90% LTV > 86% LLTV
-    # Rollback: debt restored to zero, not 900.
+        e.action_borrow(900.0)
     assert e._internal_state.debt == 0.0
 
 
@@ -58,7 +58,7 @@ def test_withdraw_rejects_if_pushes_above_lltv():
     e.action_deposit(1000.0)
     e.action_borrow(800.0)
     with pytest.raises(EntityException):
-        e.action_withdraw(100.0)  # debt 800 / collateral 900 = 88.9% > 86%
+        e.action_withdraw(100.0)
     assert e._internal_state.collateral == 1000.0
 
 
@@ -68,7 +68,6 @@ def test_borrow_rate_accrues_over_one_hour():
     e.update_state(MorphoGlobalState(collateral_price=1.0, borrowing_rate=0.10, timestamp_seconds=0.0))
     e.action_deposit(1000.0)
     e.action_borrow(500.0)
-    # Advance one hour; 10% APY on 500 USDC over 1h ≈ 500 * 0.10 / (365.25*24)
     e.update_state(
         MorphoGlobalState(
             collateral_price=1.0,
@@ -86,11 +85,10 @@ def test_collateral_price_drop_latches_liquidation_flag():
     e.update_state(MorphoGlobalState(collateral_price=1.0, timestamp_seconds=0.0))
     e.action_deposit(1000.0)
     e.action_borrow(800.0)
-    # Collateral drops 20% -> position is now 800 / (1000 * 0.8) = 100% LTV
     e.update_state(MorphoGlobalState(collateral_price=0.8, timestamp_seconds=3600.0))
     assert e.is_liquidated
     with pytest.raises(EntityException):
-        e.action_deposit(100.0)  # latched: no further actions allowed
+        e.action_deposit(100.0)
 
 
 @pytest.mark.core
@@ -110,5 +108,44 @@ def test_balance_is_collateral_minus_debt():
     e.update_state(MorphoGlobalState(collateral_price=2.0, timestamp_seconds=0.0))
     e.action_deposit(100.0)
     e.action_borrow(50.0)
-    # collateral_value = 100 * 2 = 200; debt = 50; balance = 150.
     assert math.isclose(e.balance, 150.0, rel_tol=1e-9)
+
+
+@pytest.mark.core
+def test_ltv_is_inf_when_insolvent_no_collateral_with_debt():
+    """Collateral price → 0 with outstanding debt → ltv = +inf, latches liq."""
+    e = _make_market(lltv=0.86)
+    e.update_state(MorphoGlobalState(collateral_price=1.0, timestamp_seconds=0.0))
+    e.action_deposit(1000.0)
+    e.action_borrow(500.0)
+    # Total collateral wipe: positive debt, zero collateral_value → ltv inf.
+    e.update_state(MorphoGlobalState(collateral_price=0.0, timestamp_seconds=3600.0))
+    assert e.ltv == float("inf")
+    assert e.is_liquidated
+    # Latched: any further action must raise.
+    with pytest.raises(EntityException):
+        e.action_borrow(1.0)
+
+
+@pytest.mark.core
+def test_config_rejects_lltv_above_one():
+    with pytest.raises(EntityException):
+        MorphoEntity(MorphoConfig(lltv=1.5))
+
+
+@pytest.mark.core
+def test_config_rejects_lltv_at_zero():
+    with pytest.raises(EntityException):
+        MorphoEntity(MorphoConfig(lltv=0.0))
+
+
+@pytest.mark.core
+def test_config_rejects_negative_lltv():
+    with pytest.raises(EntityException):
+        MorphoEntity(MorphoConfig(lltv=-0.1))
+
+
+@pytest.mark.core
+def test_config_rejects_negative_liquidation_penalty():
+    with pytest.raises(EntityException):
+        MorphoEntity(MorphoConfig(lltv=0.86, liquidation_penalty=-0.01))

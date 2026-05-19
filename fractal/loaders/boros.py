@@ -24,7 +24,7 @@ Public, keyless:
 
 Output
 ------
-DataFrame indexed by UTC datetime, columns:
+:class:`BorosMarketHistory` indexed by UTC datetime with columns:
 
 * ``mark_apr``         — close mark rate (annualised, decimal).
 * ``observed_funding`` — close observed funding rate (annualised).
@@ -32,30 +32,28 @@ DataFrame indexed by UTC datetime, columns:
 * ``mark_apr_30d_ma``  — 30-day moving average of observed funding.
 
 The ``mark_apr`` column is what a long-Boros holder receives in funding
-per unit of time. It is the analogue of
-``funding_rate_annualised`` in the ``FundingHedgeLoader`` (Hyperliquid
-proxy) and can be swapped in directly in any strategy that consumes
-funding-rate observations.
+per unit of time. It is the analogue of the per-hour funding-rate
+loaders (Hyperliquid, Binance) and can be swapped in directly in any
+strategy that consumes funding-rate observations.
 
-Recent-only coverage is a known limitation. We use the Hyperliquid
-funding-rate loader as a long-history proxy and validate empirically
-on the overlap window that the two series track each other closely.
-See ``scripts/validate_boros_proxy.py``.
+Recent-only coverage is a known endpoint limitation, not a loader bug.
+For long-history backtests, calibrate against a per-hour funding feed
+(e.g. :class:`HyperliquidFundingRatesLoader`) on the overlap window.
 """
-from __future__ import annotations
-
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Dict, FrozenSet, List, Optional, Set, Tuple
 
-import requests
+import pandas as pd
 
+from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import BorosMarketHistory
 
 BOROS_API_BASE: str = "https://api.boros.finance/core/v1"
 
-_REQUEST_TIMEOUT_S: float = 30.0
-_OUTPUT_COLUMNS: tuple[str, ...] = (
+_ALLOWED_TIME_FRAMES: FrozenSet[str] = frozenset({"5m", "1h", "1d", "1w"})
+
+_OUTPUT_COLUMNS: Tuple[str, ...] = (
     "mark_apr",
     "observed_funding",
     "mark_apr_7d_ma",
@@ -73,8 +71,10 @@ class BorosMarketLoader(Loader):
     """Recent funding-rate bars for one Boros market.
 
     Pipeline: ``extract`` issues a single REST GET to the Boros chart
-    endpoint and stashes the JSON in ``self._raw``; ``transform`` parses
-    the bar list into a UTC-indexed DataFrame.
+    endpoint via the shared :class:`HttpClient` (retry + backoff) and
+    stashes the JSON in ``self._raw``; ``transform`` parses the bar
+    list into a typed :class:`BorosMarketHistory`; ``read`` returns the
+    same type on both cache-hit and cache-miss paths.
     """
 
     def __init__(
@@ -84,53 +84,50 @@ class BorosMarketLoader(Loader):
         end_time: datetime,
         *,
         time_frame: str = "1h",
-        api_key: str | None = None,
+        api_key: Optional[str] = None,
         loader_type: LoaderType = LoaderType.CSV,
     ) -> None:
         super().__init__(loader_type=loader_type)
+        if time_frame not in _ALLOWED_TIME_FRAMES:
+            raise ValueError(
+                f"time_frame must be one of {sorted(_ALLOWED_TIME_FRAMES)}, "
+                f"got {time_frame!r}"
+            )
         self.market_id: int = int(market_id)
         self.start_time: datetime = _to_utc(start_time)
         self.end_time: datetime = _to_utc(end_time)
+        if self.end_time < self.start_time:
+            raise ValueError(
+                f"end_time {self.end_time} precedes start_time {self.start_time}"
+            )
         self.time_frame: str = time_frame
-        self._api_key: str | None = api_key
-        self._raw: dict[str, Any] = {}
+        self._api_key: Optional[str] = api_key
+        self._raw: Dict[str, Any] = {}
+        self._http: HttpClient = HttpClient()
 
     def _cache_key(self) -> str:
-        s = self.start_time.strftime("%Y%m%d")
-        e = self.end_time.strftime("%Y%m%d")
+        s = int(self.start_time.timestamp())
+        e = int(self.end_time.timestamp())
         return f"market{self.market_id}-{self.time_frame}-{s}-{e}"
 
     def _url(self) -> str:
         return f"{BOROS_API_BASE}/markets/chart"
 
-    def _params(self) -> dict[str, Any]:
+    def _params(self) -> Dict[str, Any]:
         return {"marketId": self.market_id, "timeFrame": self.time_frame}
 
-    def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
-        if self._api_key:
-            headers["Authorization"] = f"Bearer {self._api_key}"
-        return headers
-
     def extract(self) -> None:
-        response = requests.get(
-            self._url(),
-            params=self._params(),
-            headers=self._headers(),
-            timeout=_REQUEST_TIMEOUT_S,
-        )
-        response.raise_for_status()
-        payload = response.json() if callable(getattr(response, "json", None)) else {}
+        payload = self._http.get(self._url(), params=self._params())
         self._raw = payload if isinstance(payload, dict) else {}
 
     def transform(self) -> None:
         if not self._raw:
-            self._data = BorosMarketHistory([], [], [], [], [])
+            self._data = _empty_history()
             return
         rows = _parse_bars(self._raw)
         rows = [r for r in rows if self.start_time <= r["dt"] <= self.end_time]
         if not rows:
-            self._data = BorosMarketHistory([], [], [], [], [])
+            self._data = _empty_history()
             return
         self._data = BorosMarketHistory(
             mark_apr=[r["mark_apr"] for r in rows],
@@ -141,23 +138,35 @@ class BorosMarketLoader(Loader):
         )
 
     def read(self, with_run: bool = False) -> BorosMarketHistory:
+        """Return the typed ``BorosMarketHistory`` on both cache paths."""
         if with_run:
             self.run()
         else:
             self._read(self._cache_key())
+            self._data = _rebuild_from_cache(self._data)
         return self._data
 
 
 # ---------------------------------------------------------------- helpers
 
 
-def _parse_bars(payload: dict[str, Any]) -> list[dict[str, Any]]:
+def _empty_history() -> BorosMarketHistory:
+    return BorosMarketHistory(
+        mark_apr=[],
+        observed_funding=[],
+        mark_apr_7d_ma=[],
+        mark_apr_30d_ma=[],
+        time=[],
+    )
+
+
+def _parse_bars(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Parse Boros chart payload — list of bars under ``results``."""
     results = payload.get("results") or []
     if not isinstance(results, list) or not results:
         return []
-    parsed: list[dict[str, Any]] = []
-    seen_ts: set[int] = set()
+    parsed: List[Dict[str, Any]] = []
+    seen_ts: Set[int] = set()
     for row in results:
         try:
             epoch = int(row["ts"])
@@ -181,6 +190,32 @@ def _parse_bars(payload: dict[str, Any]) -> list[dict[str, Any]]:
         )
     parsed.sort(key=lambda r: r["dt"])
     return parsed
+
+
+def _rebuild_from_cache(data: Any) -> BorosMarketHistory:
+    """Coerce a cached ``pd.DataFrame`` (or ``BorosMarketHistory``) back to typed form."""
+    if isinstance(data, BorosMarketHistory):
+        return data
+    if data is None or (isinstance(data, pd.DataFrame) and data.empty):
+        return _empty_history()
+    df = data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
+    if "time" in df.columns:
+        df["time"] = pd.to_datetime(df["time"], utc=True)
+        df = df.set_index("time").sort_index()
+    idx = pd.to_datetime(df.index, utc=True)
+    if not isinstance(idx, pd.DatetimeIndex):
+        idx = pd.DatetimeIndex(idx)
+    idx.name = "time"
+    for col in _OUTPUT_COLUMNS:
+        if col not in df.columns:
+            df[col] = float("nan")
+    return BorosMarketHistory(
+        mark_apr=df["mark_apr"].to_numpy(),
+        observed_funding=df["observed_funding"].to_numpy(),
+        mark_apr_7d_ma=df["mark_apr_7d_ma"].to_numpy(),
+        mark_apr_30d_ma=df["mark_apr_30d_ma"].to_numpy(),
+        time=idx,
+    )
 
 
 __all__ = ["BorosMarketLoader", "BOROS_API_BASE"]
