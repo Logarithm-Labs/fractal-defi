@@ -6,22 +6,13 @@ from typing import Deque, List
 
 import numpy as np
 
-from fractal.core.base import (
-    Action, ActionToTake, BaseStrategy,
-    BaseStrategyParams, NamedEntity,
-)
-from fractal.core.base.entity import (
-    BaseEntity, EntityException, GlobalState, InternalState,
-)
-from fractal.core.entities.models.uniswap_v3_fees import (
-    estimate_fee, get_liquidity_delta,
-)
-from fractal.core.entities.protocols.uniswap_v3_lp import (
-    UniswapV3LPConfig, UniswapV3LPEntity,
-)
-
+from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity
+from fractal.core.base.entity import BaseEntity, EntityException, GlobalState, InternalState
+from fractal.core.entities.models.uniswap_v3_fees import estimate_fee, get_liquidity_delta
+from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, UniswapV3LPEntity
 
 # ── States ────────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class PanopticPoolGlobalState(GlobalState):
@@ -123,7 +114,11 @@ class PanopticStraddleEntity(BaseEntity):
     def intrinsic_value(self) -> float:
         if not self._internal_state.is_open:
             return 0.0
-        return abs(self._global_state.price - self._internal_state.entry_price)
+        s = self._internal_state
+        price_move = abs(self._global_state.price - s.entry_price)
+        # Scale by notional/entry_price to get USDC value of the move
+        contracts = s.notional / s.entry_price if s.entry_price > 0 else 0.0
+        return price_move * contracts
 
     @property
     def balance(self) -> float:
@@ -132,10 +127,10 @@ class PanopticStraddleEntity(BaseEntity):
 
     # ── actions ───────────────────────────────────────────────────────────────
 
-    def action_deposit(self, amount: float) -> None:
-        if amount < 0:
-            raise EntityException(f"deposit must be >= 0, got {amount}")
-        self._internal_state.cash += amount
+    def action_deposit(self, amount_in_notional: float) -> None:
+        if amount_in_notional < 0:
+            raise EntityException(f"deposit must be >= 0, got {amount_in_notional}")
+        self._internal_state.cash += amount_in_notional
 
     def action_open(
         self, notional: float, collateral: float,
@@ -248,7 +243,7 @@ class PanopticStraddleStrategy(BaseStrategy):
         self._initialized = True
         half = self._params.INITIAL_BALANCE / 2
         return [
-            ActionToTake('STRADDLE', Action('deposit', {'amount': half})),
+            ActionToTake('STRADDLE', Action('deposit', {'amount_in_notional': half})),
             ActionToTake('LP', Action('deposit', {'amount_in_notional': half})),
             ActionToTake('LP', Action('open_position', {
                 'amount_in_notional': half,
@@ -266,13 +261,16 @@ class PanopticStraddleStrategy(BaseStrategy):
         if state.implied_volatility >= threshold:
             return []
         notional = straddle.internal_state.cash * self._params.NOTIONAL_FRACTION
-        if straddle.internal_state.cash < notional * self._params.COLLATERAL_PCT:
+        collateral = notional * self._params.COLLATERAL_PCT
+        commission = notional * self._params.PANOPTIC_COMMISSION_PCT
+        total_upfront_cost = collateral + commission + self._params.GAS_USD
+        if straddle.internal_state.cash < total_upfront_cost:
             return []
         return [ActionToTake('STRADDLE', Action('open', {
-            'notional':   notional,
-            'collateral': notional * self._params.COLLATERAL_PCT,
-            'commission': notional * self._params.PANOPTIC_COMMISSION_PCT,
-            'gas_usd':    self._params.GAS_USD,
+            'notional': notional,
+            'collateral': collateral,
+            'commission': commission,
+            'gas_usd': self._params.GAS_USD,
         }))]
 
     def _maybe_close(
@@ -282,19 +280,16 @@ class PanopticStraddleStrategy(BaseStrategy):
         commission = s.notional * self._params.PANOPTIC_COMMISSION_PCT
         total_costs = s.accumulated_premium + commission + self._params.GAS_USD
 
-        if (total_costs > 0
-                and straddle.intrinsic_value
-                >= self._params.TAKE_PROFIT_MULT * total_costs):
-            reason = 'TAKE_PROFIT'
-        elif total_costs >= (self._params.INITIAL_BALANCE
-                             * self._params.STOP_LOSS_BUDGET_PCT):
-            reason = 'STOP_LOSS'
+        if (total_costs > 0 and straddle.intrinsic_value >= self._params.TAKE_PROFIT_MULT * total_costs):
+            pass
+        elif total_costs >= (self._params.INITIAL_BALANCE * self._params.STOP_LOSS_BUDGET_PCT):
+            pass
         elif s.bars_held >= self._params.MAX_HOLD_BARS:
-            reason = 'TIME_STOP'
+            pass
         else:
             return []
 
         return [ActionToTake('STRADDLE', Action('close', {
             'commission': commission,
-            'gas_usd':    self._params.GAS_USD,
+            'gas_usd': self._params.GAS_USD,
         }))]

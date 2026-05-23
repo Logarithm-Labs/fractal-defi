@@ -8,7 +8,7 @@ suite.
 """
 
 import math
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import List
 
 import numpy as np
@@ -22,10 +22,10 @@ from fractal.strategies.panoptic_straddle import (
     PanopticStraddleStrategy,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _obs(
     prices: list,
@@ -37,8 +37,10 @@ def _obs(
     result = []
     for i, price in enumerate(prices):
         iv = iv_values[i] if iv_values is not None else 0.60
+        t0 = datetime(2023, 1, 1, tzinfo=UTC)
+        ts = t0 + timedelta(hours=i)
         result.append(Observation(
-            timestamp=datetime(2023, 1, 1, i % 24, tzinfo=UTC),
+            timestamp=ts,
             states={
                 "STRADDLE": PanopticPoolGlobalState(
                     price=price, fees=fees, liquidity=liquidity,
@@ -181,7 +183,7 @@ def test_e2e_trending_market_straddle_balance_peak_above_start():
     trend = [3000.0 + i * 60 for i in range(30)]
     prices = flat + trend
 
-    iv_flat  = [0.1] * 20   # low IV during flat -> entry fires
+    iv_flat = [0.1] * 20   # low IV during flat -> entry fires
     iv_trend = [0.9] * 30   # high IV during trend
     iv = iv_flat + iv_trend
 
@@ -196,7 +198,7 @@ def test_e2e_trending_market_straddle_balance_peak_above_start():
     _, df, _, _ = _run(params, prices, iv_values=iv, fees=100.0)
 
     straddle_start = df["STRADDLE_balance"].iloc[6]  # after lookback
-    straddle_peak  = df["STRADDLE_balance"].max()
+    straddle_peak = df["STRADDLE_balance"].max()
     assert straddle_peak >= straddle_start
 
 
@@ -215,9 +217,9 @@ def test_e2e_stop_loss_fires_on_huge_fees():
         INITIAL_BALANCE=10_000.0,
         LOOKBACK_BARS=5,
         IV_ENTRY_PERCENTILE=30.0,
-        TAKE_PROFIT_MULT=1000.0,    # TP will not fire
-        STOP_LOSS_BUDGET_PCT=0.001, # $10 limit on a $10 k balance
-        MAX_HOLD_BARS=1000,         # time stop will not fire first
+        TAKE_PROFIT_MULT=1000.0,     # TP will not fire
+        STOP_LOSS_BUDGET_PCT=0.001,  # $10 limit on a $10 k balance
+        MAX_HOLD_BARS=1000,          # time stop will not fire first
     )
     _, df, _, strategy = _run(
         params, prices,
