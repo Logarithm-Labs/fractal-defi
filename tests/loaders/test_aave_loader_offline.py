@@ -59,3 +59,28 @@ def test_transform_empty_dataframe_returns_well_shaped_columns():
     loader.transform()
     assert list(loader._data.columns) == ["date", "lending_rate", "borrowing_rate"]
     assert loader._data.empty
+
+
+@pytest.mark.core
+def test_read_raises_on_missing_rates_after_merge():
+    """Outer merge can leave NaN on one leg; must not silently become 0% APY."""
+    df = pd.DataFrame({
+        "date": [datetime(2024, 1, 1, tzinfo=UTC), datetime(2024, 1, 2, tzinfo=UTC)],
+        "lending_rate": [0.05, float("nan")],
+        "borrowing_rate": [float("nan"), 0.10],
+    })
+    loader = _loader_with_data(df, resolution=24)
+    loader.transform()
+    loader._read = lambda _key: None  # _data already set; skip CSV cache lookup
+    with pytest.raises(ValueError, match="missing lending/borrowing"):
+        loader.read()
+
+
+@pytest.mark.core
+def test_window_for_warns_when_span_exceeds_last_year():
+    from fractal.loaders.aave import _window_for
+
+    start = datetime(2022, 1, 1, tzinfo=UTC)
+    end = datetime(2024, 6, 1, tzinfo=UTC)
+    with pytest.warns(UserWarning, match="exceeds Aave GraphQL max window"):
+        assert _window_for(start, end) == "LAST_YEAR"

@@ -102,7 +102,15 @@ class BinanceFundingLoader(Loader):
             self._data = pd.DataFrame(columns=cols)
             return
         self._data["fundingTime"] = pd.to_datetime(self._data["fundingTime"], utc=True).dt.floor("s")
-        self._data["fundingRate"] = pd.to_numeric(self._data["fundingRate"], errors="coerce").fillna(0.0)
+        rates = pd.to_numeric(self._data["fundingRate"], errors="coerce")
+        if rates.isna().any():
+            bad = int(rates.isna().sum())
+            raise ValueError(
+                f"Binance funding loader: {bad} row(s) have missing or non-numeric "
+                "fundingRate values. Refusing to substitute 0 which would silently "
+                "drop funding cost/income in backtests."
+            )
+        self._data["fundingRate"] = rates
         self._data = (
             self._data.sort_values("fundingTime")
             .drop_duplicates(subset=["fundingTime"])

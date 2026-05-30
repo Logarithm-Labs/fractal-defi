@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+import math
 from typing import Dict, List, Optional
 
 import numpy as np
@@ -82,7 +83,16 @@ class StrategyResult:
         total_years: float = total_seconds / (60 * 60 * 24 * 365)
 
         accumulated_return: float = data['net_balance'].iloc[-1] / first_balance - 1
-        apy = accumulated_return / total_years
+        growth = 1.0 + accumulated_return
+        if growth <= 0:
+            apy = -1.0
+        else:
+            log_annual = math.log(growth) / total_years
+            # Very short windows can overflow ``exp``; fall back to linear annualization.
+            if log_annual > 700 or log_annual < -700:
+                apy = accumulated_return / total_years
+            else:
+                apy = math.expm1(log_annual)
         data_frequency = len(data) / total_years
 
         returns = data['net_balance'].pct_change().dropna()

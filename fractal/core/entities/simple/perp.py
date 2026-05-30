@@ -22,7 +22,7 @@ Update sequence on each ``update_state``:
 
 1. Apply the new global state (mark price + funding rate).
 2. Settle funding: ``collateral -= size · mark_price · funding_rate``.
-3. Liquidation check: if ``balance < |size| · mark_price / MAX_LEVERAGE``,
+3. Liquidation check: if ``balance <= |size| · mark_price / MAX_LEVERAGE``,
    wipe collateral and the position.
 
 Funding settles **before** liquidation so a positive funding tick can
@@ -312,7 +312,7 @@ class SimplePerpEntity(BasePerpEntity):
     def _check_liquidation(self) -> bool:
         if self._internal_state.size == 0:
             return False
-        return self.balance < self.maintenance_margin
+        return self.balance <= self.maintenance_margin
 
     def _wipe(self) -> None:
         self._internal_state.collateral = 0.0

@@ -62,6 +62,15 @@ def _window_for(start_time: Optional[datetime], end_time: Optional[datetime]) ->
     for name, td in _WINDOWS:
         if span <= td:
             return name
+    max_window = _WINDOWS[-1][1]
+    if span > max_window:
+        warnings.warn(
+            f"Requested span {span.days} days exceeds Aave GraphQL max window "
+            f"({max_window.days} days). History before "
+            f"{end - max_window:%Y-%m-%d} will be missing.",
+            UserWarning,
+            stacklevel=3,
+        )
     return "LAST_YEAR"
 
 
@@ -183,9 +192,17 @@ class AaveV3RatesLoader(Loader):
             self._read(self._cache_key())
         if self._data is None or self._data.empty:
             return LendingHistory(lending_rates=[], borrowing_rates=[], time=[])
+        lending = self._data["lending_rate"].astype(float)
+        borrowing = self._data["borrowing_rate"].astype(float)
+        if lending.isna().any() or borrowing.isna().any():
+            raise ValueError(
+                "Aave rate history has missing lending/borrowing values after merge. "
+                "Got NaN in lending_rate or borrowing_rate; refusing to substitute 0% "
+                "which would silently freeze accruals in backtests."
+            )
         return LendingHistory(
-            lending_rates=self._data["lending_rate"].astype(float).fillna(0.0).values,
-            borrowing_rates=self._data["borrowing_rate"].astype(float).fillna(0.0).values,
+            lending_rates=lending.values,
+            borrowing_rates=borrowing.values,
             time=pd.to_datetime(self._data["date"], utc=True).values,
         )
 
