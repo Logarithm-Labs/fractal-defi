@@ -64,8 +64,8 @@ V3_ONLY_PUBLIC = {
     # price range, so pair-mode entry is not needed there.
     "action_open_position_from_pair",
     # Protocol-fee split (slot0.feeProtocol) — V3-specific mechanism;
-    # e.g. Base pools give LPs only 3/4 or 5/6 of swap fees.
-    "lp_fee_share",
+    # e.g. Base pools take 1/4 or 1/6 of swap fees.
+    "protocol_fee",
     # Fee-accrual scheme selector (auto | aggregate | fee_growth).
     "fee_model",
     # Per-leg fee computation for the feeGrowth model (pure, mirrors
@@ -91,7 +91,7 @@ V2_ONLY_CONFIG_FIELDS = {
 
 # Config fields allowed only on V3 (see V3_ONLY_PUBLIC).
 V3_ONLY_CONFIG_FIELDS = {
-    "lp_fee_share",
+    "protocol_fee",
     "fee_model",
 }
 

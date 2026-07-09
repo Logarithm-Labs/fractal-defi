@@ -1,8 +1,8 @@
 """Compare fee-accounting methods over the replicated positions:
 ``fee_growth`` (entity, counter deltas), ``aggregate`` (entity, feesUSD
-share × lp_fee_share; no per-leg attribution) and ``per_event``
+share net of protocol_fee; no per-leg attribution) and ``per_event``
 (event-replay reference via ``UniswapV3SwapsLoader``, tick-gated,
-``fee = gross_input × tier/1e6``). All vs the same on-chain
+``fee = gross_input × tier/1e6``, net of protocol_fee). All vs the same on-chain
 ``feeGrowthInside`` truth; inputs are loaded once per position and
 shared by both Fractal models. Ratios are reported in USD and per
 token leg; timings as pure compute and full wall time.
@@ -26,7 +26,7 @@ from fractal.loaders import LoaderType, UniswapV3SwapsLoader
 def per_event_position(position: dict, rpc_url: str) -> dict:
     """Reconstruct the position's fees swap-by-swap from event logs:
     for every tick-in-range Swap, ``fee = gross_input × tier/1e6``
-    (event amounts include the fee) × ``lp_fee_share`` ×
+    (event amounts include the fee) × ``1 − protocol_fee`` ×
     ``L_pos / L_swap`` with the pool liquidity from the event itself.
     """
     swaps = UniswapV3SwapsLoader(
@@ -58,7 +58,7 @@ def per_event_position(position: dict, rpc_url: str) -> dict:
         token1_decimal=d1,
     )
     tier = position["fee_tier"]
-    k = tier / 1e6 * position["lp_fee_share"] * l_pos
+    k = tier / 1e6 * (1 - position["protocol_fee"]) * l_pos
     input0 = in_range["amount0"] > 0  # token0 is the input side
     fees_token0 = (in_range.loc[input0, "amount0"] * k / in_range.loc[input0, "liquidity"]).sum()
     fees_token1 = (in_range.loc[~input0, "amount1"] * k / in_range.loc[~input0, "liquidity"]).sum()

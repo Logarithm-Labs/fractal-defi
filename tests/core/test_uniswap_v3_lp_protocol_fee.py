@@ -1,7 +1,7 @@
-"""Tests for lp_fee_share (protocol-fee split) and exact-pair position entry.
+"""Tests for protocol_fee (slot0.feeProtocol split) and exact-pair entry.
 
 Motivated by Base mainnet, where V3 pools run with the protocol-fee
-switch ON (``slot0.feeProtocol = 4|4`` → LPs get 75% of swap fees):
+switch ON (``slot0.feeProtocol = 4|4`` → the protocol takes 25%):
 a fee model that ignores it overstates LP income by 1/0.75.
 """
 import pytest
@@ -15,18 +15,18 @@ def make_entity(**config_kwargs) -> UniswapV3LPEntity:
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("bad_share", [0.0, -0.5, 1.5])
-def test_lp_fee_share_validation(bad_share):
+@pytest.mark.parametrize("bad_fee", [-0.25, 1.0, 1.5])
+def test_protocol_fee_validation(bad_fee):
     with pytest.raises(EntityException):
-        make_entity(lp_fee_share=bad_share)
+        make_entity(protocol_fee=bad_fee)
 
 
 @pytest.mark.core
-def test_lp_fee_share_scales_accrued_fees():
-    """Same position, same pool bars — fees scale linearly with lp_fee_share."""
+def test_protocol_fee_scales_accrued_fees():
+    """Same position, same pool bars — fees scale with 1 − protocol_fee."""
     accrued = {}
     for share in (1.0, 0.75, 0.5):
-        entity = make_entity(pool_fee_rate=0.0, lp_fee_share=share)
+        entity = make_entity(pool_fee_rate=0.0, protocol_fee=1 - share)
         entity.update_state(UniswapV3LPGlobalState(price=1.0, tvl=1_000_000))
         entity.action_deposit(1000)
         entity.action_open_position(1000, 0.9, 1.1)
@@ -42,10 +42,10 @@ def test_lp_fee_share_scales_accrued_fees():
 
 
 @pytest.mark.core
-def test_lp_fee_share_default_keeps_legacy_behavior():
-    """Default config (share=1.0) must accrue exactly as before the change."""
+def test_protocol_fee_default_keeps_legacy_behavior():
+    """Default config (protocol_fee=0.0) must accrue exactly as before."""
     legacy = make_entity(pool_fee_rate=0.0)
-    assert legacy.lp_fee_share == 1.0
+    assert legacy.protocol_fee == 0.0
 
 
 @pytest.mark.core
@@ -73,10 +73,10 @@ def test_open_position_from_pair_exact_mint():
 def test_fee_growth_mode_per_leg_accrual():
     """feeGrowth deltas accrue per-leg fees: delta × L_onchain diluted by
     the pool share L_pool/(L_pool+L_onchain), scaled to human units,
-    cumulated in fees_token0/1 and cashed at the bar price. lp_fee_share
+    cumulated in fees_token0/1 and cashed at the bar price. protocol_fee
     must NOT apply (counter is already LP-net)."""
     entity = make_entity(
-        pool_fee_rate=0.0, lp_fee_share=0.5,  # share must be ignored
+        pool_fee_rate=0.0, protocol_fee=0.5,  # must be ignored
         token0_decimals=6, token1_decimals=6, notional_side="token1",
     )
     entity.update_state(UniswapV3LPGlobalState(price=1.0, tvl=1.0))

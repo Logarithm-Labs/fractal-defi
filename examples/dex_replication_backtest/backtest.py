@@ -157,7 +157,7 @@ def run_replication(
         notional_side=notional_side,
         pool_fee_rate=0.0,  # a real mint from pre-held tokens: no swap
         fee_model=fee_model,
-        lp_fee_share=position["lp_fee_share"],  # used by the aggregate model only
+        protocol_fee=position["protocol_fee"],  # used by the aggregate model only
     )
     # Pure backtest compute time: the strategy loop only — data loading
     # and observation preparation are excluded.

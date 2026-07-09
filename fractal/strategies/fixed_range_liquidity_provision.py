@@ -42,7 +42,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
     mode + tick-derived bounds).
 
     ``token0_decimals``/``token1_decimals`` are required;
-    ``pool_fee_rate``, ``slippage_pct``, ``lp_fee_share``, ``fee_model``
+    ``pool_fee_rate``, ``slippage_pct``, ``protocol_fee``, ``fee_model``
     and ``notional_side`` pass through to :class:`UniswapV3LPConfig`.
     ``pool_fee_rate`` defaults to ``0.0`` — a real mint from pre-held
     tokens pays no swap fee.
@@ -57,7 +57,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
         token1_decimals: Optional[int] = None,
         pool_fee_rate: float = 0.0,
         slippage_pct: float = 0.0,
-        lp_fee_share: float = 1.0,
+        protocol_fee: float = 0.0,
         fee_model: str = "auto",
         notional_side: str = "token0",
         **kwargs,
@@ -71,7 +71,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
         self._token1_decimals = token1_decimals
         self._pool_fee_rate = pool_fee_rate
         self._slippage_pct = slippage_pct
-        self._lp_fee_share = lp_fee_share
+        self._protocol_fee = protocol_fee
         self._fee_model = fee_model
         self._notional_side = notional_side
         super().__init__(params=params, debug=debug, *args, **kwargs)
@@ -89,7 +89,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
                     token1_decimals=self._token1_decimals,
                     pool_fee_rate=self._pool_fee_rate,
                     slippage_pct=self._slippage_pct,
-                    lp_fee_share=self._lp_fee_share,
+                    protocol_fee=self._protocol_fee,
                     fee_model=self._fee_model,
                     notional_side=self._notional_side,
                 )

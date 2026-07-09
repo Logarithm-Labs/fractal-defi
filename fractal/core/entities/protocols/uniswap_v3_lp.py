@@ -74,13 +74,13 @@ class UniswapV3LPConfig:
             swap portion depends on the range relative to current price.
         slippage_pct (float): Additional execution-cost on top of pool fee.
             Captures slippage / MEV. Default ``0.0``.
-        lp_fee_share (float): Fraction of pool swap fees that accrues
-            to LPs, in ``(0, 1]``; default ``1.0`` (mainnet). Some
-            deployments run the protocol-fee switch ON — e.g. Base
-            (``slot0.feeProtocol``): 3/4 or 5/6 to LPs — while pool
-            ``fees`` observations report the FULL swap fee. Applies to
-            the ``aggregate`` model only (feeGrowth counters are
-            already LP-net).
+        protocol_fee (float): Fraction of pool swap fees taken by the
+            protocol (``slot0.feeProtocol``), in ``[0, 1)``; default
+            ``0.0`` (mainnet). E.g. Base pools take 1/4 or 1/6 while
+            pool ``fees`` observations report the FULL swap fee, so
+            LPs accrue ``fees × (1 − protocol_fee)``. Applies to the
+            ``aggregate`` model only (feeGrowth counters are already
+            net of it).
         fee_model (str): Fee-accrual scheme:
 
             * ``"auto"`` (default) — feeGrowth deltas when the bar
@@ -88,7 +88,7 @@ class UniswapV3LPConfig:
               estimate. Do not mix data with and without feeGrowth in
               one run.
             * ``"aggregate"`` — always ``fees × L_pos/(L_pool+L_pos)``
-              × ``lp_fee_share``; feeGrowth fields ignored.
+              × ``(1 − protocol_fee)``; feeGrowth fields ignored.
             * ``"fee_growth"`` — only feeGrowth deltas; bars without
               them accrue nothing.
         token0_decimals (int): Token0 decimals (used by V3 fees model).
@@ -100,7 +100,7 @@ class UniswapV3LPConfig:
     """
     pool_fee_rate: float = 0.003
     slippage_pct: float = 0.0
-    lp_fee_share: float = 1.0
+    protocol_fee: float = 0.0
     fee_model: str = "auto"
     token0_decimals: int = 18
     token1_decimals: int = 18
@@ -157,9 +157,9 @@ class UniswapV3LPEntity(BasePoolEntity):
             raise EntityException(
                 f"slippage_pct must be >= 0, got {config.slippage_pct}"
             )
-        if not 0 < config.lp_fee_share <= 1:
+        if not 0 <= config.protocol_fee < 1:
             raise EntityException(
-                f"lp_fee_share must be in (0, 1], got {config.lp_fee_share}"
+                f"protocol_fee must be in [0, 1), got {config.protocol_fee}"
             )
         if config.fee_model not in ("auto", "aggregate", "fee_growth"):
             raise EntityException(
@@ -170,7 +170,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         # ``_initialize_states`` can rely on these.
         self.pool_fee_rate: float = config.pool_fee_rate
         self.slippage_pct: float = config.slippage_pct
-        self.lp_fee_share: float = config.lp_fee_share
+        self.protocol_fee: float = config.protocol_fee
         self.fee_model: str = config.fee_model
         self.token0_decimals: int = config.token0_decimals
         self.token1_decimals: int = config.token1_decimals
@@ -597,7 +597,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         Pure (no mutation), the ``fee_growth`` twin of
         :meth:`calculate_fees`: in-range gate, then
         :func:`position_fees_from_growth` with pool-liquidity dilution.
-        ``lp_fee_share`` is NOT applied — the counter is already LP-net.
+        ``protocol_fee`` is NOT applied — the counter is already net of it.
 
         Returns:
             ``(fees_token0, fees_token1)`` in human token units.
@@ -621,8 +621,8 @@ class UniswapV3LPEntity(BasePoolEntity):
     def calculate_fees(self) -> float:
         """Pro-rata share of pool swap-fees over the previous bar.
 
-        The L-share of the bar's total fees is scaled by ``lp_fee_share``
-        (protocol-fee split — see :class:`UniswapV3LPConfig`).
+        The L-share of the bar's total fees is scaled by
+        ``1 − protocol_fee`` (see :class:`UniswapV3LPConfig`).
 
         Returns 0 when out of range or when any of ``p``, ``pl``, ``pu`` is
         non-positive (degenerate state — e.g. fresh entity before first
@@ -665,7 +665,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             liquidity_delta=delta_liquidity,
             liquidity=self._global_state.liquidity,
             fees=self._global_state.fees,
-        ) * self.lp_fee_share
+        ) * (1 - self.protocol_fee)
         return min(fees, self._global_state.fees)
 
     @staticmethod

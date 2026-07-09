@@ -15,7 +15,7 @@ compared per token leg with the on-chain ground truth — the un-floored
 
 | File | Purpose |
 |---|---|
-| `positions.json` | Registry of real positions: ticks, mint amounts and block, exact mint price, protocol-fee split. |
+| `positions.json` | Registry of real positions: ticks, mint amounts and block, exact mint price, `protocol_fee`. |
 | `helpers.py` | Registry loading, on-chain ground truth (web3.py), observation building, mint-anchor correction. |
 | `backtest.py` | The replication run (`fee_model="fee_growth"`). Saves per-bar trajectories + `results/summary.csv`. |
 | `methods_grid_backtests.py` | Reproducible comparison of three fee-accounting methods over the same positions. |
@@ -61,7 +61,7 @@ truth reads as `0.0`. Positions with no hourly bars after the mint yet
 | Method | Data | Idea |
 |---|---|---|
 | `fee_growth` | ~130 hourly subgraph rows/pool | Per-bar deltas of the pool's cumulative `feeGrowthGlobal` counters × position `L`. The chain performs the per-swap liquidity weighting itself and nets out the protocol fee, so the backtest reads the pool's own ledger — per-leg ratios land at ~1.000 of the on-chain accrual. |
-| `aggregate` | same hourly rows | Classic estimate: `feesUSD × L_pos/(L_pool+L_pos)` per bar × `lp_fee_share`. Fallback for synthetic/counterfactual data; end-of-bar liquidity snapshots overstate thin bursty pools. |
+| `aggregate` | same hourly rows | Classic estimate: `feesUSD × L_pos/(L_pool+L_pos)` per bar × `(1 − protocol_fee)`. Fallback for synthetic/counterfactual data; end-of-bar liquidity snapshots overstate thin bursty pools. |
 | `per_event` | every Swap log since mint (up to 10^5+/pool) | Event-replay reference: per-swap fee share with the event's own liquidity (`fee = gross_input × tier/1e6` — the event amounts include the fee). Highest data cost; still approximate for swaps that cross ticks. |
 
 ## Notes
@@ -79,7 +79,7 @@ truth reads as `0.0`. Positions with no hourly bars after the mint yet
   the newest row lags the chain by up to one swap — a synthetic final
   bar carries the not-yet-indexed growth (`append_head_bar`).
 * On Base, V3 pools run with the protocol-fee switch ON
-  (`slot0.feeProtocol`): LPs receive 3/4 of swap fees on the
-  100/300/500 tiers and 5/6 on 3000/10000 — `positions.json` carries
-  the measured `lp_fee_share` per pool. `feeGrowth` counters are
+  (`slot0.feeProtocol`): the protocol takes 1/4 of swap fees on the
+  100/300/500 tiers and 1/6 on 3000/10000 — `positions.json` carries
+  the measured `protocol_fee` per pool. `feeGrowth` counters are
   already net of it.
