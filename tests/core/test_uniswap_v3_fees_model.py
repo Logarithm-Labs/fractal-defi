@@ -10,10 +10,14 @@ from fractal.core.entities.models.uniswap_v3_fees import (
     Q96,
     estimate_fee,
     expand_decimals,
+    fees_from_growth,
     get_liquidity_delta,
     get_liquidity_for_amount0,
     get_liquidity_for_amount1,
     get_sqrt_price_x96,
+    liquidity_to_onchain,
+    position_fees_from_growth,
+    tick_to_price,
 )
 
 
@@ -294,3 +298,64 @@ def test_full_pipeline_realistic_eth_usdc_position():
     )
     # Should be ~0.1% of $100 = $0.10
     assert 0.05 < fee_share < 0.15
+
+
+# ---------------------------------------------------------------- feeGrowth
+# Helpers backing the entity's feeGrowth accrual mode (per-leg fees from
+# feeGrowthGlobal{0,1}X128 counter deltas).
+
+@pytest.mark.core
+def test_liquidity_to_onchain_scaling():
+    # 10^((18+6)/2) = 10^12 — WETH/USDC-style pool
+    assert liquidity_to_onchain(1.0, 18, 6) == pytest.approx(1e12)
+    # symmetric in decimals
+    assert liquidity_to_onchain(1.0, 6, 18) == pytest.approx(1e12)
+    # equal decimals: 10^d
+    assert liquidity_to_onchain(2.0, 6, 6) == pytest.approx(2e6)
+    with pytest.raises(ValueError):
+        liquidity_to_onchain(1.0, -1, 6)
+
+
+@pytest.mark.core
+def test_fees_from_growth_per_leg():
+    # delta of 1e-4 raw-token-per-unit-L on L=1e12 with 6 decimals:
+    # 1e-4 * 1e12 / 1e6 = 100 human units
+    assert fees_from_growth(1e-4, 1e12, 6) == pytest.approx(100.0)
+    assert fees_from_growth(0.0, 1e12, 6) == 0.0
+    with pytest.raises(ValueError):
+        fees_from_growth(-1e-9, 1e12, 6)
+    with pytest.raises(ValueError):
+        fees_from_growth(1e-9, -1.0, 6)
+
+
+@pytest.mark.core
+def test_position_fees_from_growth_dilution():
+    """The position is treated as additional liquidity: both legs scale
+    by L_pool/(L_pool + L_pos); pool_liquidity=0 skips dilution."""
+    # L_human=1, decimals 6/6 -> L_onchain = 1e6
+    undiluted = position_fees_from_growth(1e-4, 2e-4, 1.0, 6, 6)
+    assert undiluted[0] == pytest.approx(1e-4 * 1e6 / 1e6)
+    assert undiluted[1] == pytest.approx(2e-4 * 1e6 / 1e6)
+    # pool L equals position L -> exactly half of the naive credit
+    halved = position_fees_from_growth(1e-4, 2e-4, 1.0, 6, 6, pool_liquidity=1e6)
+    assert halved[0] == pytest.approx(undiluted[0] / 2, rel=1e-12)
+    assert halved[1] == pytest.approx(undiluted[1] / 2, rel=1e-12)
+    # marginal position -> dilution ~1
+    marginal = position_fees_from_growth(1e-4, 2e-4, 1.0, 6, 6, pool_liquidity=1e18)
+    assert marginal[0] == pytest.approx(undiluted[0], rel=1e-9)
+
+
+@pytest.mark.core
+def test_tick_to_price_decimals_convention():
+    """price = 1.0001^tick x 10^(d0-d1) — token0 in token1 human units."""
+    # tick 0, equal decimals -> exactly 1
+    assert tick_to_price(0, 6, 6) == pytest.approx(1.0)
+    # WETH/USDC style (d0=18, d1=6): the raw price is scaled UP by 1e12
+    assert tick_to_price(0, 18, 6) == pytest.approx(1e12)
+    # inverted decimals scale DOWN
+    assert tick_to_price(0, 6, 18) == pytest.approx(1e-12)
+    # negative tick: ETH/USDC mainnet-style magnitude
+    assert tick_to_price(-201688, 18, 6) == pytest.approx(
+        1.0001 ** -201688 * 1e12, rel=1e-12)
+    with pytest.raises(ValueError):
+        tick_to_price(0, -1, 6)

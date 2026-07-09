@@ -163,6 +163,75 @@ def get_liquidity_delta(
     return get_liquidity_for_amount1(sqrt_ratio_a_x96, sqrt_ratio_b_x96, amt1)
 
 
+def tick_to_price(tick: float, token0_decimal: int, token1_decimal: int) -> float:
+    """Human price of token0 in token1 units:
+    ``1.0001^tick × 10^(decimals0 − decimals1)``. Keep every scalar
+    conversion on this helper — the decimals sign is the classic V3
+    foot-gun.
+    """
+    if token0_decimal < 0 or token1_decimal < 0:
+        raise ValueError(
+            f"decimals must be >= 0, got token0={token0_decimal}, token1={token1_decimal}"
+        )
+    return 1.0001 ** tick * 10 ** (token0_decimal - token1_decimal)
+
+
+def liquidity_to_onchain(liquidity: float, token0_decimal: int, token1_decimal: int) -> float:
+    """Human-unit position ``L`` → on-chain units:
+    ``L × 10^((decimals0 + decimals1) / 2)`` (the sqrt-price decimals
+    adjustment applied to both legs).
+    """
+    if token0_decimal < 0 or token1_decimal < 0:
+        raise ValueError(
+            f"decimals must be >= 0, got token0={token0_decimal}, token1={token1_decimal}"
+        )
+    return liquidity * 10 ** ((token0_decimal + token1_decimal) / 2)
+
+
+def fees_from_growth(fee_growth: float, liquidity_onchain: float, token_decimal: int) -> float:
+    """One leg's fees from a feeGrowth counter delta: ``delta × L``,
+    scaled to human token units. The counters accumulate
+    ``fee / L(swap)`` per swap — the chain's own liquidity weighting,
+    net of any protocol-fee cut.
+    """
+    if fee_growth < 0:
+        raise ValueError(f"fee_growth must be >= 0, got {fee_growth}")
+    if liquidity_onchain < 0:
+        raise ValueError(f"liquidity_onchain must be >= 0, got {liquidity_onchain}")
+    return fee_growth * liquidity_onchain / 10 ** token_decimal
+
+
+def position_fees_from_growth(
+    fee_growth0: float,
+    fee_growth1: float,
+    liquidity: float,
+    token0_decimal: int,
+    token1_decimal: int,
+    pool_liquidity: float = 0.0,
+) -> tuple:
+    """Per-leg position fees for one bar of feeGrowth deltas.
+
+    Like :func:`estimate_fee`, the position is treated as additional
+    liquidity: with ``pool_liquidity`` given (on-chain ``L``, excluding
+    the hypothetical position) both legs are diluted by
+    ``pool_liquidity / (pool_liquidity + L_position)`` — ~1 for
+    marginal positions; slightly undercounts when replicating a real
+    position already included in the counter. ``pool_liquidity=0``
+    skips dilution.
+
+    Returns:
+        ``(fees_token0, fees_token1)`` in human token units.
+    """
+    liquidity_onchain = liquidity_to_onchain(liquidity, token0_decimal, token1_decimal)
+    dilution = 1.0
+    if pool_liquidity > 0:
+        dilution = pool_liquidity / (pool_liquidity + liquidity_onchain)
+    return (
+        fees_from_growth(fee_growth0, liquidity_onchain, token0_decimal) * dilution,
+        fees_from_growth(fee_growth1, liquidity_onchain, token1_decimal) * dilution,
+    )
+
+
 def estimate_fee(liquidity_delta: int, liquidity: int, fees: float) -> float:
     """Pro-rate pool swap fees by an LP position's L-share of total liquidity.
 

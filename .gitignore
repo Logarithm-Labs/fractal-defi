@@ -167,6 +167,11 @@ backtest/.DS_Store
 !examples/basis/BTC_hyperliquid.csv
 !examples/tau_reset/tau_strategy_result.csv
 
+# Reference outputs of the replication example (per-bar trajectories
+# stay ignored — regenerate via backtest.py / methods_grid_backtests.py).
+!examples/dex_replication_backtest/results/summary.csv
+!examples/dex_replication_backtest/results/methods_grid_results.csv
+
 # Workshop / tutorial notebooks (the ``*.ipynb`` blanket above keeps
 # scratch notebooks out of git; whitelist the curated ones explicitly).
 !examples/quick_start/quick_start.ipynb
