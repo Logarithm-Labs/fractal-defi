@@ -33,7 +33,7 @@ jobs:
     name: Apply labels.yml to repo
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Sync GitHub labels with .github/labels.yml
         uses: EndBug/label-sync@v2
