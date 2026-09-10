@@ -8,8 +8,9 @@ API: ``https://api-boros.pendle.finance/apis/v1`` (no key, 200 CU/min).
   ``metadata.maxLeverage``).
 * ``GET /markets/ohlcv?marketId&timeFrame=1h&startTimestamp&endTimestamp``
   — implied-APR candles, ≤ 200 per call.
-* ``POST /funding-rate/settlement-summary`` — one row per on-chain
-  settlement (``settlementApr``, open interest), ≤ 5000 per call.
+* ``POST /funding-rate/settlement-summary`` — ``settlementMarketSummaries``:
+  one flat row per on-chain settlement (``periodTimestamp``,
+  ``settlementApr``, ``totalNotionalSize``), ≤ 5000 per call.
 * ``GET /markets/historical-underlying-apr?assetSymbol&exchange&timeFrame``
   — the venue's annualised funding since before the market listed.
 
@@ -55,7 +56,7 @@ def _rows(payload: Any) -> List[Dict[str, Any]]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
-        for key in ("results", "data", "markets"):
+        for key in ("results", "data", "markets", "settlementMarketSummaries"):
             inner = payload.get(key)
             if isinstance(inner, list):
                 return inner

@@ -54,8 +54,13 @@ class _FakeBorosHttp:
         assert url == f"{BOROS_API}/funding-rate/settlement-summary"
         start, end = json["fromTimestamp"], json["toTimestamp"]
         first = start - start % EIGHT_HOURS + EIGHT_HOURS
-        return {"results": [{"marketId": MARKET_ID, "periodTimestamp": ts, "settlementApr": 0.0001 * 1095,
-                             "totalNotionalSize": 40.0} for ts in range(first, end + 1, EIGHT_HOURS)]}
+        # real envelope key (verified live 2026-09-11)
+        return {"settlementMarketSummaries": [
+            {"marketId": MARKET_ID, "marketName": "Binance BTCUSDT 25 Sep 2026", "periodTimestamp": ts,
+             "blockTimestamp": ts + 31, "settlementApr": 0.0001 * 1095, "totalNotionalSize": 40.0,
+             "totalFee": 1e-5, "totalSettledValue": 1e-3}
+            for ts in range(first, end + 1, EIGHT_HOURS)
+        ]}
 
 
 @pytest.mark.core
