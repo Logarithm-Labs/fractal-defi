@@ -15,6 +15,8 @@ Three logical levels:
 # Bases
 from fractal.core.entities.base import BaseHedgeEntity  # deprecated alias
 from fractal.core.entities.base import (
+    BaseFixedTermEntity,
+    BaseFixedTermGlobalState,
     BaseLendingEntity,
     BaseLiquidStakingToken,
     BasePerpEntity,
@@ -28,6 +30,10 @@ from fractal.core.entities.base import (
 from fractal.core.entities.protocols import (  # Pre-1.3.0 aliases.
     AaveEntity,
     AaveGlobalState,
+    BorosEntity,
+    BorosException,
+    BorosGlobalState,
+    BorosInternalState,
     HyperliquidEntity,
     HyperliquidGlobalState,
     HyperLiquidGlobalState,
@@ -35,6 +41,15 @@ from fractal.core.entities.protocols import (  # Pre-1.3.0 aliases.
     HyperLiquidInternalState,
     HyperliquidPosition,
     HyperLiquidPosition,
+    MorphoEntity,
+    MorphoException,
+    MorphoGlobalState,
+    MorphoInternalState,
+    PendlePTConfig,
+    PendlePTEntity,
+    PendlePTException,
+    PendlePTGlobalState,
+    PendlePTInternalState,
     StakedETHEntity,
     StakedETHGlobalState,
     UniswapV2LPConfig,
@@ -70,6 +85,7 @@ from fractal.core.entities.simple import (
 from fractal.core.entities.single_spot_exchange import SingleSpotExchange, SingleSpotExchangeGlobalState
 
 __all__ = [
+    "BaseFixedTermEntity", "BaseFixedTermGlobalState",
     # base
     "BasePerpEntity", "BasePerpInternalState",
     "BaseLendingEntity",
@@ -86,6 +102,10 @@ __all__ = [
     "SimpleLiquidStakingTokenInternalState",
     # protocols
     "AaveEntity", "AaveGlobalState",
+    "BorosEntity", "BorosException", "BorosGlobalState", "BorosInternalState",
+    "MorphoEntity", "MorphoException", "MorphoGlobalState", "MorphoInternalState",
+    "PendlePTConfig", "PendlePTEntity", "PendlePTException",
+    "PendlePTGlobalState", "PendlePTInternalState",
     "HyperliquidEntity",
     "HyperliquidGlobalState", "HyperliquidInternalState", "HyperliquidPosition",
     # Pre-1.3.0 aliases (deprecated; will be removed in a future major release).

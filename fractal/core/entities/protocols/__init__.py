@@ -6,6 +6,7 @@ math, Lido staking rewards). Use them to backtest strategies against
 actual protocol behaviour.
 """
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.protocols.boros import BorosEntity, BorosException, BorosGlobalState, BorosInternalState
 from fractal.core.entities.protocols.hyperliquid import (  # Pre-1.3.0 aliases — re-exported for back-compat.
     HyperliquidEntity,
     HyperliquidGlobalState,
@@ -30,6 +31,7 @@ from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity,
 
 __all__ = [
     "AaveEntity", "AaveGlobalState",
+    "BorosEntity", "BorosException", "BorosGlobalState", "BorosInternalState",
     "HyperliquidEntity",
     "HyperliquidGlobalState", "HyperliquidInternalState", "HyperliquidPosition",
     # Pre-1.3.0 aliases (deprecated; will be removed in a future major release).
