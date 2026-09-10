@@ -14,6 +14,7 @@ import pytest
 
 from fractal.core.base.entity import EntityException
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.protocols.morpho import MorphoEntity, MorphoException, MorphoGlobalState
 from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingException, SimpleLendingGlobalState
 
 
@@ -27,6 +28,17 @@ def _simple():
     e = SimpleLendingEntity()
     e.update_state(SimpleLendingGlobalState(collateral_price=1.0, debt_price=1.0))
     return e
+
+
+def _morpho():
+    # LLTV 0.85 with a 0.8 borrow cushion mirrors the siblings' max_ltv / liq_thr defaults.
+    e = MorphoEntity(lltv=0.85, max_ltv=0.8)
+    e.update_state(MorphoGlobalState(collateral_price=1.0, debt_price=1.0))
+    return e
+
+
+LENDING_ENTITIES = [(_aave, EntityException), (_simple, SimpleLendingException), (_morpho, MorphoException)]
+LENDING_FACTORIES = [_aave, _simple, _morpho]
 
 
 @pytest.mark.core
@@ -48,7 +60,7 @@ def test_simple_lending_initial_state_clean():
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_deposit_rejected(factory, exc):
     e = factory()
     with pytest.raises(exc, match="deposit amount must be >= 0"):
@@ -56,7 +68,7 @@ def test_lending_negative_deposit_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_withdraw_rejected(factory, exc):
     e = factory()
     e.action_deposit(100)
@@ -65,7 +77,7 @@ def test_lending_negative_withdraw_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_borrow_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -74,7 +86,7 @@ def test_lending_negative_borrow_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_repay_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -84,7 +96,7 @@ def test_lending_negative_repay_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_withdraw_overdraft_rejected(factory, exc):
     e = factory()
     e.action_deposit(100)
@@ -93,7 +105,7 @@ def test_lending_withdraw_overdraft_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_repay_more_than_borrowed_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -103,7 +115,7 @@ def test_lending_repay_more_than_borrowed_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_borrow_above_max_ltv_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -113,7 +125,7 @@ def test_lending_borrow_above_max_ltv_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
     """Cannot withdraw collateral if it would breach max_ltv."""
     e = factory()
@@ -164,7 +176,7 @@ def test_simple_lending_rejects_borrowing_rate_below_minus_one():
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_collateral_never_negative_through_lifecycle(factory):
     e = factory()
     assert e._internal_state.collateral >= 0
@@ -179,7 +191,7 @@ def test_lending_collateral_never_negative_through_lifecycle(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_borrowed_never_negative_through_lifecycle(factory):
     e = factory()
     e.action_deposit(1000)
@@ -193,7 +205,7 @@ def test_lending_borrowed_never_negative_through_lifecycle(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_full_repay_reduces_borrowed_to_zero(factory):
     e = factory()
     e.action_deposit(1000)
