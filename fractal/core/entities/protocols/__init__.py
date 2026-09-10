@@ -19,9 +19,9 @@ from fractal.core.entities.protocols.morpho import MorphoConfig, MorphoEntity, M
 from fractal.core.entities.protocols.pendle_pt import (
     PendlePTConfig,
     PendlePTEntity,
+    PendlePTException,
     PendlePTGlobalState,
     PendlePTInternalState,
-    compute_pt_price,
 )
 from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState
 from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity, UniswapV2LPGlobalState
@@ -36,8 +36,8 @@ __all__ = [
     "HyperLiquidGlobalState", "HyperLiquidInternalState", "HyperLiquidPosition",
     "MorphoConfig", "MorphoEntity",
     "MorphoGlobalState", "MorphoInternalState",
-    "PendlePTConfig", "PendlePTEntity",
-    "PendlePTGlobalState", "PendlePTInternalState", "compute_pt_price",
+    "PendlePTConfig", "PendlePTEntity", "PendlePTException",
+    "PendlePTGlobalState", "PendlePTInternalState",
     "StakedETHEntity", "StakedETHGlobalState",
     "UniswapV2LPConfig", "UniswapV2LPEntity", "UniswapV2LPGlobalState",
     "UniswapV3LPConfig", "UniswapV3LPEntity", "UniswapV3LPGlobalState",
