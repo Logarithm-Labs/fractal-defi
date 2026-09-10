@@ -8,10 +8,10 @@ loaders return an instance of the correct shape with zero rows.
 Simulation loaders that produce multiple synthetic trajectories return a
 :data:`TrajectoryBundle` — a list of one of the structures above.
 
-Loaders SHOULD pass either ``pandas``/``numpy`` datetime arrays or a
-``Sequence[int]`` of **Unix epoch seconds** to the constructors below.
-The shared helper :func:`_to_utc_index` detects the integer-seconds
-case automatically; passing nanoseconds is a bug.
+Loaders pass ``pandas``/``numpy`` datetime arrays (or ``pd.Timestamp``
+sequences) to the constructors below. Integer epochs are rejected on
+purpose: convert them explicitly with ``pd.to_datetime(..., unit="s",
+utc=True)`` (or ``Loader._utc_index``) so the unit is never guessed.
 """
 from typing import List, Optional, Sequence, Union
 
@@ -23,18 +23,19 @@ TimeLike = Union[np.ndarray, Sequence[int], Sequence[pd.Timestamp], pd.DatetimeI
 
 
 def _to_utc_index(time: TimeLike) -> pd.DatetimeIndex:
-    """Coerce an array-like of timestamps to a UTC-aware ``DatetimeIndex``.
+    """Coerce an array-like of timestamps to a UTC-aware ``DatetimeIndex`` named ``time``.
 
-    Integer arrays are interpreted as **Unix epoch seconds** (a common
-    REST-API convention), not as nanoseconds — pandas's default
-    integer-to-datetime path would otherwise place values around 1970.
-    Pass ``pd.Timestamp``/``datetime`` objects to bypass the heuristic.
+    Integer arrays are rejected: pandas would read them as nanoseconds
+    and a REST loader's epoch seconds would land in 1970. Convert with
+    an explicit ``unit`` before building a struct.
     """
     arr = np.asarray(time)
     if arr.size > 0 and np.issubdtype(arr.dtype, np.integer):
-        idx = pd.to_datetime(arr, unit="s", utc=True)
-    else:
-        idx = pd.to_datetime(arr, utc=True)
+        raise TypeError(
+            "struct time index must be datetime-like; convert integer epochs explicitly "
+            "with pd.to_datetime(values, unit='s'|'ms', utc=True)"
+        )
+    idx = pd.to_datetime(arr, utc=True)
     if not isinstance(idx, pd.DatetimeIndex):
         idx = pd.DatetimeIndex(idx)
     idx.name = "time"
@@ -69,13 +70,15 @@ class LendingHistory(pd.DataFrame):
     """Lending+borrowing rate series.
 
     Columns:
-        ``lending_rate`` — annualised supply APY (decimal,
-            ``0.04`` = 4% APY).
-        ``borrowing_rate`` — annualised borrow APY (decimal).
-        ``utilization`` — fraction of supplied debt currently borrowed,
-            in ``[0, 1]``. Optional: present only when the source feed
-            exposes utilization (e.g. Morpho Blue). Populated as
-            ``NaN`` otherwise.
+        ``lending_rate`` — **per-bar** simple rate credited to collateral
+            (entities apply ``balance *= 1 + rate``).
+        ``borrowing_rate`` — **per-bar** rate charged on debt (Morpho
+            loaders emit the per-bar exponent ``ln(1 + apy) · Δt / YEAR``).
+        Optional, appended only when passed (never NaN-filled):
+        ``utilization`` — borrowed / supplied, in ``[0, 1]``;
+        ``borrow_apy`` / ``supply_apy`` — the source's annual effective
+            rates, for reporting and strategy gates;
+        ``rate_at_target`` — Morpho IRM ``rateAtTarget`` (annual).
     """
 
     def __init__(
@@ -84,16 +87,20 @@ class LendingHistory(pd.DataFrame):
         borrowing_rates: ArrayLike,
         time: TimeLike,
         utilization: Optional[ArrayLike] = None,
+        borrow_apy: Optional[ArrayLike] = None,
+        supply_apy: Optional[ArrayLike] = None,
+        rate_at_target: Optional[ArrayLike] = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
             "borrowing_rate": np.asarray(borrowing_rates, dtype=float),
         }
-        n = len(data["lending_rate"])
-        if utilization is None:
-            data["utilization"] = np.full(n, np.nan, dtype=float)
-        else:
-            data["utilization"] = np.asarray(utilization, dtype=float)
+        for name, values in (
+            ("utilization", utilization), ("borrow_apy", borrow_apy),
+            ("supply_apy", supply_apy), ("rate_at_target", rate_at_target),
+        ):
+            if values is not None:
+                data[name] = np.asarray(values, dtype=float)
         super().__init__(data=data, index=_to_utc_index(time))
 
 
@@ -172,81 +179,81 @@ TrajectoryBundle = List[PriceHistory]
 
 
 class PendleMarketHistory(pd.DataFrame):
-    """Pendle Principal-Token market snapshots indexed by UTC time.
+    """Pendle PT market snapshots indexed by UTC time.
 
-    Columns:
-        ``pt_price`` — mark price of 1 PT in the underlying numeraire
-            (typically USDC).
-        ``implied_yield`` — annualised fixed yield encoded in
-            ``pt_price`` (decimal, ``0.14`` = 14% APY).
-        ``seconds_to_expiry`` — seconds remaining until PT redeem
-            unlocks.
-        ``pool_liquidity`` — total Pendle pool liquidity in numeraire.
-        ``base_apy`` — Pendle's reported base APY (decimal); optional
-            informational column, ``NaN`` when not exposed by the feed.
-        ``underlying_apy`` — APY of the underlying yield source
-            (decimal); optional, ``NaN`` when not exposed.
-        ``max_apy`` — upper-bound projected APY (decimal); optional,
-            ``NaN`` when not exposed.
+    Columns (all float):
+        ``implied_apy`` — market implied APY, compounded ACT/365, decimal.
+        ``pt_price_asset`` — ``(1 + implied_apy) ** (−seconds_to_expiry / YEAR)``:
+            accounting asset per PT (the entity's mid price).
+        ``pt_price_usd`` / ``sy_price_usd`` — the API's USD marks of PT and SY.
+        ``pt_price_sy`` — ``pt_price_usd / sy_price_usd`` (PT per SY, market).
+        ``underlying_apy`` — 7-day trailing underlying APY (NaN allowed).
+        ``tvl`` — pool TVL in USD.
+        ``total_pt`` / ``total_sy`` — AMM reserves in token units.
+        ``seconds_to_expiry`` — ``max(expiry − t, 0)``.
     """
 
-    def __init__(
+    COLUMNS = (
+        "implied_apy", "pt_price_asset", "pt_price_usd", "sy_price_usd", "pt_price_sy",
+        "underlying_apy", "tvl", "total_pt", "total_sy", "seconds_to_expiry",
+    )
+
+    def __init__(  # pylint: disable=too-many-arguments
         self,
-        pt_prices: ArrayLike,
-        implied_yields: ArrayLike,
-        seconds_to_expiry: ArrayLike,
-        pool_liquidity: ArrayLike,
         time: TimeLike,
-        base_apy: Optional[ArrayLike] = None,
-        underlying_apy: Optional[ArrayLike] = None,
-        max_apy: Optional[ArrayLike] = None,
+        implied_apy: ArrayLike,
+        pt_price_asset: ArrayLike,
+        pt_price_usd: ArrayLike,
+        sy_price_usd: ArrayLike,
+        pt_price_sy: ArrayLike,
+        underlying_apy: ArrayLike,
+        tvl: ArrayLike,
+        total_pt: ArrayLike,
+        total_sy: ArrayLike,
+        seconds_to_expiry: ArrayLike,
     ):
-        pt = np.asarray(pt_prices, dtype=float)
-        n = len(pt)
-
-        def _opt(col: Optional[ArrayLike]) -> np.ndarray:
-            if col is None:
-                return np.full(n, np.nan, dtype=float)
-            return np.asarray(col, dtype=float)
-
-        data = {
-            "pt_price": pt,
-            "implied_yield": np.asarray(implied_yields, dtype=float),
-            "seconds_to_expiry": np.asarray(seconds_to_expiry, dtype=float),
-            "pool_liquidity": np.asarray(pool_liquidity, dtype=float),
-            "base_apy": _opt(base_apy),
-            "underlying_apy": _opt(underlying_apy),
-            "max_apy": _opt(max_apy),
-        }
+        values = (implied_apy, pt_price_asset, pt_price_usd, sy_price_usd, pt_price_sy,
+                  underlying_apy, tvl, total_pt, total_sy, seconds_to_expiry)
+        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values)}
         super().__init__(data=data, index=_to_utc_index(time))
 
 
 class BorosMarketHistory(pd.DataFrame):
-    """Pendle Boros funding-rate-forward market bars indexed by UTC time.
+    """Pendle Boros yield-unit market bars indexed by UTC time.
 
-    Columns:
-        ``mark_apr`` — close mark APR (annualised decimal). Long-Boros
-            holders receive this as funding per unit of time.
-        ``observed_funding`` — close observed funding rate
-            (annualised decimal).
-        ``mark_apr_7d_ma`` — 7-day moving average of observed funding.
-        ``mark_apr_30d_ma`` — 30-day moving average of observed funding.
+    Columns (all float, rates annualised decimals):
+        ``mark_apr_open/high/low/close`` — implied APR candles.
+        ``volume`` — candle volume in yield units (``0`` when absent).
+        ``underlying_apr`` — the venue's floating funding, annualised
+            (``settlement_apr`` where a settlement landed, else the
+            indicator series; NaN allowed before the market listed).
+        ``settlement_apr`` — realised floating APR of the settlement on
+            this bar (NaN on non-settlement bars).
+        ``oi`` — open interest in yield units (NaN allowed).
+        ``seconds_to_expiry`` — ``max(maturity − t, 0)``.
     """
 
-    def __init__(
+    COLUMNS = (
+        "mark_apr_open", "mark_apr_high", "mark_apr_low", "mark_apr_close", "volume",
+        "underlying_apr", "settlement_apr", "oi", "seconds_to_expiry",
+    )
+
+    def __init__(  # pylint: disable=too-many-arguments
         self,
-        mark_apr: ArrayLike,
-        observed_funding: ArrayLike,
-        mark_apr_7d_ma: ArrayLike,
-        mark_apr_30d_ma: ArrayLike,
         time: TimeLike,
+        mark_apr_open: ArrayLike,
+        mark_apr_high: ArrayLike,
+        mark_apr_low: ArrayLike,
+        mark_apr_close: ArrayLike,
+        volume: ArrayLike,
+        underlying_apr: ArrayLike,
+        settlement_apr: ArrayLike,
+        oi: ArrayLike,
+        seconds_to_expiry: ArrayLike,
     ):
-        data = {
-            "mark_apr": np.asarray(mark_apr, dtype=float),
-            "observed_funding": np.asarray(observed_funding, dtype=float),
-            "mark_apr_7d_ma": np.asarray(mark_apr_7d_ma, dtype=float),
-            "mark_apr_30d_ma": np.asarray(mark_apr_30d_ma, dtype=float),
-        }
+        values = (mark_apr_open, mark_apr_high, mark_apr_low, mark_apr_close, volume,
+                  underlying_apr, settlement_apr, oi, seconds_to_expiry)
+        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values)}
         super().__init__(data=data, index=_to_utc_index(time))
 
 

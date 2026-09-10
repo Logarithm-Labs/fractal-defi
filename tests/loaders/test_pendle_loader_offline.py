@@ -1,283 +1,197 @@
-"""Offline tests for ``PendleMarketLoader`` — no network.
+"""Offline tests for the Pendle loaders: paging and params against a fake
+``HttpClient``, the compounded PT price, the daily fallback for the
+hourly retention cap, cache round trips, ``readState`` decoding."""
+import warnings
+from datetime import datetime, timedelta, timezone
 
-Verify the linear PT-pricing convention, the parallel-array payload
-parsing, the optional Pendle API fields (baseApy / underlyingApy /
-maxApy), the EVM-address validation on construction, the deterministic
-cache-key that includes hour-level epoch seconds, the typed-struct
-contract on both cache paths, and the UTC-seconds index conversion.
-"""
-from datetime import datetime, timezone
-
+import numpy as np
 import pandas as pd
 import pytest
 
-from fractal.loaders.pendle import PendleMarketLoader, _compute_pt_price_linear, _rebuild_from_cache
-from fractal.loaders.structs import PendleMarketHistory
+from fractal.loaders import LoaderType, PendleMarketHistory, PendleMarketLoader, PendleOHLCVLoader
+from fractal.loaders._dt import SECONDS_PER_YEAR
+from fractal.loaders.pendle import PENDLE_API, PENDLE_ROUTER, get_market_info, read_market_state
 
-UTC = timezone.utc
-
-_STUB_MARKET = "0xa36b60a14a1a5247912584768c6e53e1a269a9f7"
-_STUB_EXPIRY = 1758758400  # 25 Sep 2025
-_STUB_START = datetime(2025, 7, 27, tzinfo=UTC)
-_STUB_END = datetime(2025, 9, 25, tzinfo=UTC)
+MARKET = "0x47ad2cd1dd15739a7a035b9d3b7828d916fef77e"  # PT-sUSDe-26NOV2026
+EXPIRY = datetime(2026, 11, 26, tzinfo=timezone.utc)
+START = datetime(2026, 9, 1, tzinfo=timezone.utc)
+HOUR = timedelta(hours=1)
 
 
-def _stub_loader() -> PendleMarketLoader:
-    return PendleMarketLoader(
-        market_address=_STUB_MARKET,
-        expiry_timestamp=_STUB_EXPIRY,
-        start_time=_STUB_START,
-        end_time=_STUB_END,
-    )
+def _iso(ts: datetime) -> str:
+    return ts.strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
+
+class _FakePendleHttp:
+    """Serves synthetic rows for [start, end]; hourly rows only from ``hourly_from``."""
+
+    def __init__(self, hourly_from: datetime, cap: int = 1000, ohlcv_csv: bool = False, ohlcv_cap: int = 1440):
+        self.hourly_from = hourly_from
+        self.cap = cap
+        self.ohlcv_csv = ohlcv_csv
+        self.ohlcv_cap = ohlcv_cap
+        self.calls = []
+
+    @staticmethod
+    def _row(ts: datetime, apy: float = 0.05):
+        return {"timestamp": _iso(ts), "impliedApy": apy, "underlyingApy": 0.04, "tvl": 1e6,
+                "ptPrice": 0.99, "syPrice": 1.2, "totalPt": 1e6, "totalSy": 2.5e6}
+
+    def get(self, url, params=None, timeout=None):
+        self.calls.append((url, dict(params or {})))
+        if url.endswith(f"/markets/{MARKET}") and "/v1/" in url:
+            return {"name": "sUSDe", "expiry": _iso(EXPIRY), "pt": "1-0xPT", "yt": "1-0xYT", "sy": "1-0xSY",
+                    "underlyingAsset": "1-0xUNDER", "accountingAsset": "1-0xACC"}
+        start = pd.Timestamp(params["timestamp_start"]).to_pydatetime()
+        end = pd.Timestamp(params["timestamp_end"]).to_pydatetime()
+        if url.endswith("/historical-data"):
+            step = HOUR if params["time_frame"] == "hour" else timedelta(days=1)
+            first = max(start, self.hourly_from) if params["time_frame"] == "hour" else start
+            rows, ts = [], first
+            while ts <= end and len(rows) < self.cap:
+                rows.append(self._row(ts))
+                ts += step
+            return {"total": len(rows), "results": rows}
+        if url.endswith("/ohlcv"):
+            rows, ts = [], start
+            while ts <= end and len(rows) < self.ohlcv_cap:
+                rows.append({"time": int(ts.timestamp()), "open": 0.98, "high": 0.99, "low": 0.97, "close": 0.985,
+                             "volume": 10.0})
+                ts += HOUR
+            if self.ohlcv_csv:
+                text = "time,open,high,low,close,volume\n" + "\n".join(
+                    f"{r['time']},{r['open']},{r['high']},{r['low']},{r['close']},{r['volume']}" for r in rows)
+                return {"results": text}
+            return {"results": rows}
+        raise AssertionError(f"unexpected url {url}")
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        self.calls.append((url, json))
+        words = [int(1e6 * 1e18), int(2.5e6 * 1e18), 0, 0, int(57.60 * 1e18), int(EXPIRY.timestamp()),
+                 int(9.8686e-4 * 1e18), 80, int(0.0480287 * 1e18)]
+        return {"jsonrpc": "2.0", "id": 1, "result": "0x" + "".join(f"{w:064x}" for w in words)}
 
 
 @pytest.mark.core
-def test_compute_pt_price_linear_at_expiry_is_one():
-    assert _compute_pt_price_linear(0.14, 0.0) == 1.0
-    assert _compute_pt_price_linear(0.14, -100.0) == 1.0
+def test_market_info_parses_expiry_and_addresses():
+    http = _FakePendleHttp(hourly_from=START)
+    info = get_market_info(1, MARKET, http=http)
+    assert info.expiry == EXPIRY and info.pt == "0xpt" and info.accounting_asset == "0xacc"
+    assert http.calls[0][0] == f"{PENDLE_API}/v1/1/markets/{MARKET}"
 
 
 @pytest.mark.core
-def test_compute_pt_price_linear_matches_formula():
-    secs = 90 * 24 * 3600
-    tau = secs / (365.25 * 24 * 3600)
-    expected = 1.0 - 0.10 * tau
-    assert abs(_compute_pt_price_linear(0.10, secs) - expected) < 1e-12
+def test_transform_derives_compounded_pt_price_and_term(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    http = _FakePendleHttp(hourly_from=START)
+    end = START + 5 * HOUR
+    loader = PendleMarketLoader(MARKET, 1, START, end, expiry=EXPIRY, http=http)
+    history = loader.read(with_run=True)
+    assert isinstance(history, PendleMarketHistory)
+    assert len(history) == 6 and history.index.name == "time" and str(history.index.tz) == "UTC"
+    t = history["seconds_to_expiry"] / SECONDS_PER_YEAR
+    assert np.allclose(history["pt_price_asset"], (1.05) ** (-t))
+    assert history["seconds_to_expiry"].iloc[0] == (EXPIRY - START).total_seconds()
+    assert history["seconds_to_expiry"].is_monotonic_decreasing
+    assert np.allclose(history["pt_price_sy"], 0.99 / 1.2)
+    url, params = http.calls[0]
+    assert url == f"{PENDLE_API}/v3/1/markets/{MARKET}/historical-data"
+    assert params["includeApyBreakdown"] == "true" and params["timestamp_start"] == _iso(START)
 
 
 @pytest.mark.core
-def test_compute_pt_price_clamps_to_unit_interval():
-    five_years = 5 * 365.25 * 24 * 3600
-    assert _compute_pt_price_linear(1.0, five_years) == 0.0
-    assert _compute_pt_price_linear(-0.10, 30 * 24 * 3600) == 1.0
-
-
-@pytest.mark.core
-def test_transform_returns_expected_columns():
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 86400 * i for i in range(3, 0, -1)],
-        "impliedApy": [0.12, 0.13, 0.14],
-        "tvl": [1_000_000.0, 1_100_000.0, 1_050_000.0],
-    }
+def test_paging_walks_forward_until_the_window_is_covered(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    http = _FakePendleHttp(hourly_from=START, cap=4)
+    loader = PendleMarketLoader(MARKET, 1, START, START + 9 * HOUR, expiry=EXPIRY, http=http)
+    loader.extract()
     loader.transform()
-    expected = {
-        "pt_price",
-        "implied_yield",
-        "seconds_to_expiry",
-        "pool_liquidity",
-        "base_apy",
-        "underlying_apy",
-        "max_apy",
-    }
-    assert set(loader._data.columns) == expected
-    assert isinstance(loader._data, PendleMarketHistory)
+    assert len(loader._data) == 10
+    starts = [p["timestamp_start"] for _, p in http.calls if "historical-data" in _]
+    assert starts == [_iso(START), _iso(START + 4 * HOUR), _iso(START + 8 * HOUR)]
 
 
 @pytest.mark.core
-def test_transform_unpacks_optional_api_fields():
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 86400 * 2, _STUB_EXPIRY - 86400],
-        "impliedApy": [0.10, 0.11],
-        "tvl": [1.0e6, 1.1e6],
-        "baseApy": [0.07, 0.075],
-        "underlyingApy": [0.06, 0.065],
-        "maxApy": [0.20, 0.21],
-    }
-    loader.transform()
-    assert loader._data["base_apy"].iloc[0] == pytest.approx(0.07)
-    assert loader._data["underlying_apy"].iloc[1] == pytest.approx(0.065)
-    assert loader._data["max_apy"].iloc[1] == pytest.approx(0.21)
+def test_daily_fallback_stretches_the_prefix_and_warns(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    hourly_from = START + timedelta(days=3)
+    http = _FakePendleHttp(hourly_from=hourly_from)
+    loader = PendleMarketLoader(MARKET, 1, START, hourly_from + 2 * HOUR, expiry=EXPIRY, http=http)
+    with pytest.warns(UserWarning, match="stretched to hourly"):
+        history = loader.read(with_run=True)
+    expected_hours = int((hourly_from + 2 * HOUR - START) / HOUR) + 1
+    assert len(history) == expected_hours
+    assert (history.index[1:] - history.index[:-1] == pd.Timedelta(hours=1)).all()
+    frames = [p["time_frame"] for u, p in http.calls if "historical-data" in u]
+    assert frames == ["hour", "day"]
+    strict = PendleMarketLoader(MARKET, 1, START, hourly_from + 2 * HOUR, expiry=EXPIRY, daily_fallback=False,
+                                http=_FakePendleHttp(hourly_from=hourly_from))
+    assert len(strict.read(with_run=True)) == 3
+    assert strict._cache_key() != loader._cache_key()
 
 
 @pytest.mark.core
-def test_transform_missing_optional_fields_yield_nan():
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 86400],
-        "impliedApy": [0.10],
-        "tvl": [1.0e6],
-    }
-    loader.transform()
-    assert pd.isna(loader._data["base_apy"].iloc[0])
-    assert pd.isna(loader._data["underlying_apy"].iloc[0])
-    assert pd.isna(loader._data["max_apy"].iloc[0])
+def test_nan_in_required_columns_raises(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    http = _FakePendleHttp(hourly_from=START)
+    loader = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, http=http)
+    loader.extract()
+    loader._rows[0]["impliedApy"] = None
+    with pytest.raises(ValueError, match="implied_apy"):
+        loader.transform()
 
 
 @pytest.mark.core
-def test_transform_seconds_to_expiry_strictly_decreasing():
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 86400 * i for i in range(3, 0, -1)],
-        "impliedApy": [0.12, 0.13, 0.14],
-        "tvl": [1_000_000.0, 1_100_000.0, 1_050_000.0],
-    }
-    loader.transform()
-    secs = loader._data["seconds_to_expiry"].to_numpy()
-    assert (secs[:-1] > secs[1:]).all()
-
-
-@pytest.mark.core
-def test_transform_index_is_utc_seconds_aware():
-    """Epoch seconds must land in the 2025 timeline, not near 1970."""
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 86400],
-        "impliedApy": [0.10],
-        "tvl": [1.0e6],
-    }
-    loader.transform()
-    idx = loader._data.index
-    assert isinstance(idx, pd.DatetimeIndex)
-    assert idx.tz is not None  # tz-aware
-    # 2025-09-24
-    assert idx[0].year == 2025
-    assert idx[0].month == 9
-    assert idx[0].day == 24
-
-
-@pytest.mark.core
-def test_transform_handles_empty_payload():
-    loader = _stub_loader()
-    loader._raw = {}
-    loader.transform()
-    assert isinstance(loader._data, PendleMarketHistory)
-    assert loader._data.empty
-
-
-@pytest.mark.core
-def test_transform_skips_malformed_rows():
-    loader = _stub_loader()
-    loader._raw = {
-        "timestamp": [_STUB_EXPIRY - 7200, "not-a-number", _STUB_EXPIRY - 3600],
-        "impliedApy": [0.10, 0.12, 0.11],
-        "tvl": [1_000.0, 1_100.0, 1_050.0],
-    }
-    loader.transform()
-    assert len(loader._data) == 2
-
-
-@pytest.mark.core
-def test_constructor_rejects_invalid_market_address():
-    with pytest.raises(Exception):  # GraphLoaderException
-        PendleMarketLoader(
-            market_address="not-an-address",
-            expiry_timestamp=_STUB_EXPIRY,
-            start_time=_STUB_START,
-            end_time=_STUB_END,
-        )
-
-
-@pytest.mark.core
-def test_constructor_rejects_path_traversal_in_address():
-    """Cache filename safety: reject anything that would escape the cache dir."""
-    with pytest.raises(Exception):
-        PendleMarketLoader(
-            market_address="0x../etc/passwd",
-            expiry_timestamp=_STUB_EXPIRY,
-            start_time=_STUB_START,
-            end_time=_STUB_END,
-        )
-
-
-@pytest.mark.core
-def test_constructor_rejects_unsupported_chain():
+def test_cache_key_covers_expiry_and_frame():
+    a = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, http=_FakePendleHttp(START))
+    b = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY + timedelta(days=30),
+                           http=_FakePendleHttp(START))
+    c = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, time_frame="day", http=_FakePendleHttp(START))
+    assert len({a._cache_key(), b._cache_key(), c._cache_key()}) == 3
     with pytest.raises(ValueError):
-        PendleMarketLoader(
-            market_address=_STUB_MARKET,
-            expiry_timestamp=_STUB_EXPIRY,
-            start_time=_STUB_START,
-            end_time=_STUB_END,
-            chain_id=10,  # Optimism not supported
-        )
-
-
-@pytest.mark.core
-def test_constructor_rejects_reversed_window():
+        PendleMarketLoader(MARKET, 1, START + HOUR, START, expiry=EXPIRY)
     with pytest.raises(ValueError):
-        PendleMarketLoader(
-            market_address=_STUB_MARKET,
-            expiry_timestamp=_STUB_EXPIRY,
-            start_time=_STUB_END,
-            end_time=_STUB_START,
-        )
+        PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, time_frame="minute")
 
 
 @pytest.mark.core
-def test_cache_key_uses_full_epoch_seconds_not_dates():
-    """Two windows that share the date but differ by hours must not collide."""
-    a = PendleMarketLoader(
-        market_address=_STUB_MARKET,
-        expiry_timestamp=_STUB_EXPIRY,
-        start_time=datetime(2025, 7, 27, 0, tzinfo=UTC),
-        end_time=datetime(2025, 7, 27, 6, tzinfo=UTC),
-    )
-    b = PendleMarketLoader(
-        market_address=_STUB_MARKET,
-        expiry_timestamp=_STUB_EXPIRY,
-        start_time=datetime(2025, 7, 27, 12, tzinfo=UTC),
-        end_time=datetime(2025, 7, 27, 18, tzinfo=UTC),
-    )
-    assert a._cache_key() != b._cache_key()
+@pytest.mark.parametrize("loader_type", [LoaderType.CSV, LoaderType.JSON])
+def test_cache_round_trip_returns_the_same_history(monkeypatch, tmp_path, loader_type):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    kwargs = dict(expiry=EXPIRY, loader_type=loader_type)
+    fresh = PendleMarketLoader(MARKET, 1, START, START + 3 * HOUR, http=_FakePendleHttp(START), **kwargs)
+    first = fresh.read(with_run=True)
+    cached = PendleMarketLoader(MARKET, 1, START, START + 3 * HOUR, http=_FakePendleHttp(START), **kwargs)
+    second = cached.read(with_run=False)
+    pd.testing.assert_frame_equal(first, second)
 
 
 @pytest.mark.core
-def test_rebuild_from_cache_restores_typed_history():
-    """Cache rehydration must return ``PendleMarketHistory`` with UTC index."""
-    df = pd.DataFrame(
-        {
-            "pt_price": [0.98, 0.99],
-            "implied_yield": [0.10, 0.09],
-            "seconds_to_expiry": [3600.0, 1800.0],
-            "pool_liquidity": [1e6, 1e6],
-            "base_apy": [0.07, 0.07],
-            "underlying_apy": [0.06, 0.06],
-            "max_apy": [0.20, 0.20],
-        },
-        index=pd.to_datetime([_STUB_EXPIRY - 3600, _STUB_EXPIRY - 1800], unit="s", utc=True),
-    )
-    df.index.name = "time"
-    rebuilt = _rebuild_from_cache(df)
-    assert isinstance(rebuilt, PendleMarketHistory)
-    assert rebuilt.index.tz is not None
-    assert len(rebuilt) == 2
+def test_read_market_state_decodes_readstate_words():
+    http = _FakePendleHttp(hourly_from=START)
+    state = read_market_state("http://rpc", MARKET, http=http)
+    assert state.total_pt == pytest.approx(1e6) and state.total_sy == pytest.approx(2.5e6)
+    assert state.scalar_root == pytest.approx(57.60) and state.ln_fee_rate_root == pytest.approx(9.8686e-4)
+    assert state.last_ln_implied_rate == pytest.approx(0.0480287) and state.expiry == int(EXPIRY.timestamp())
+    call = http.calls[-1][1]
+    assert call["method"] == "eth_call" and call["params"][0]["to"] == MARKET
+    assert call["params"][0]["data"].endswith(PENDLE_ROUTER.lower()[2:])
 
 
 @pytest.mark.core
-def test_rebuild_from_cache_handles_empty_dataframe():
-    rebuilt = _rebuild_from_cache(pd.DataFrame())
-    assert isinstance(rebuilt, PendleMarketHistory)
-    assert rebuilt.empty
-
-
-@pytest.mark.core
-def test_empty_history_constructor_accepts_required_and_optional_args():
-    """Regression guard: the empty-payload helper must construct a valid
-    ``PendleMarketHistory`` without ``TypeError``. The 5 required
-    parameters (``pt_prices``, ``implied_yields``, ``seconds_to_expiry``,
-    ``pool_liquidity``, ``time``) plus the 3 optional API-extra columns
-    are all explicit keyword arguments, so adding new optional columns
-    later does not silently change empty-branch behaviour.
-    """
-    h = PendleMarketHistory(
-        pt_prices=[],
-        implied_yields=[],
-        seconds_to_expiry=[],
-        pool_liquidity=[],
-        time=[],
-        base_apy=[],
-        underlying_apy=[],
-        max_apy=[],
-    )
-    assert isinstance(h, PendleMarketHistory)
-    assert h.empty
-    assert set(h.columns) >= {
-        "pt_price",
-        "implied_yield",
-        "seconds_to_expiry",
-        "pool_liquidity",
-        "base_apy",
-        "underlying_apy",
-        "max_apy",
-    }
+@pytest.mark.parametrize("csv", [False, True])
+def test_ohlcv_parses_both_shapes_and_pages(monkeypatch, csv):
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    http = _FakePendleHttp(hourly_from=START, ohlcv_csv=csv, ohlcv_cap=1440)
+    end = START + timedelta(hours=1500)
+    loader = PendleOHLCVLoader("0x" + "ab" * 20, 1, START, end, http=http)
+    klines = loader.read(with_run=True)
+    assert len(klines) == 1501
+    assert list(klines.columns) == ["open", "high", "low", "close", "volume"]
+    assert klines["close"].iloc[0] == 0.985
+    ohlcv_calls = [p for u, p in http.calls if u.endswith("/ohlcv")]
+    assert len(ohlcv_calls) == 2 and ohlcv_calls[0]["time_frame"] == "hour"
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        assert loader._cache_key().startswith("1-0x")

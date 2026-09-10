@@ -1,185 +1,132 @@
-"""Offline tests for ``BorosMarketLoader`` — no network.
-
-Cover the bar-list parser, deduplication, malformed-row resilience,
-window clipping, time-frame validation, the typed-struct contract on
-both cache paths, and the UTC-seconds index conversion.
-"""
-from datetime import datetime, timezone
+"""Offline tests for the Boros loaders against a fake client: market
+config parsing (rate floor from ticks), 200-candle paging, settlement
+join at exact timestamps, underlying fill, maturity term."""
+from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import pytest
 
-from fractal.loaders.boros import BorosMarketLoader, _rebuild_from_cache
-from fractal.loaders.structs import BorosMarketHistory
+from fractal.loaders import BorosMarketHistory, BorosMarketLoader
+from fractal.loaders._dt import annualise_funding
+from fractal.loaders.boros import BOROS_API, BorosLoaderException, bar_seconds, get_market_info
 
-UTC = timezone.utc
-
-_START = datetime(2026, 4, 23, tzinfo=UTC)
-_END = datetime(2026, 5, 14, tzinfo=UTC)
-
-
-def _stub_loader() -> BorosMarketLoader:
-    return BorosMarketLoader(market_id=74, start_time=_START, end_time=_END)
+MARKET_ID = 130  # BINANCE-BTCUSDT-25SEP2026
+MATURITY = datetime(2026, 9, 25, tzinfo=timezone.utc)
+START = datetime(2026, 9, 1, tzinfo=timezone.utc)
+EIGHT_HOURS = 8 * 3600
 
 
-def _bar(ts: int, mark: float) -> dict:
-    return {
-        "ts": ts,
-        "c": mark,
-        "u": mark,
-        "b7dmafr": mark,
-        "b30dmafr": mark,
-    }
+class _FakeBorosHttp:
+    def __init__(self, ohlcv_cap: int = 200):
+        self.ohlcv_cap = ohlcv_cap
+        self.calls = []
+
+    def get(self, url, params=None, timeout=None):
+        params = dict(params or {})
+        self.calls.append((url, params))
+        if url == f"{BOROS_API}/markets":
+            if params["isMatured"] == "false":
+                return {"results": [{
+                    "marketId": MARKET_ID,
+                    "imData": {"symbol": "BINANCE-BTCUSDT-25SEP2026", "maturity": int(MATURITY.timestamp()),
+                               "tickStep": 1, "iTickThresh": 1166},
+                    "config": {"kIM": "645161290322580645", "kMM": "322580645161290322", "tThresh": 864000,
+                               "takerFee": "500000000000000"},
+                    "extConfig": {"paymentPeriod": EIGHT_HOURS, "settleFeeRate": "1000000000000000"},
+                    "metadata": {"fundingRateSymbol": "BTCUSDT", "maxLeverage": 1.55},
+                }]}
+            return {"results": []}
+        if url == f"{BOROS_API}/markets/ohlcv":
+            start, end = params["startTimestamp"], params["endTimestamp"]
+            rows, ts = [], start
+            while ts <= end and len(rows) < self.ohlcv_cap:
+                rows.append({"ts": ts, "o": 0.05, "h": 0.06, "l": 0.04, "c": 0.055, "v": 3.0})
+                ts += 3600
+            return {"results": rows}
+        if url == f"{BOROS_API}/markets/historical-underlying-apr":
+            start, end = params["startTimestamp"], params["endTimestamp"]
+            return {"results": [{"periodStartTimestamp": ts, "underlyingApr": 0.11}
+                                for ts in range(start, end + 1, 3600)]}
+        raise AssertionError(url)
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        self.calls.append((url, json))
+        assert url == f"{BOROS_API}/funding-rate/settlement-summary"
+        start, end = json["fromTimestamp"], json["toTimestamp"]
+        first = start - start % EIGHT_HOURS + EIGHT_HOURS
+        return {"results": [{"marketId": MARKET_ID, "periodTimestamp": ts, "settlementApr": 0.0001 * 1095,
+                             "totalNotionalSize": 40.0} for ts in range(first, end + 1, EIGHT_HOURS)]}
 
 
 @pytest.mark.core
-def test_constructor_rejects_unknown_time_frame():
+def test_market_info_parses_margin_params_and_rate_floor():
+    info = get_market_info(MARKET_ID, http=_FakeBorosHttp())
+    assert info.maturity == MATURITY and info.payment_period_seconds == EIGHT_HOURS
+    assert info.k_im == pytest.approx(1 / 1.55) and info.mm_to_im_ratio == pytest.approx(0.5)
+    assert info.taker_fee_rate == pytest.approx(0.0005) and info.settle_fee_rate == pytest.approx(0.001)
+    assert info.rate_floor == pytest.approx(1.00005 ** 1166 - 1, rel=1e-9)  # ≈ 6 %
+    assert 0.059 < info.rate_floor < 0.061
+    assert info.time_threshold_seconds == 864000 and info.max_leverage == 1.55
+    with pytest.raises(BorosLoaderException):
+        get_market_info(999, http=_FakeBorosHttp())
+
+
+@pytest.mark.core
+def test_candles_page_in_200_bar_windows_and_join_settlements(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.boros._time.sleep", lambda s: None)
+    http = _FakeBorosHttp()
+    end = START + timedelta(hours=450)
+    loader = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, underlying=("BTC", "Binance"), http=http)
+    history = loader.read(with_run=True)
+    assert isinstance(history, BorosMarketHistory)
+    assert len(history) == 451
+    ohlcv_calls = [p for u, p in http.calls if u.endswith("/ohlcv")]
+    assert len(ohlcv_calls) == 3
+    assert ohlcv_calls[1]["startTimestamp"] - ohlcv_calls[0]["startTimestamp"] == 200 * bar_seconds("1h")
+    settled = history["settlement_apr"].dropna()
+    assert len(settled) == len([t for t in history.index if t.timestamp() % EIGHT_HOURS == 0 and t > START])
+    assert settled.iloc[0] == pytest.approx(annualise_funding(0.0001, EIGHT_HOURS))
+    assert history["oi"].dropna().iloc[0] == 40.0
+    # underlying fills the non-settlement bars, settlement wins where both exist
+    assert history["underlying_apr"].notna().all()
+    assert history.loc[settled.index, "underlying_apr"].iloc[0] == pytest.approx(settled.iloc[0])
+    assert history["seconds_to_expiry"].iloc[0] == (MATURITY - START).total_seconds()
+    assert history["mark_apr_close"].iloc[0] == 0.055 and history["volume"].iloc[0] == 3.0
+
+
+@pytest.mark.core
+def test_without_settlements_columns_stay_nan_and_cache_keys_differ(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.boros._time.sleep", lambda s: None)
+    end = START + timedelta(hours=3)
+    plain = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, include_settlements=False,
+                              http=_FakeBorosHttp())
+    history = plain.read(with_run=True)
+    assert history["settlement_apr"].isna().all() and history["underlying_apr"].isna().all()
+    full = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, http=_FakeBorosHttp())
+    later = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY + timedelta(days=30), http=_FakeBorosHttp())
+    assert len({plain._cache_key(), full._cache_key(), later._cache_key()}) == 3
+
+
+@pytest.mark.core
+def test_missing_close_raises_and_validation(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.boros._time.sleep", lambda s: None)
+    loader = BorosMarketLoader(MARKET_ID, START, START + timedelta(hours=2), maturity=MATURITY,
+                               include_settlements=False, http=_FakeBorosHttp())
+    loader.extract()
+    loader._candles[1]["c"] = None
+    with pytest.raises(ValueError, match="mark_apr_close"):
+        loader.transform()
     with pytest.raises(ValueError):
-        BorosMarketLoader(
-            market_id=74,
-            start_time=_START,
-            end_time=_END,
-            time_frame="1m",  # not in {5m, 1h, 1d, 1w}
-        )
-
-
-@pytest.mark.core
-def test_constructor_accepts_documented_time_frames():
-    for tf in ("5m", "1h", "1d", "1w"):
-        BorosMarketLoader(
-            market_id=74,
-            start_time=_START,
-            end_time=_END,
-            time_frame=tf,
-        )
-
-
-@pytest.mark.core
-def test_constructor_rejects_reversed_window():
+        BorosMarketLoader(MARKET_ID, START, START, maturity=MATURITY, time_frame="2h")
     with pytest.raises(ValueError):
-        BorosMarketLoader(market_id=74, start_time=_END, end_time=_START)
+        BorosMarketLoader(MARKET_ID, START + timedelta(hours=1), START, maturity=MATURITY)
 
 
 @pytest.mark.core
-def test_transform_empty_payload():
-    loader = _stub_loader()
-    loader._raw = {}
-    loader.transform()
-    assert isinstance(loader._data, BorosMarketHistory)
-    assert loader._data.empty
-
-
-@pytest.mark.core
-def test_transform_returns_typed_struct():
-    loader = _stub_loader()
-    ts_inside = int(_START.timestamp()) + 3600
-    loader._raw = {"results": [_bar(ts_inside, 0.03)]}
-    loader.transform()
-    assert isinstance(loader._data, BorosMarketHistory)
-    assert list(loader._data.columns) == [
-        "mark_apr",
-        "observed_funding",
-        "mark_apr_7d_ma",
-        "mark_apr_30d_ma",
-    ]
-    assert len(loader._data) == 1
-
-
-@pytest.mark.core
-def test_transform_index_is_utc_seconds_aware():
-    """Epoch seconds must land in the 2026 timeline, not near 1970."""
-    loader = _stub_loader()
-    ts_inside = int(_START.timestamp()) + 3600
-    loader._raw = {"results": [_bar(ts_inside, 0.03)]}
-    loader.transform()
-    assert loader._data.index[0].year == 2026
-    assert loader._data.index.tz is not None
-
-
-@pytest.mark.core
-def test_transform_clips_to_requested_window():
-    loader = _stub_loader()
-    ts_before = int(_START.timestamp()) - 86400
-    ts_inside = int(_START.timestamp()) + 86400
-    ts_after = int(_END.timestamp()) + 86400
-    loader._raw = {
-        "results": [
-            _bar(ts_before, 0.01),
-            _bar(ts_inside, 0.02),
-            _bar(ts_after, 0.03),
-        ]
-    }
-    loader.transform()
-    assert len(loader._data) == 1
-    assert loader._data["mark_apr"].iloc[0] == pytest.approx(0.02)
-
-
-@pytest.mark.core
-def test_transform_deduplicates_same_timestamp():
-    loader = _stub_loader()
-    ts = int(_START.timestamp()) + 3600
-    loader._raw = {"results": [_bar(ts, 0.02), _bar(ts, 0.99)]}
-    loader.transform()
-    assert len(loader._data) == 1
-    assert loader._data["mark_apr"].iloc[0] == pytest.approx(0.02)
-
-
-@pytest.mark.core
-def test_transform_skips_malformed_rows():
-    loader = _stub_loader()
-    ts_ok = int(_START.timestamp()) + 3600
-    loader._raw = {
-        "results": [
-            {"ts": "not-an-int", "c": 0.01},
-            _bar(ts_ok, 0.02),
-        ]
-    }
-    loader.transform()
-    assert len(loader._data) == 1
-    assert loader._data["mark_apr"].iloc[0] == pytest.approx(0.02)
-
-
-@pytest.mark.core
-def test_cache_key_uses_full_epoch_seconds():
-    """Different start times → different cache keys (no day-level collisions)."""
-    a = BorosMarketLoader(
-        market_id=74,
-        start_time=datetime(2026, 4, 23, 0, tzinfo=UTC),
-        end_time=datetime(2026, 4, 23, 6, tzinfo=UTC),
-    )
-    b = BorosMarketLoader(
-        market_id=74,
-        start_time=datetime(2026, 4, 23, 12, tzinfo=UTC),
-        end_time=datetime(2026, 4, 23, 18, tzinfo=UTC),
-    )
-    assert a._cache_key() != b._cache_key()
-    assert "market74" in a._cache_key()
-
-
-@pytest.mark.core
-def test_rebuild_from_cache_restores_typed_history():
-    df = pd.DataFrame(
-        {
-            "mark_apr": [0.03, 0.035],
-            "observed_funding": [0.03, 0.035],
-            "mark_apr_7d_ma": [0.029, 0.03],
-            "mark_apr_30d_ma": [0.028, 0.029],
-        },
-        index=pd.to_datetime(
-            [int(_START.timestamp()), int(_START.timestamp()) + 3600],
-            unit="s",
-            utc=True,
-        ),
-    )
-    df.index.name = "time"
-    rebuilt = _rebuild_from_cache(df)
-    assert isinstance(rebuilt, BorosMarketHistory)
-    assert rebuilt.index.tz is not None
-    assert len(rebuilt) == 2
-
-
-@pytest.mark.core
-def test_rebuild_from_cache_handles_empty_dataframe():
-    rebuilt = _rebuild_from_cache(pd.DataFrame())
-    assert isinstance(rebuilt, BorosMarketHistory)
-    assert rebuilt.empty
+def test_cache_round_trip(monkeypatch, tmp_path):
+    monkeypatch.setattr("fractal.loaders.boros._time.sleep", lambda s: None)
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    end = START + timedelta(hours=10)
+    first = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, http=_FakeBorosHttp()).read(with_run=True)
+    second = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, http=_FakeBorosHttp()).read(with_run=False)
+    pd.testing.assert_frame_equal(first, second)

@@ -1,276 +1,309 @@
-"""Morpho Blue market loader — hourly borrow rate and utilization.
+"""Morpho Blue loaders: market static info and hourly market history.
 
-Endpoint
---------
-Morpho exposes market data through a keyless GraphQL endpoint at
-``https://blue-api.morpho.org/graphql``. The relevant root field is
-``marketByUniqueKey(uniqueKey, chainId)``; it returns a ``Market`` whose
-``historicalState`` selection produces timeseries with the requested
-``interval`` (``HOUR`` / ``DAY`` / …) and ``[startTimestamp, endTimestamp]``
-window. Each timeseries entry is a ``FloatDataPoint`` of shape
-``{x: <unix_seconds>, y: <decimal>}``.
+API: ``https://api.morpho.org/graphql`` (no key; 750 req/min). Since
+2026-05 markets are addressed by ``marketById(marketId, chainId)``;
+``marketByUniqueKey`` and ``Market.id`` were removed. History comes
+from ``historicalState { field(options: {startTimestamp, endTimestamp,
+interval}) { x y } }`` with points **descending** and APYs as
+fractions; the newest point is the live one (not interval-aligned) and
+is dropped.
 
-The fields we read are already **annualised decimals**:
+Rates: the API reports effective annual ``borrowApy = exp(r·YEAR) − 1``.
+The loader converts to the **per-bar** exponent the entities apply
+(``ln(1 + apy) · Δt / YEAR``, ``compounding="continuous"``) or Aave's
+linear ``apy / bars_per_year`` (``"linear"``), and keeps the annual
+values in the optional ``borrow_apy`` / ``supply_apy`` columns.
 
-* ``borrowApy`` — annualised borrow APY paid by debtors. Equivalent to
-  the ``borrowing_rate`` column of :class:`LendingHistory`.
-* ``supplyApy`` — annualised supply APY earned by lenders. Equivalent
-  to the ``lending_rate`` column of :class:`LendingHistory`.
-* ``utilization`` — fraction of supplied debt asset currently borrowed,
-  in ``[0, 1]``. Optional column of :class:`LendingHistory` populated
-  by this loader (Morpho exposes it; other lending sources may not).
-
-Chains
-------
-Morpho is deployed on Ethereum mainnet, Arbitrum and Base. This loader
-accepts a chain name and maps it to the API's ``chainId`` parameter.
-
-Output contract
----------------
-:meth:`MorphoMarketLoader.read` returns a :class:`LendingHistory` with
-the three columns ``lending_rate``, ``borrowing_rate``, ``utilization``
-indexed by a UTC-aware ``DatetimeIndex``. Empty windows return a
-same-shape :class:`LendingHistory` with zero rows.
+Oracle price: the API has no oracle-price history. For PT collateral
+on a linear-discount feed, :func:`read_linear_discount` reads
+``baseDiscountPerYear`` once and the observation builder computes
+``1 − d · t`` per bar.
 """
-
+import math
 import re
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
-import numpy as np
 import pandas as pd
 
-from fractal.loaders._dt import to_seconds, to_utc
+from fractal.loaders._dt import SECONDS_PER_YEAR, require_no_nan, to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient
+from fractal.loaders._rpc import decode_words, eth_call
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.structs import LendingHistory
+from fractal.loaders.structs import LendingHistory, PriceHistory
 
-MORPHO_GRAPHQL_URL: str = "https://blue-api.morpho.org/graphql"
-
-# Chain-name → numeric chainId used by the Morpho GraphQL API.
-_CHAIN_ID_BY_NAME: Dict[str, int] = {
-    "ethereum": 1,
-    "arbitrum": 42161,
-    "base": 8453,
-}
-
-# Default interval. Hourly matches the rest of the backtest's granularity.
-_INTERVAL: str = "HOUR"
-
-# Morpho market ids are 32-byte hex strings ("0x" + 64 hex chars).
+MORPHO_GRAPHQL_URL = "https://api.morpho.org/graphql"
+_REQUEST_SLEEP_SECONDS = 0.1
 _MARKET_ID_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
+_INTERVAL_SECONDS = {"HOUR": 3600, "DAY": 86_400}
+_BASE_DISCOUNT_SELECTOR = "0x61d5a1f7"  # baseDiscountPerYear()
 
-# Output column order is part of the public contract for downstream joins.
-_OUTPUT_COLUMNS: Tuple[str, ...] = ("lending_rate", "borrowing_rate", "utilization")
-
-_HISTORICAL_QUERY: str = """
-query MarketHistory($id: String!, $cid: Int!, $opts: TimeseriesOptions) {
-  marketByUniqueKey(uniqueKey: $id, chainId: $cid) {
-    historicalState {
-      borrowApy(options: $opts) { x y }
-      supplyApy(options: $opts) { x y }
-      utilization(options: $opts) { x y }
-    }
+_INFO_QUERY = """
+query MarketInfo($id: String!, $cid: Int!) {
+  marketById(marketId: $id, chainId: $cid) {
+    marketId lltv irmAddress oracleAddress
+    oracle { address type }
+    loanAsset { address symbol decimals }
+    collateralAsset { address symbol decimals }
+    state { price fee borrowApy supplyApy utilization rateAtTarget }
   }
 }
 """
 
+_HISTORY_QUERY = """
+query MarketHistory($id: String!, $cid: Int!, $o: TimeseriesOptions) {
+  marketById(marketId: $id, chainId: $cid) {
+    historicalState {
+      borrowApy(options: $o) { x y }
+      supplyApy(options: $o) { x y }
+      utilization(options: $o) { x y }
+      rateAtTarget(options: $o) { x y }
+    }
+    collateralAsset { historicalPriceUsd(options: $o) { x y } }
+  }
+}
+"""
 
-def _chain_id(chain: str) -> int:
-    """Map a chain name to the Morpho API's integer chainId."""
-    key = chain.lower()
-    if key not in _CHAIN_ID_BY_NAME:
-        raise ValueError(
-            f"unsupported chain {chain!r}; expected one of {sorted(_CHAIN_ID_BY_NAME)}"
-        )
-    return _CHAIN_ID_BY_NAME[key]
+__all__ = [
+    "MORPHO_GRAPHQL_URL",
+    "MorphoLoaderException",
+    "MorphoMarketInfo",
+    "get_market_info",
+    "read_linear_discount",
+    "MorphoMarketLoader",
+]
+
+
+class MorphoLoaderException(RuntimeError):
+    """GraphQL errors or malformed Morpho API data."""
 
 
 def _validate_market_id(value: str) -> str:
-    """Reject anything that is not a 32-byte hex ``0x``-prefixed string."""
     if not isinstance(value, str) or not _MARKET_ID_RE.match(value):
-        raise ValueError(
-            f"market_id must match ^0x[a-fA-F0-9]{{64}}$, got {value!r}"
-        )
+        raise ValueError(f"market_id must match ^0x[a-fA-F0-9]{{64}}$, got {value!r}")
     return value.lower()
 
 
+def _graphql(http: HttpClient, query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+    payload = http.post(MORPHO_GRAPHQL_URL, json={"query": query, "variables": variables})
+    if not isinstance(payload, dict):
+        raise MorphoLoaderException(f"Morpho GraphQL: expected a JSON object, got {type(payload).__name__}")
+    if payload.get("errors"):
+        raise MorphoLoaderException(f"Morpho GraphQL errors: {payload['errors']}")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        raise MorphoLoaderException("Morpho GraphQL: missing 'data'")
+    return data
+
+
+# --------------------------------------------------------- market info
+@dataclass(frozen=True)
+class MorphoMarketInfo:
+    """Static market config from ``marketById``; ``lltv`` as a fraction."""
+    chain_id: int
+    market_id: str
+    lltv: float
+    loan_asset: str
+    loan_symbol: str
+    loan_decimals: int
+    collateral_asset: str
+    collateral_symbol: str
+    collateral_decimals: int
+    oracle_address: Optional[str]
+    oracle_type: Optional[str]
+    irm_address: Optional[str]
+    fee: float
+    borrow_apy: Optional[float] = None
+    supply_apy: Optional[float] = None
+    utilization: Optional[float] = None
+    oracle_price: Optional[float] = None
+
+    @property
+    def price_scale(self) -> float:
+        """Divisor turning ``state.price`` into loan-per-collateral units."""
+        return 10.0 ** (36 + self.loan_decimals - self.collateral_decimals)
+
+
+def _wad(value: Any) -> float:
+    number = float(value)
+    return number / 1e18 if number > 1.0 else number
+
+
+def get_market_info(market_id: str, chain_id: int, http: Optional[HttpClient] = None) -> MorphoMarketInfo:
+    """Fetch LLTV, assets, oracle and the current state of one market."""
+    client = http or HttpClient()
+    data = _graphql(client, _INFO_QUERY, {"id": _validate_market_id(market_id), "cid": int(chain_id)})
+    market = data.get("marketById")
+    if not market:
+        raise MorphoLoaderException(f"market {market_id} not found on chain {chain_id}")
+    loan, coll, state = market["loanAsset"], market["collateralAsset"], market.get("state") or {}
+    oracle = market.get("oracle") or {}
+    loan_dec, coll_dec = int(loan["decimals"]), int(coll["decimals"])
+    raw_price = state.get("price")
+    oracle_price = float(raw_price) / 10.0 ** (36 + loan_dec - coll_dec) if raw_price is not None else None
+    return MorphoMarketInfo(
+        chain_id=int(chain_id), market_id=market["marketId"].lower(), lltv=_wad(market["lltv"]),
+        loan_asset=loan["address"].lower(), loan_symbol=loan["symbol"], loan_decimals=loan_dec,
+        collateral_asset=coll["address"].lower(), collateral_symbol=coll["symbol"], collateral_decimals=coll_dec,
+        oracle_address=(oracle.get("address") or market.get("oracleAddress") or None),
+        oracle_type=oracle.get("type"), irm_address=market.get("irmAddress"),
+        fee=_wad(state.get("fee") or 0.0),
+        borrow_apy=state.get("borrowApy"), supply_apy=state.get("supplyApy"),
+        utilization=state.get("utilization"), oracle_price=oracle_price,
+    )
+
+
+def read_linear_discount(
+    rpc_url: str,
+    feed_address: str,
+    *,
+    block: str = "latest",
+    http: Optional[HttpClient] = None,
+) -> float:
+    """``baseDiscountPerYear()`` of a ``PendleSparkLinearDiscountOracle`` feed, as a fraction."""
+    result = eth_call(rpc_url, feed_address, _BASE_DISCOUNT_SELECTOR, block=block, http=http)
+    return decode_words(result, 1)[0] / 1e18
+
+
+# ------------------------------------------------------- market history
 def _series_to_df(points: Optional[List[Dict[str, Any]]], col: str) -> pd.DataFrame:
-    """Coerce a ``[{x, y}, …]`` timeseries to a 2-col DataFrame keyed by ``x``."""
     if not points:
-        return pd.DataFrame(columns=["x", col])
+        return pd.DataFrame({"x": pd.Series(dtype="int64"), col: pd.Series(dtype=float)})
     df = pd.DataFrame(points)
-    df["x"] = df["x"].astype("int64")
-    df[col] = df["y"].astype(float)
-    return df[["x", col]]
+    return pd.DataFrame({"x": df["x"].astype("int64"), col: df["y"].astype(float)})
 
 
 class MorphoMarketLoader(Loader):
-    """Hourly historical state for a single Morpho Blue isolated market.
-
-    The loader uses Morpho's GraphQL endpoint (no API key needed). On
-    cache miss it issues one POST request covering
-    ``[start_time, end_time]`` at hourly resolution; on cache hit it
-    deserialises the on-disk CSV. Cache keys include chain, market id,
-    and both timestamps as Unix seconds so different windows do not
-    collide.
+    """Hourly (or daily) market history → :class:`LendingHistory` with per-bar rates.
 
     Args:
-        market_id: 32-byte Morpho market identifier as a ``0x``-hex
-            string (``0x`` + 64 hex chars). Validated at construction.
-        chain: Lower-case chain name (``"ethereum"``, ``"arbitrum"``,
-            ``"base"``); resolved to ``chainId`` internally.
-        start_time: Inclusive start of the historical window, UTC.
-        end_time: Inclusive end of the historical window, UTC.
-        api_key: Reserved for future authenticated endpoints; the
-            public ``blue-api.morpho.org`` endpoint does NOT require a
-            key. Pass ``None`` for the public API.
-        loader_type: Cache backend; default CSV.
+        market_id: 32-byte market id (``0x…``).
+        chain_id: EVM chain id.
+        start_time / end_time: inclusive UTC window.
+        resolution: bar length in hours the rates are converted to.
+        interval: API interval, ``"HOUR"`` or ``"DAY"``.
+        compounding: ``"continuous"`` (per-bar exponent ``ln(1+apy)·Δt/YEAR``)
+            or ``"linear"`` (``apy · Δt / YEAR``, Aave parity).
+        http: injectable client for offline tests.
     """
 
     def __init__(
         self,
         market_id: str,
-        chain: str,
+        chain_id: int,
         start_time: datetime,
-        end_time: datetime,
+        end_time: Optional[datetime] = None,
         *,
-        api_key: Optional[str] = None,
+        resolution: int = 1,
+        interval: str = "HOUR",
+        compounding: str = "continuous",
         loader_type: LoaderType = LoaderType.CSV,
+        http: Optional[HttpClient] = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
-        self.market_id: str = _validate_market_id(market_id)
-        self.chain: str = chain.lower()
-        self._chain_id: int = _chain_id(chain)
-        self.start_time: datetime = to_utc(start_time)  # type: ignore[assignment]
-        self.end_time: datetime = to_utc(end_time)  # type: ignore[assignment]
-        if self.start_time is None or self.end_time is None:
-            raise ValueError("start_time and end_time are required")
+        if interval not in _INTERVAL_SECONDS:
+            raise ValueError(f"interval must be one of {sorted(_INTERVAL_SECONDS)}, got {interval!r}")
+        if compounding not in ("continuous", "linear"):
+            raise ValueError(f"compounding must be 'continuous' or 'linear', got {compounding!r}")
+        if resolution <= 0:
+            raise ValueError(f"resolution must be > 0 hours, got {resolution}")
+        self.market_id = _validate_market_id(market_id)
+        self.chain_id = int(chain_id)
+        self.start_time = to_utc(start_time)
+        self.end_time = to_utc(end_time) if end_time is not None else utcnow()
         if self.end_time < self.start_time:
-            raise ValueError(
-                f"end_time {self.end_time} precedes start_time {self.start_time}"
-            )
-        self._api_key: Optional[str] = api_key
-        self._http: HttpClient = HttpClient()
-
-    # ------------------------------------------------------------------
-    # Cache identity
-    # ------------------------------------------------------------------
+            raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
+        self.resolution = int(resolution)
+        self.interval = interval
+        self.compounding = compounding
+        self._http = http or HttpClient()
 
     def _cache_key(self) -> str:
         return (
-            f"{self.chain}-{self.market_id}-"
-            f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}"
+            f"{self.chain_id}-{self.market_id}-{self.interval}-{to_seconds(self.start_time)}-"
+            f"{to_seconds(self.end_time)}-{self.resolution}-{self.compounding}"
         )
-
-    # ------------------------------------------------------------------
-    # extract / transform
-    # ------------------------------------------------------------------
-
-    def _post(self) -> Dict[str, Any]:
-        """POST the historical query and unwrap GraphQL ``data``."""
-        variables = {
-            "id": self.market_id,
-            "cid": self._chain_id,
-            "opts": {
-                "startTimestamp": to_seconds(self.start_time),
-                "endTimestamp": to_seconds(self.end_time),
-                "interval": _INTERVAL,
-            },
-        }
-        headers: Optional[Dict[str, str]] = None
-        if self._api_key:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._api_key}",
-            }
-        payload = self._http.post(
-            MORPHO_GRAPHQL_URL,
-            json={"query": _HISTORICAL_QUERY, "variables": variables},
-            headers=headers,
-        )
-        if not isinstance(payload, dict):
-            raise RuntimeError(
-                f"Morpho GraphQL: expected JSON object, got {type(payload).__name__}"
-            )
-        if "errors" in payload:
-            raise RuntimeError(f"Morpho GraphQL errors: {payload['errors']}")
-        data = payload.get("data") or {}
-        if not isinstance(data, dict):
-            raise RuntimeError("Morpho GraphQL: missing 'data' object")
-        return data
 
     def extract(self) -> None:
-        """Fetch the timeseries triple and stash an unmerged staging frame."""
-        data = self._post()
-        market = data.get("marketByUniqueKey")
+        data = _graphql(self._http, _HISTORY_QUERY, {
+            "id": self.market_id, "cid": self.chain_id,
+            "o": {"startTimestamp": to_seconds(self.start_time), "endTimestamp": to_seconds(self.end_time),
+                  "interval": self.interval},
+        })
+        market = data.get("marketById")
         if not market:
-            self._data = pd.DataFrame(columns=["x"] + list(_OUTPUT_COLUMNS))
-            return
+            raise MorphoLoaderException(f"market {self.market_id} not found on chain {self.chain_id}")
         hist = market.get("historicalState") or {}
-        borrow = _series_to_df(hist.get("borrowApy"), "borrowing_rate")
-        supply = _series_to_df(hist.get("supplyApy"), "lending_rate")
-        util = _series_to_df(hist.get("utilization"), "utilization")
-        merged = borrow.merge(util, on="x", how="outer").merge(
-            supply, on="x", how="outer"
-        )
+        frames = [
+            _series_to_df(hist.get("borrowApy"), "borrow_apy"),
+            _series_to_df(hist.get("supplyApy"), "supply_apy"),
+            _series_to_df(hist.get("utilization"), "utilization"),
+            _series_to_df(hist.get("rateAtTarget"), "rate_at_target"),
+            _series_to_df((market.get("collateralAsset") or {}).get("historicalPriceUsd"), "collateral_price_usd"),
+        ]
+        merged = frames[0]
+        for frame in frames[1:]:
+            merged = merged.merge(frame, on="x", how="outer")
         self._data = merged.sort_values("x").reset_index(drop=True)
 
     def transform(self) -> None:
-        """Convert the staging frame to a typed :class:`LendingHistory`."""
+        cols = ["time", "lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
+                "rate_at_target", "collateral_price_usd"]
         if self._data is None or self._data.empty:
-            self._data = LendingHistory([], [], [], utilization=[])
+            self._data = pd.DataFrame(columns=cols)
             return
-        df = self._data.copy()
-        epoch = df["x"].astype("int64").to_numpy()
-        for c in _OUTPUT_COLUMNS:
-            if c not in df.columns:
-                df[c] = np.nan
-        df = df[list(_OUTPUT_COLUMNS)].astype(float)
-        self._data = LendingHistory(
-            lending_rates=df["lending_rate"].to_numpy(),
-            borrowing_rates=df["borrowing_rate"].to_numpy(),
-            utilization=df["utilization"].to_numpy(),
-            time=epoch,
-        )
-
-    # ------------------------------------------------------------------
-    # read
-    # ------------------------------------------------------------------
+        df = self._data.rename(columns={"x": "time"}).copy()
+        df["time"] = df["time"].astype("int64")
+        step = _INTERVAL_SECONDS[self.interval]
+        aligned = df["time"] % step == 0
+        if (~aligned).any():
+            df = df[aligned]  # drop the live, non-aligned newest point
+        df = df[(df["time"] >= to_seconds(self.start_time)) & (df["time"] <= to_seconds(self.end_time))]
+        df = df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
+        gaps = df["time"].diff().dropna() != step
+        if gaps.any():
+            raise ValueError(
+                f"Morpho history for {self.market_id} has {int(gaps.sum())} gap(s) in its {self.interval} grid; "
+                f"narrow the window instead of filling missing bars"
+            )
+        bar_seconds = self.resolution * 3600
+        if self.compounding == "continuous":
+            df["borrowing_rate"] = df["borrow_apy"].apply(lambda apy: math.log1p(apy) * bar_seconds / SECONDS_PER_YEAR)
+            df["lending_rate"] = df["supply_apy"].apply(lambda apy: math.log1p(apy) * bar_seconds / SECONDS_PER_YEAR)
+        else:
+            df["borrowing_rate"] = df["borrow_apy"] * bar_seconds / SECONDS_PER_YEAR
+            df["lending_rate"] = df["supply_apy"] * bar_seconds / SECONDS_PER_YEAR
+        for col in cols:
+            if col not in df.columns:
+                df[col] = float("nan")
+        df = df[cols]
+        require_no_nan(df, ["lending_rate", "borrowing_rate", "utilization"])
+        self._data = df
 
     def read(self, with_run: bool = False) -> LendingHistory:
-        """Return the hourly ``LendingHistory``; run pipeline on cache miss."""
         if with_run:
             self.run()
         else:
             self._read(self._cache_key())
-            self._data = _rebuild_from_cache(self._data)
-        return self._data
+        if self._data is None or self._data.empty:
+            return LendingHistory(lending_rates=[], borrowing_rates=[], time=[])
+        return LendingHistory(
+            lending_rates=self._data["lending_rate"].astype(float).values,
+            borrowing_rates=self._data["borrowing_rate"].astype(float).values,
+            time=self._utc_index(),
+            utilization=self._data["utilization"].astype(float).values,
+            borrow_apy=self._data["borrow_apy"].astype(float).values,
+            supply_apy=self._data["supply_apy"].astype(float).values,
+            rate_at_target=self._data["rate_at_target"].astype(float).values,
+        )
 
-
-# ---------------------------------------------------------------- helpers
-
-
-def _rebuild_from_cache(data: Any) -> LendingHistory:
-    """Coerce a cached ``pd.DataFrame`` (or ``LendingHistory``) back to typed form."""
-    if isinstance(data, LendingHistory):
-        return data
-    if data is None or (isinstance(data, pd.DataFrame) and data.empty):
-        return LendingHistory([], [], [], utilization=[])
-    df = data.copy() if isinstance(data, pd.DataFrame) else pd.DataFrame(data)
-    if "time" in df.columns:
-        df["time"] = pd.to_datetime(df["time"], utc=True)
-        df = df.set_index("time").sort_index()
-    idx = pd.to_datetime(df.index, utc=True)
-    if not isinstance(idx, pd.DatetimeIndex):
-        idx = pd.DatetimeIndex(idx)
-    idx.name = "time"
-    for col in _OUTPUT_COLUMNS:
-        if col not in df.columns:
-            df[col] = float("nan")
-    return LendingHistory(
-        lending_rates=df["lending_rate"].to_numpy(),
-        borrowing_rates=df["borrowing_rate"].to_numpy(),
-        utilization=df["utilization"].to_numpy(),
-        time=idx,
-    )
+    def read_collateral_price(self) -> PriceHistory:
+        """The API's USD price of the collateral asset over the same window (from the current ``_data``)."""
+        if self._data is None or self._data.empty:
+            return PriceHistory(prices=[], time=[])
+        series = self._data[["time", "collateral_price_usd"]].dropna()
+        return PriceHistory(
+            prices=series["collateral_price_usd"].astype(float).values,
+            time=pd.to_datetime(series["time"].astype("int64"), unit="s", utc=True),
+        )
