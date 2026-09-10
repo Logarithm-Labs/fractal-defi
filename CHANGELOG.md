@@ -59,6 +59,15 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
+- **Dependency floors raised** (`setup.py` and `requirements.txt` kept in
+  sync; the pre-commit pylint hook pins follow): runtime
+  `mlflow>=3.12.0` (was `>=3.11.1`), `requests>=2.34.0` (was
+  `>=2.33.1`); dev tooling `pytest>=9.1.1`, `pytest-cov>=7.1.0`,
+  `pylint>=4.0.6`, `pre-commit>=4.6.1`; release tooling `build>=1.5.1`,
+  `twine>=7.0.0`. CI actions bumped to `checkout@v7`, `setup-python@v7`,
+  `cache@v6`, `codecov-action@v7`. `examples/agentic_trader` pins moved
+  to `openai-agents==0.17.7` and `dash==4.3.0`. Supersedes the
+  dependabot PRs #80, #90–#95.
 - **`UniswapV3Loader.get_pool_decimals`** is now concrete and delegates
   to `get_pool_info`; the Ethereum loader no longer overrides it.
 - **`UniswapV3LPEntity.update_state`** additionally validates

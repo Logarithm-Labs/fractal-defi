@@ -73,12 +73,12 @@ repos:
         types: [python]
         files: ^fractal/
         additional_dependencies:
-          - pylint>=4.0.5
-          - mlflow>=3.11.1
+          - pylint>=4.0.6
+          - mlflow>=3.12.0
           - pandas>=2.3.3
           - numpy>=2.2.6
           - loguru>=0.7.3
-          - requests>=2.33.1
+          - requests>=2.34.0
           - scikit-learn>=1.7.2
 
       - id: pylint-tests
@@ -89,13 +89,13 @@ repos:
         types: [python]
         files: ^tests/
         additional_dependencies:
-          - pylint>=4.0.5
-          - pytest>=9.0.3
-          - mlflow>=3.11.1
+          - pylint>=4.0.6
+          - pytest>=9.1.1
+          - mlflow>=3.12.0
           - pandas>=2.3.3
           - numpy>=2.2.6
           - loguru>=0.7.3
-          - requests>=2.33.1
+          - requests>=2.34.0
           - scikit-learn>=1.7.2
 
   # 5. pytest -m core — full offline test suite (~1100 tests, ~10s).
