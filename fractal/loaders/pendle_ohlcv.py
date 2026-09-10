@@ -18,6 +18,8 @@ rather than the *token* address, use :class:`PendleMarketLoader`.
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Set
 
+import pandas as pd
+
 from fractal.loaders._dt import to_seconds, to_utc
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
@@ -123,14 +125,14 @@ class PendleOHLCVLoader(Loader):
         lows: List[float] = []
         closes: List[float] = []
         volumes: List[float] = []
-        for bar in bars:
+        for candle in bars:
             try:
-                t = int(bar.get("time") or bar.get("t") or bar.get("timestamp"))
-                o = float(bar.get("open", bar.get("o", 0.0)))
-                h = float(bar.get("high", bar.get("h", 0.0)))
-                low = float(bar.get("low", bar.get("l", 0.0)))
-                c = float(bar.get("close", bar.get("c", 0.0)))
-                v = float(bar.get("volume", bar.get("v", 0.0)))
+                t = int(candle.get("time") or candle.get("t") or candle.get("timestamp"))
+                o = float(candle.get("open", candle.get("o", 0.0)))
+                h = float(candle.get("high", candle.get("h", 0.0)))
+                low = float(candle.get("low", candle.get("l", 0.0)))
+                c = float(candle.get("close", candle.get("c", 0.0)))
+                v = float(candle.get("volume", candle.get("v", 0.0)))
             except (TypeError, ValueError, KeyError):
                 continue
             time.append(t)
@@ -188,8 +190,6 @@ def _empty_klines() -> KlinesHistory:
 
 def _rebuild_from_cache(data: Any) -> KlinesHistory:
     """Coerce a cached DataFrame (or ``KlinesHistory``) back to typed form."""
-    import pandas as pd
-
     if isinstance(data, KlinesHistory):
         return data
     if data is None or (isinstance(data, pd.DataFrame) and data.empty):

@@ -10,11 +10,7 @@ import math
 import pytest
 
 from fractal.core.base.entity import EntityException
-from fractal.core.entities.protocols.morpho import (
-    MorphoConfig,
-    MorphoEntity,
-    MorphoGlobalState,
-)
+from fractal.core.entities.protocols.morpho import MorphoConfig, MorphoEntity, MorphoGlobalState
 
 SECONDS_PER_YEAR = 365.25 * 24 * 3600
 

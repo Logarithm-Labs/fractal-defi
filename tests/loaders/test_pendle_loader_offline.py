@@ -11,11 +11,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from fractal.loaders.pendle import (
-    PendleMarketLoader,
-    _compute_pt_price_linear,
-    _rebuild_from_cache,
-)
+from fractal.loaders.pendle import PendleMarketLoader, _compute_pt_price_linear, _rebuild_from_cache
 from fractal.loaders.structs import PendleMarketHistory
 
 UTC = timezone.utc

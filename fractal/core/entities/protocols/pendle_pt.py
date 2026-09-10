@@ -2,13 +2,7 @@ import math
 from dataclasses import dataclass
 from typing import Literal, Optional
 
-from fractal.core.base.entity import (
-    BaseEntity,
-    EntityException,
-    GlobalState,
-    InternalState,
-)
-
+from fractal.core.base.entity import BaseEntity, EntityException, GlobalState, InternalState
 
 SECONDS_PER_YEAR: float = 365.25 * 24 * 3600
 

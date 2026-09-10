@@ -12,11 +12,7 @@ from datetime import datetime, timezone
 import pandas as pd
 import pytest
 
-from fractal.loaders.pendle_ohlcv import (
-    PendleOHLCVLoader,
-    _extract_bars,
-    _rebuild_from_cache,
-)
+from fractal.loaders.pendle_ohlcv import PendleOHLCVLoader, _extract_bars, _rebuild_from_cache
 from fractal.loaders.structs import KlinesHistory
 
 UTC = timezone.utc

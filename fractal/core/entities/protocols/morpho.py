@@ -1,13 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from fractal.core.base.entity import (
-    EntityException,
-    GlobalState,
-    InternalState,
-)
+from fractal.core.base.entity import EntityException, GlobalState, InternalState
 from fractal.core.entities.base.lending import BaseLendingEntity
-
 
 # Annualization base for rate accrual. Matches the convention used by
 # Morpho IRMs and most DeFi rate feeds (Julian year, 365.25 days).
@@ -252,7 +247,7 @@ class MorphoEntity(BaseLendingEntity):
                 f"lltv={self._config.lltv:.6f}"
             )
 
-    def action_borrow(self, amount_in_notional: float) -> None:
+    def action_borrow(self, amount_in_notional: float) -> None:  # pylint: disable=arguments-renamed
         """Draw USDC against collateral.
 
         After the mutation we verify ``ltv <= lltv``. If the post-state
@@ -271,7 +266,7 @@ class MorphoEntity(BaseLendingEntity):
                 f"lltv={self._config.lltv:.6f}"
             )
 
-    def action_repay(self, amount_in_notional: float) -> None:
+    def action_repay(self, amount_in_notional: float) -> None:  # pylint: disable=arguments-renamed
         """Pay back USDC debt.
 
         Always reduces LTV (or leaves it unchanged), so no LLTV check

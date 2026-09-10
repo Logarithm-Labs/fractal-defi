@@ -45,7 +45,6 @@ from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import LendingHistory
 
-
 MORPHO_GRAPHQL_URL: str = "https://blue-api.morpho.org/graphql"
 
 # Chain-name → numeric chainId used by the Morpho GraphQL API.
