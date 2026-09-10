@@ -1,7 +1,7 @@
 """Tests for :class:`StrategyResult` and :class:`StrategyMetrics`."""
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-import math
 
 import pytest
 
@@ -55,8 +55,8 @@ def test_get_metrics_accumulated_return_and_apy():
 
 
 @pytest.mark.core
-def test_get_metrics_apy_uses_cagr_not_linear():
-    """50% over ~6 months: linear annualization gives 100%, CAGR gives ~125%."""
+def test_get_metrics_cagr_compounds_while_apy_stays_linear():
+    """50% over ~6 months: linear ``apy`` gives ~100%, ``cagr`` ~125%."""
     days = 183
     timestamps = [datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i) for i in range(days)]
     prices = [100.0 + (50.0 * i / (days - 1)) for i in range(days)]
@@ -72,10 +72,18 @@ def test_get_metrics_apy_uses_cagr_not_linear():
     df = r.to_dataframe()
     m = r.get_metrics(df)
     total_years = (timestamps[-1] - timestamps[0]).total_seconds() / (365 * 24 * 3600)
-    linear_apy = m.accumulated_return / total_years
-    cagr_apy = math.expm1(math.log(1.5) / total_years)
-    assert m.apy == pytest.approx(cagr_apy, rel=1e-9)
-    assert m.apy > linear_apy
+    assert m.apy == pytest.approx(m.accumulated_return / total_years, rel=1e-9)
+    assert m.cagr == pytest.approx(math.expm1(math.log(1.5) / total_years), rel=1e-9)
+    assert m.cagr > m.apy
+
+
+@pytest.mark.core
+def test_get_metrics_cagr_is_minus_one_when_wiped_out():
+    r = _build_result([100.0, 50.0, 0.0])
+    m = r.get_metrics(r.to_dataframe())
+    assert m.accumulated_return == pytest.approx(-1.0)
+    assert m.cagr == -1.0
+    assert m.apy < 0
 
 
 @pytest.mark.core

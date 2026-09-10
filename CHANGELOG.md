@@ -51,6 +51,11 @@ when the observations carry `fee_growth0/1`.
   replayed with `fee_model="fee_growth"` and compared per leg against
   on-chain ground truth, plus a three-method comparison grid
   (`fee_growth` / `aggregate` / per-event replay).
+- **`StrategyMetrics.cagr`** — compound annual growth rate
+  (`(1 + accumulated_return) ** (1 / years) - 1`, `-1.0` when wiped
+  out) next to the unchanged linear `apy`, so existing grid results
+  stay comparable. Logged to MLflow alongside `apy` (mean / q05 / q95 /
+  cvar05 aggregates included).
 
 ### Changed
 
@@ -61,6 +66,14 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
+  raises `ValueError` when a lending/borrowing leg carries NaN (the
+  outer merge of the supply and borrow series could leave a gap that
+  became a `0.0` rate) and warns when the requested window exceeds
+  what the subgraph serves; `BinanceFundingLoader.transform` raises on
+  non-numeric funding rates instead of coercing them to `0.0`.
+- **`SimplePerpEntity` liquidates at `balance <= maintenance_margin`**
+  (was strict `<`), matching the Hyperliquid entity.
 - **Negative `tvlUSD` from the uniswap-v3 subgraph** (a derived field
   that can dip below zero on accounting glitches; observed on Base V3
   pools) no longer crashes LP backtests on entity validation: the

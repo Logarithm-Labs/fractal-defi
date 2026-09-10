@@ -187,22 +187,27 @@ class DefaultPipeline(Pipeline):
         """Aggregate per-trajectory metrics into mean/quantile/cvar series."""
         sharpe = np.array([metric.sharpe for metric in metrics])
         apy = np.array([metric.apy for metric in metrics])
+        cagr = np.array([metric.cagr for metric in metrics])
         max_dd = np.array([metric.max_drawdown for metric in metrics])
         acc_return = np.array([metric.accumulated_return for metric in metrics])
         mlflow.log_metrics(
             {
                 f"{prefix}_mean_sharpe": sharpe.mean(),
                 f"{prefix}_mean_apy": apy.mean(),
+                f"{prefix}_mean_cagr": cagr.mean(),
                 f"{prefix}_mean_accumulated_return": acc_return.mean(),
                 f"{prefix}_mean_max_drawdown": max_dd.mean(),
                 f"{prefix}_q05_sharpe": np.quantile(sharpe, 0.05),
                 f"{prefix}_q95_sharpe": np.quantile(sharpe, 0.95),
                 f"{prefix}_q05_apy": np.quantile(apy, 0.05),
                 f"{prefix}_q95_apy": np.quantile(apy, 0.95),
+                f"{prefix}_q05_cagr": np.quantile(cagr, 0.05),
+                f"{prefix}_q95_cagr": np.quantile(cagr, 0.95),
                 f"{prefix}_q05_max_drawdown": np.quantile(max_dd, 0.05),
                 f"{prefix}_q95_max_drawdown": np.quantile(max_dd, 0.95),
                 f"{prefix}_cvar05_sharpe": sharpe[sharpe < np.quantile(sharpe, 0.05)].mean(),
                 f"{prefix}_cvar05_apy": apy[apy < np.quantile(apy, 0.05)].mean(),
+                f"{prefix}_cvar05_cagr": cagr[cagr < np.quantile(cagr, 0.05)].mean(),
                 f"{prefix}_cvar05_max_drawdown": max_dd[max_dd < np.quantile(max_dd, 0.05)].mean(),
             }
         )
