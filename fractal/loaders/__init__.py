@@ -15,6 +15,7 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidPerpsPricesLoader,
     HyperLiquidPerpsPricesLoader,
 )
+from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
     FundingHistory,
@@ -23,17 +24,22 @@ from fractal.loaders.structs import (
     PoolHistory,
     PriceHistory,
     RateHistory,
+    SwapsHistory,
     TrajectoryBundle,
 )
 from fractal.loaders.thegraph import (
+    AerodromeLoader,
+    AerodromeSlipstreamPoolHourDataLoader,
     ArbitrumGraphLoader,
     BaseGraphLoader,
+    BaseUniswapV3Loader,
     EthereumUniswapV2PoolDataLoader,
     GraphLoaderException,
     StETHLoader,
     UniswapV3ArbitrumPoolDayDataLoader,
     UniswapV3ArbitrumPoolHourDataLoader,
     UniswapV3ArbitrumPricesLoader,
+    UniswapV3BasePoolHourDataLoader,
     UniswapV3EthereumPoolDayDataLoader,
     UniswapV3EthereumPoolHourDataLoader,
     UniswapV3EthereumPoolMinuteDataLoader,
@@ -64,6 +70,13 @@ __all__ = [
     "UniswapV3ArbitrumPoolHourDataLoader",
     "UniswapV3EthereumPoolDayDataLoader",
     "UniswapV3EthereumPoolHourDataLoader",
+    "BaseUniswapV3Loader",
+    "UniswapV3BasePoolHourDataLoader",
+    "AerodromeLoader",
+    "AerodromeSlipstreamPoolHourDataLoader",
+    "UniswapV3SwapsLoader",
+    "RpcLoaderException",
+    "SwapsHistory",
     "StETHLoader",
     "ConstantFundingsLoader",
     "EthereumUniswapV2PoolDataLoader",

@@ -68,8 +68,10 @@ class LendingHistory(pd.DataFrame):
 class PoolHistory(pd.DataFrame):
     """
     AMM pool snapshots. Columns: ``tvl``, ``volume``, ``fees``, ``liquidity``.
-    If ``prices`` is provided it is appended as ``price`` column (used by
-    pool loaders that already carry the spot price alongside reserves).
+    Optional columns when provided: ``price`` (spot price alongside
+    reserves) and ``fee_growth0/1`` (per-bar ``feeGrowthGlobal{0,1}X128``
+    deltas / ``2**128`` — per-token fees per unit of on-chain liquidity,
+    LP-net, raw token units).
     """
 
     def __init__(
@@ -80,6 +82,8 @@ class PoolHistory(pd.DataFrame):
         liquidity: np.ndarray,
         time: np.ndarray,
         prices: Optional[np.ndarray] = None,
+        fee_growth0: Optional[np.ndarray] = None,
+        fee_growth1: Optional[np.ndarray] = None,
     ):
         data = {
             "tvl": np.asarray(tvls, dtype=float),
@@ -89,7 +93,44 @@ class PoolHistory(pd.DataFrame):
         }
         if prices is not None:
             data["price"] = np.asarray(prices, dtype=float)
+        if fee_growth0 is not None:
+            data["fee_growth0"] = np.asarray(fee_growth0, dtype=float)
+        if fee_growth1 is not None:
+            data["fee_growth1"] = np.asarray(fee_growth1, dtype=float)
         super().__init__(data=data, index=_to_utc_index(time))
+
+
+class SwapsHistory(pd.DataFrame):
+    """Per-swap event records of a V3-style pool. Columns: signed human
+    ``amount0/1`` (positive = input side), ``liquidity`` (pool ``L``
+    during the swap, on-chain units), post-swap ``tick``, human
+    ``price``, ``block``, ``log_index``; UTC index interpolated from
+    block numbers.
+    """
+
+    def __init__(
+        self,
+        amount0: np.ndarray,
+        amount1: np.ndarray,
+        liquidity: np.ndarray,
+        ticks: np.ndarray,
+        prices: np.ndarray,
+        blocks: np.ndarray,
+        log_indexes: np.ndarray,
+        time: np.ndarray,
+    ):
+        super().__init__(
+            data={
+                "amount0": np.asarray(amount0, dtype=float),
+                "amount1": np.asarray(amount1, dtype=float),
+                "liquidity": np.asarray(liquidity, dtype=float),
+                "tick": np.asarray(ticks, dtype=int),
+                "price": np.asarray(prices, dtype=float),
+                "block": np.asarray(blocks, dtype=int),
+                "log_index": np.asarray(log_indexes, dtype=int),
+            },
+            index=_to_utc_index(time),
+        )
 
 
 # Simulation loaders fan out into multiple trajectories. We expose the

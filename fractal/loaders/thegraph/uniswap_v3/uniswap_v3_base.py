@@ -2,15 +2,17 @@ from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import UniswapV3Loader
 
 
-class EthereumUniswapV3Loader(UniswapV3Loader):
+class BaseUniswapV3Loader(UniswapV3Loader):
     """
-    Loader for Uniswap V3 Ethereum.
+    Loader for Uniswap V3 on Base (the network). Uses the standard
+    ``uniswap-v3`` subgraph schema (``pools`` / ``poolDayDatas`` /
+    ``poolHourDatas``).
     The Graph:
-    https://thegraph.com/explorer/subgraphs/5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV?view=Query&chain=arbitrum-one
-    SUBGRAPH_ID = "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
+    https://thegraph.com/explorer/subgraphs/HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1?view=Query&chain=arbitrum-one
+    SUBGRAPH_ID = "HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1"
     """
 
-    SUBGRAPH_ID = "5zvR82QoaXYFyDEKLZ9t6v9adgnptxYpKpSbxtgVENFV"
+    SUBGRAPH_ID = "HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1"
 
     def __init__(self, api_key: str, loader_type: LoaderType = LoaderType.CSV) -> None:
         """
