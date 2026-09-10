@@ -51,6 +51,16 @@ when the observations carry `fee_growth0/1`.
   replayed with `fee_model="fee_growth"` and compared per leg against
   on-chain ground truth, plus a three-method comparison grid
   (`fee_growth` / `aggregate` / per-event replay).
+- **`UniswapV3LPConfig.gas_cost_per_mint` / `gas_cost_per_burn` /
+  `gas_cost_per_collect`** — three optional flat-cost fields (notional
+  units, default `0.0`) deducted from `cash` on `action_open_position`
+  / `action_open_position_from_pair` (mint) and `action_close_position`
+  (burn + collect). Lets backtests model L1 / L2 transaction costs
+  additively on top of `pool_fee_rate` and `slippage_pct`.
+  Chain-agnostic: caller converts `gas_units × gas_price ×
+  native_token_price` into notional. Defaults preserve byte-identical
+  behaviour for existing configs (locked in by
+  `test_v3_zero_gas_default_is_parity_with_legacy`).
 - **`StrategyMetrics.cagr`** — compound annual growth rate
   (`(1 + accumulated_return) ** (1 / years) - 1`, `-1.0` when wiped
   out) next to the unchanged linear `apy`, so existing grid results
