@@ -17,11 +17,11 @@ def make_loader() -> UniswapV3BasePoolHourDataLoader:
     )
 
 
-def raw_row(ts: int, fg0: int, fg1: int) -> dict:
+def raw_row(ts: int, fg0: int, fg1: int, tvl: str = "1000.0") -> dict:
     return {
         "periodStartUnix": ts,
         "volumeUSD": "100.0",
-        "tvlUSD": "1000.0",
+        "tvlUSD": tvl,
         "feesUSD": "0.05",
         "liquidity": "1000000000000000000",
         "tick": "-201688",
@@ -79,3 +79,23 @@ def test_negative_counter_delta_clamped_with_warning():
     df = loader._data
     assert df["fee_growth0"].iloc[1] == 0.0            # clamped
     assert df["fee_growth0"].iloc[2] == pytest.approx(4.0)  # spans the dip
+
+
+@pytest.mark.core
+def test_negative_tvl_clamped_with_warning():
+    """The subgraph's derived ``tvlUSD`` can dip below zero (seen on Base
+    V3 pools); the LP entity rejects negative ``tvl``, so the loader
+    clamps it to 0 and warns. Fee-growth deltas are unaffected."""
+    loader = make_loader()
+    q128 = 1 << 128
+    loader._data = __import__("pandas").DataFrame([
+        raw_row(3600, 10 * q128, 0),
+        raw_row(7200, 13 * q128, 0, tvl="-740.15"),
+        raw_row(10800, 14 * q128, 0, tvl="-836.98"),
+        raw_row(14400, 15 * q128, 0),
+    ])
+    with pytest.warns(UserWarning, match="negative tvlUSD"):
+        loader.transform()
+    df = loader._data
+    assert list(df["tvl"]) == [1000.0, 0.0, 0.0, 1000.0]
+    assert list(df["fee_growth0"]) == [0.0, 3.0, 1.0, 1.0]

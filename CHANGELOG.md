@@ -59,6 +59,14 @@ when the observations carry `fee_growth0/1`.
 - **`UniswapV3LPEntity.update_state`** additionally validates
   `fee_growth0/1 >= 0` when a position is open.
 
+### Fixed
+
+- **Negative `tvlUSD` from the uniswap-v3 subgraph** (a derived field
+  that can dip below zero on accounting glitches; observed on Base V3
+  pools) no longer crashes LP backtests on entity validation: the
+  TheGraph pool loaders clamp it to 0 with a warning naming the pool
+  and bar, mirroring the non-monotonic feeGrowth treatment.
+
 ## [v1.3.2] — 2026-05-06
 
 Citation infrastructure for academic use. No functional code changes;

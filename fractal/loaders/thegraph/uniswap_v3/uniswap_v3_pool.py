@@ -40,7 +40,21 @@ class _UniswapV3PoolBase:
             df = df[df["date"] >= self.start_time]
         if self.end_time is not None:
             df = df[df["date"] <= self.end_time]
-        return df.reset_index(drop=True)
+        df = df.reset_index(drop=True)
+        negative_tvl = df["tvl"] < 0
+        if negative_tvl.any():
+            # ``tvlUSD`` is a derived subgraph field that can dip below
+            # zero on accounting glitches (observed on Base V3 pools).
+            # TVL plays no part in fee accrual, but downstream entities
+            # reject negative snapshots — clamp and warn.
+            first_bad = df.loc[negative_tvl.idxmax(), "date"]
+            warnings.warn(
+                f"{type(self).__name__}: negative tvlUSD for pool {self.pool} "
+                f"at {first_bad} ({int(negative_tvl.sum())} bar(s)); clamped "
+                f"to 0 — tvl around these bars is unreliable."
+            )
+            df.loc[negative_tvl, "tvl"] = 0.0
+        return df
 
     def load(self) -> None:
         self._load(self._cache_key())
