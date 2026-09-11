@@ -20,6 +20,7 @@ take it from :class:`BinanceFundingLoader` / Hyperliquid loaders; this
 loader supplies the fixed side (mark APR) and the realised settlements.
 """
 import time as _time
+import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -265,6 +266,18 @@ class BorosMarketLoader(Loader):
         df = df.sort_values("time").drop_duplicates("time", keep="last")
         df = df[(df["time"] >= to_seconds(self.start_time)) & (df["time"] <= to_seconds(self.end_time))]
         df = df.reset_index(drop=True)
+        # The API pads the window before a market's first trade with all-zero
+        # candles; an implied APR of exactly 0 with no volume is "no quote".
+        quoted = (df["mark_apr_close"] != 0.0) | (df["volume"] != 0.0)
+        if quoted.any() and not quoted.iloc[0]:
+            first = int(quoted.idxmax())
+            warnings.warn(
+                f"BorosMarketLoader: market {self.market_id} has no quotes for the first {first} bar(s) of the "
+                f"window (pre-listing zeros dropped)"
+            )
+            df = df.iloc[first:].reset_index(drop=True)
+        elif not quoted.any():
+            df = df.iloc[0:0]
 
         df["settlement_apr"] = float("nan")
         df["oi"] = float("nan")

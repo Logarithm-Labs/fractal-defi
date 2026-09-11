@@ -195,3 +195,21 @@ def test_observation_with_missing_entity_is_rejected():
 @pytest.mark.core
 def test_strategy_is_a_base_strategy():
     assert issubclass(MorphoLeveragedPT, BaseStrategy)
+
+
+@pytest.mark.core
+def test_carry_gate_uses_the_smoothed_borrow_apy():
+    """A one-bar borrow spike does not trip the gate when the lookback averages it away."""
+    twitchy = strategy(MAX_LOOPS=2, MAX_BORROW_APY=0.25, MIN_CARRY_SPREAD=-1.0, CARRY_GATE_LOOKBACK_BARS=1)
+    smooth = strategy(MAX_LOOPS=2, MAX_BORROW_APY=0.25, MIN_CARRY_SPREAD=-1.0, CARRY_GATE_LOOKBACK_BARS=7)
+    obs = synthetic_observations(days=60, borrow_apy=lambda i: 0.05 if i != 10 else 0.80)
+    for strat in (twitchy, smooth):
+        for o in obs[:11]:
+            strat.step(o)
+    assert twitchy.lending.internal_state.borrowed == 0.0     # deleveraged on the spike bar
+    assert smooth.lending.internal_state.borrowed > 0.0       # spike averaged over a week: still levered
+    assert smooth.smoothed_borrow_apy() < 0.25 < max(twitchy._borrow_apy_window)
+    twitchy.step(obs[11])                                     # ...and re-levers the very next bar: the whipsaw
+    assert twitchy.lending.internal_state.borrowed > 0.0
+    with pytest.raises(LeveragedPTException):
+        strategy(CARRY_GATE_LOOKBACK_BARS=0)

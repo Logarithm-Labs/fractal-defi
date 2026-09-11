@@ -1,0 +1,55 @@
+{
+  "leveraged": {
+    "usde_25sep2025": {
+      "description": "Full-life replay: PT-USDe on the Morpho PT-USDe/USDe market (loan = the accounting asset, no swap on the loop).",
+      "chain_id": 1,
+      "pendle_market": "0x6d98a2b6cdbf44939362a3e99793339ba2016af4",
+      "pendle_name": "PT-USDe-25SEP2025",
+      "morpho_market": "0xd92a4247468eca1edc0c5b26cacfcdd7daaf666c5d26bd5e3ca5f70a9073a196",
+      "morpho_name": "PT-USDe-25SEP2025 / USDe",
+      "lltv": 0.915,
+      "start": "2025-05-22",
+      "end": "2025-09-26",
+      "bar": "day",
+      "oracle_model": "market",
+      "pt_impact_model": "rate_spread",
+      "scalar_root": 0.0,
+      "ln_fee_rate_root": 0.0
+    },
+    "susde_26nov2026": {
+      "description": "Live market, hourly window (Pendle serves ~60 days of hourly rows): PT-sUSDe on Morpho PT-sUSDE/USDC.",
+      "chain_id": 1,
+      "pendle_market": "0x47ad2cd1dd15739a7a035b9d3b7828d916fef77e",
+      "pendle_name": "PT-sUSDe-26NOV2026",
+      "morpho_market": "0x5613b170ded221c588b6e9637b910f49e5508680ceede207f44aa72e5c46cb05",
+      "morpho_name": "PT-sUSDE-26NOV2026 / USDC",
+      "lltv": 0.915,
+      "start": null,
+      "end": null,
+      "days_back": 55,
+      "bar": "hour",
+      "oracle_model": "market",
+      "pt_impact_model": "amm",
+      "scalar_root": 57.6,
+      "ln_fee_rate_root": 0.00098686
+    }
+  },
+  "hedged": {
+    "wsteth_30dec2027": {
+      "description": "PT-wstETH (accounting asset stETH, priced as ETH) hedged with a short ETHUSDT perp; funding optionally fixed on Boros BINANCE-ETHUSDT-25DEC2026.",
+      "chain_id": 1,
+      "pendle_market": "0x34280882267ffa6383b363e278b027be083bbe3b",
+      "pendle_name": "PT-wstETH-30DEC2027",
+      "binance_ticker": "ETHUSDT",
+      "boros_market": 129,
+      "boros_name": "BINANCE-ETHUSDT-25DEC2026",
+      "boros_underlying": ["ETH", "Binance"],
+      "start": "2026-03-01",
+      "end": null,
+      "bar": "day",
+      "pt_impact_model": "rate_spread",
+      "scalar_root": 86.36,
+      "ln_fee_rate_root": 0.000499875
+    }
+  }
+}

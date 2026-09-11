@@ -171,6 +171,8 @@ backtest/.DS_Store
 # stay ignored — regenerate via backtest.py / methods_grid_backtests.py).
 !examples/dex_replication_backtest/results/summary.csv
 !examples/dex_replication_backtest/results/methods_grid_results.csv
+# Reference trajectories of the Pendle PT backtests (also slow-test fixtures).
+!examples/pendle_pt_backtests/results/*.csv
 
 # Workshop / tutorial notebooks (the ``*.ipynb`` blanket above keeps
 # scratch notebooks out of git; whitelist the curated ones explicitly).

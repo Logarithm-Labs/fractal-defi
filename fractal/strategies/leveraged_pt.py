@@ -28,6 +28,7 @@ Mechanics worth knowing:
   the strategy unwinds at expiry (``ROLL_TO_NEXT_MATURITY=True`` raises).
 """
 import math
+from collections import deque
 from dataclasses import dataclass
 from typing import Callable, List, Optional, Tuple
 
@@ -70,6 +71,10 @@ class LeveragedPTParams(BaseStrategyParams):
     MIN_HEALTH_FACTOR: repay to target when the lending health factor drops below it.
     MIN_CARRY_SPREAD: deleverage fully when ``implied_apy − borrow_apy`` falls below it.
     MAX_BORROW_APY: deleverage fully when the borrow APY exceeds it.
+    CARRY_GATE_LOOKBACK_BARS: the two gates use the mean borrow APY over this many
+        bars (``1`` = the current bar). Morpho's rate spikes for a few hours at a
+        time; without smoothing the gates whipsaw the position and pay the
+        round-trip swap costs on every spike.
     EXIT_BEFORE_EXPIRY_DAYS: ``0`` = hold to expiry and redeem at par; ``> 0`` = sell into the
         market that many days before.
     MIN_DAYS_TO_MATURITY_AT_ENTRY: refuse to enter closer to expiry than this.
@@ -87,6 +92,7 @@ class LeveragedPTParams(BaseStrategyParams):
     MIN_HEALTH_FACTOR: float = 1.03
     MIN_CARRY_SPREAD: float = 0.0
     MAX_BORROW_APY: float = 0.25
+    CARRY_GATE_LOOKBACK_BARS: int = 1
     EXIT_BEFORE_EXPIRY_DAYS: float = 0.0
     MIN_DAYS_TO_MATURITY_AT_ENTRY: float = 7.0
     ROLL_TO_NEXT_MATURITY: bool = False
@@ -107,6 +113,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         self._target_ltv: float = self._resolve_target_ltv(self._params)
         self._deposited: bool = False
         self._exited: bool = False
+        self._borrow_apy_window: deque = deque(maxlen=max(1, int(self._params.CARRY_GATE_LOOKBACK_BARS)))
 
     # ------------------------------------------------------------- setup
     @staticmethod
@@ -133,6 +140,8 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             )
         if params.MAX_LOOPS < 0 or params.FLASH_FEE < 0 or params.BAR_HOURS <= 0 or params.INITIAL_BALANCE <= 0:
             raise LeveragedPTException("MAX_LOOPS, FLASH_FEE must be >= 0; BAR_HOURS, INITIAL_BALANCE must be > 0")
+        if params.CARRY_GATE_LOOKBACK_BARS < 1:
+            raise LeveragedPTException("CARRY_GATE_LOOKBACK_BARS must be >= 1")
         return target
 
     def set_up(self):
@@ -166,9 +175,15 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         bars_per_year = 24.0 * 365.0 / self._params.BAR_HOURS
         return math.expm1(self.lending.global_state.borrowing_rate * bars_per_year)
 
+    def smoothed_borrow_apy(self) -> float:
+        """Mean borrow APY over the last ``CARRY_GATE_LOOKBACK_BARS`` observed bars."""
+        if not self._borrow_apy_window:
+            return self.borrow_apy()
+        return sum(self._borrow_apy_window) / len(self._borrow_apy_window)
+
     def carry_spread(self) -> float:
-        """``implied_apy − borrow_apy``."""
-        return self.pt.implied_apy - self.borrow_apy()
+        """``implied_apy − smoothed_borrow_apy``."""
+        return self.pt.implied_apy - self.smoothed_borrow_apy()
 
     def days_to_expiry(self) -> float:
         return self.pt.seconds_to_expiry / SECONDS_PER_DAY
@@ -183,6 +198,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
     # ----------------------------------------------------------- predict
     def predict(self) -> List[ActionToTake]:  # pylint: disable=too-many-return-statements
         pt, lending, params = self.pt, self.lending, self._params
+        self._borrow_apy_window.append(self.borrow_apy())
         wiped = (
             lending.internal_state.collateral == 0 and lending.internal_state.borrowed == 0
             and pt.internal_state.amount == 0 and pt.internal_state.cash == 0
@@ -210,7 +226,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             self._debug("Early exit before expiry — selling PT into the market")
             self._exited = True
             return self._unwind(redeem=False)
-        if self.carry_spread() < params.MIN_CARRY_SPREAD or self.borrow_apy() > params.MAX_BORROW_APY:
+        if self.carry_spread() < params.MIN_CARRY_SPREAD or self.smoothed_borrow_apy() > params.MAX_BORROW_APY:
             if lending.internal_state.borrowed > 0:
                 self._debug("Carry gate tripped — deleveraging to zero debt")
                 return self._repay_to(0.0)

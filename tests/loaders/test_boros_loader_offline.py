@@ -17,8 +17,9 @@ EIGHT_HOURS = 8 * 3600
 
 
 class _FakeBorosHttp:
-    def __init__(self, ohlcv_cap: int = 200):
+    def __init__(self, ohlcv_cap: int = 200, zero_bars: int = 0):
         self.ohlcv_cap = ohlcv_cap
+        self.zero_bars = zero_bars  # all-zero candles the API pads before the first trade
         self.calls = []
 
     def get(self, url, params=None, timeout=None):
@@ -40,7 +41,10 @@ class _FakeBorosHttp:
             start, end = params["startTimestamp"], params["endTimestamp"]
             rows, ts = [], start
             while ts <= end and len(rows) < self.ohlcv_cap:
-                rows.append({"ts": ts, "o": 0.05, "h": 0.06, "l": 0.04, "c": 0.055, "v": 3.0})
+                if len(rows) < self.zero_bars and start == int(START.timestamp()):
+                    rows.append({"ts": ts, "o": 0.0, "h": 0.0, "l": 0.0, "c": 0.0, "v": 0.0})
+                else:
+                    rows.append({"ts": ts, "o": 0.05, "h": 0.06, "l": 0.04, "c": 0.055, "v": 3.0})
                 ts += 3600
             return {"results": rows}
         if url == f"{BOROS_API}/markets/historical-underlying-apr":
@@ -135,3 +139,15 @@ def test_cache_round_trip(monkeypatch, tmp_path):
     first = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, http=_FakeBorosHttp()).read(with_run=True)
     second = BorosMarketLoader(MARKET_ID, START, end, maturity=MATURITY, http=_FakeBorosHttp()).read(with_run=False)
     pd.testing.assert_frame_equal(first, second)
+
+
+@pytest.mark.core
+def test_pre_listing_zero_candles_are_dropped_with_a_warning(monkeypatch):
+    monkeypatch.setattr("fractal.loaders.boros._time.sleep", lambda s: None)
+    loader = BorosMarketLoader(MARKET_ID, START, START + timedelta(hours=9), maturity=MATURITY,
+                               include_settlements=False, http=_FakeBorosHttp(zero_bars=4))
+    with pytest.warns(UserWarning, match="pre-listing zeros"):
+        history = loader.read(with_run=True)
+    assert len(history) == 6
+    assert history.index[0] == pd.Timestamp(START + timedelta(hours=4))
+    assert (history["mark_apr_close"] == 0.055).all()
