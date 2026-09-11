@@ -303,6 +303,51 @@ strategies read the position when computing things like
   `total_balance` becomes meaningless. Verify by computing a known
   scenario and checking `entity.balance` in the unit you expect.
 
+## Fixed-term entities (Pendle PT, Boros yield units)
+
+Instruments with a maturity share `BaseFixedTermEntity`
+(`fractal/core/entities/base/fixed_term.py`). The conventions:
+
+- **Time lives on the GlobalState.** `update_state` receives no
+  timestamp, so the observation builder computes
+  `seconds_to_expiry = expiry - observation.timestamp` and puts it on
+  `BaseFixedTermGlobalState`. The entity never mutates that value.
+  `<= 0` means matured; the default `0.0` is deliberately loud — an
+  entity fed a state that forgot the field is matured and every trade
+  raises instead of silently accruing on a phantom term.
+- **`_validate_term`** is the first thing `update_state` calls: the
+  value must be finite and non-increasing across observations
+  (unsorted feeds fail fast).
+- **`_check_maturity`** is the maturity counterpart of
+  `_check_liquidation`: called at the end of `update_state` after the
+  term is applied. Pendle PT does nothing there (the protocol has no
+  auto-redeem; matured PT earns nothing and `action_redeem` pays par),
+  a Boros yield unit closes itself at zero value.
+- **Day count** is ACT/365 everywhere (`fractal.core.base.time.SECONDS_PER_YEAR`).
+- **Pendle PT** is priced in the market's *accounting asset*
+  (`(1 + implied_apy) ** (-years)`), bridged to notional by
+  `asset_price`; the redemption ratchet (`pyIndex`) haircuts the payout
+  when the SY exchange rate falls. Swap cost is either the
+  `MarketMathCore` replay from the pool reserves on the global state or
+  a rate-spread approximation — both scale with time to expiry, unlike
+  a constant fee on notional.
+- **Oracle vs market price.** A lender values PT collateral with its
+  own oracle (often a linear discount), the market prices it off the
+  implied APY. `MorphoGlobalState.collateral_price` is the oracle price
+  (health, `max_borrow`, liquidation) and `collateral_market_price` the
+  market price (PnL); the observation builder feeds both.
+- **Rollover** across maturities is not an entity concern: register the
+  next maturity as a second named entity and move cash with
+  `BaseStrategy.transfer`. The shipped strategies unwind at expiry.
+
+Two strategy-level devices the PT loop relies on (see
+`fractal/strategies/leveraged_pt.py`): a memoised delegate (`_Once`)
+so the amount one entity just produced is exactly what the next entity
+consumes within one action list, and the "flash device" for repaying
+debt — `repay` first, then free and sell the collateral, then withdraw
+the principal from the PT entity — which keeps `total_balance` honest
+without a flash-loan entity.
+
 ## Loaders, caching and the data pipeline
 
 Each loader implements the `Loader` ABC with a three-step lifecycle:
