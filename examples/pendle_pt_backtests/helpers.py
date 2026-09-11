@@ -82,13 +82,26 @@ def append_expiry_bar(frame: pd.DataFrame, expiry: datetime, end: datetime) -> p
     return pd.concat([frame, last.to_frame().T.astype(frame.dtypes.to_dict(), errors="ignore")])
 
 
+def sy_exchange_rate(row) -> float:
+    """Accounting asset per SY from the USD marks: ``sy_usd / (pt_usd / pt_asset)``.
+
+    Pendle publishes no SY exchange-rate history, but ``ptPrice`` (USD) over
+    ``pt_price_asset`` is the asset's USD price, so the SY rate follows from
+    ``syPrice``. Falls back to ``1.0`` when a mark is missing.
+    """
+    pt_usd, pt_asset, sy_usd = row.get("pt_price_usd"), row.get("pt_price_asset"), row.get("sy_price_usd")
+    if any(v is None or not math.isfinite(v) or v <= 0 for v in (pt_usd, pt_asset, sy_usd)):
+        return 1.0
+    return float(sy_usd * pt_asset / pt_usd)
+
+
 def leveraged_observations(frame: pd.DataFrame, cfg: dict) -> List[Observation]:
     observations = []
     for ts, row in frame.iterrows():
         observations.append(Observation(timestamp=ts.to_pydatetime(), states={
             "PT": PendlePTGlobalState(
                 seconds_to_expiry=float(row["seconds_to_expiry"]), implied_apy=float(row["implied_apy"]),
-                asset_price=1.0, sy_exchange_rate=1.0,
+                asset_price=1.0, sy_exchange_rate=sy_exchange_rate(row),
                 total_pt=float(row["total_pt"]), total_sy=float(row["total_sy"]),
                 scalar_root=float(cfg.get("scalar_root", 0.0)),
                 ln_fee_rate_root=float(cfg.get("ln_fee_rate_root", 0.0)),
@@ -137,7 +150,7 @@ def hedged_observations(frame: pd.DataFrame, cfg: dict, use_boros: bool) -> List
         states = {
             "PT": PendlePTGlobalState(
                 seconds_to_expiry=float(row["seconds_to_expiry"]), implied_apy=float(row["implied_apy"]),
-                asset_price=float(row["spot"]), sy_exchange_rate=1.0,
+                asset_price=float(row["spot"]), sy_exchange_rate=sy_exchange_rate(row),
                 total_pt=float(row["total_pt"]), total_sy=float(row["total_sy"]),
                 scalar_root=float(cfg.get("scalar_root", 0.0)),
                 ln_fee_rate_root=float(cfg.get("ln_fee_rate_root", 0.0)),

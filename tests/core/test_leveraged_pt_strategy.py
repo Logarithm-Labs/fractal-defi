@@ -125,7 +125,8 @@ def test_flash_entry_list():
                               ("PT", "remove_product"), ("LENDING", "borrow"), ("PT", "deposit"), ("PT", "withdraw")]
     flash = 10_000.0 * 0.8 / 0.2
     assert actions[1].action.args["amount_in_notional"] == pytest.approx(flash)
-    assert actions[5].action.args["amount_in_product"] == pytest.approx(flash * 1.0005)
+    strat.step(synthetic_observations(days=30)[0])  # resolve the delegate against a live lender (debt_price 1)
+    assert actions[5].action.args["amount_in_product"](strat) == pytest.approx(flash * 1.0005)
 
 
 @pytest.mark.core
@@ -213,3 +214,71 @@ def test_carry_gate_uses_the_smoothed_borrow_apy():
     assert twitchy.lending.internal_state.borrowed > 0.0
     with pytest.raises(LeveragedPTException):
         strategy(CARRY_GATE_LOOKBACK_BARS=0)
+
+
+@pytest.mark.core
+def test_zero_loops_holds_the_pt_unlevered_to_par():
+    """``MAX_LOOPS=0`` must never borrow: the band boost is off and the run
+    returns exactly the entry discount (zero fees)."""
+    strat = strategy(MAX_LOOPS=0)
+    obs = synthetic_observations(days=30)
+    result = strat.run(obs)
+    df = result.to_dataframe()
+    assert (df["LENDING_borrowed"] == 0).all()
+    assert strat.predict() == []  # exited after redemption
+    entry_price = obs[0].states["PT"].implied_apy
+    entry_price = (1.0 + entry_price) ** (-obs[0].states["PT"].seconds_to_expiry / (365 * 86_400))
+    assert df["net_balance"].iloc[-1] == pytest.approx(10_000.0 / entry_price, rel=1e-9)
+
+
+@pytest.mark.core
+@pytest.mark.parametrize("mode", ["loop", "flash"])
+def test_loan_units_are_converted_at_debt_price(mode):
+    """A loan token worth 2 notional: every borrow/repay crosses the
+    ``debt_price`` boundary, so the run is identical in notional terms to
+    the same run with a 1-notional loan token."""
+    def run(debt_price):
+        strat = strategy(MULTIPLY_MODE=mode, MAX_LOOPS=8)
+        obs = synthetic_observations(days=60)
+        for observation in obs:
+            observation.states["LENDING"].debt_price = debt_price
+        out = strat.run(obs).to_dataframe()
+        return strat, out
+
+    one, out_one = run(1.0)
+    two, out_two = run(2.0)
+    assert out_two["net_balance"].iloc[0] == pytest.approx(10_000.0, rel=1e-6)
+    assert out_two["net_balance"].tolist() == pytest.approx(out_one["net_balance"].tolist(), rel=1e-9)
+    assert two.lending.internal_state.borrowed == 0.0 and two.pt.internal_state.amount == 0.0
+    assert two.equity() == pytest.approx(one.equity(), rel=1e-9) and two.equity() > 10_000.0
+    ltv_one = out_one["LENDING_borrowed"] / (out_one["LENDING_collateral"] * out_one["LENDING_collateral_price"])
+    ltv_two = 2.0 * out_two["LENDING_borrowed"] / (out_two["LENDING_collateral"] * out_two["LENDING_collateral_price"])
+    assert ltv_two.fillna(0).tolist() == pytest.approx(ltv_one.fillna(0).tolist(), rel=1e-9)
+
+
+@pytest.mark.core
+def test_repay_sizes_the_pt_sale_on_the_quote_when_costs_exceed_one_percent():
+    """Large impact (thin pool) used to break the flash device with
+    ``withdraw exceeds cash``; the sale is now sized on the entity quote."""
+    strat = strategy(PT_IMPACT_LN_RATE_PER_SHARE=0.5, PT_FEE_LN_RATE=0.01, MAX_LOOPS=8)
+    obs = synthetic_observations(days=400, pool_reserves=2e5)
+    strat.step(obs[0])
+    shocked = obs[1]
+    shocked.states["LENDING"].collateral_price *= 0.85
+    shocked.states["LENDING"].collateral_market_price *= 0.85
+    strat.step(shocked)  # above the band → repay through the flash device
+    assert strat.pt.internal_state.cash >= 0.0
+    assert strat.lending.ltv == pytest.approx(0.8, abs=0.02)
+
+
+@pytest.mark.core
+def test_full_seizure_with_slack_cash_left_raises_instead_of_relevering():
+    strat = strategy(MAX_LOOPS=3)
+    obs = synthetic_observations(days=60)
+    strat.step(obs[0])
+    strat.pt._internal_state.cash = 200.0  # residue from an earlier repay
+    crash = MorphoGlobalState(collateral_price=0.2, debt_price=1.0, collateral_market_price=0.2)
+    strat.lending.update_state(crash)
+    assert strat.lending.internal_state.liquidation_count == 1 and strat.lending.internal_state.collateral == 0
+    with pytest.raises(LeveragedPTException, match="wiped"):
+        strat.predict()

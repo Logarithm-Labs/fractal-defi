@@ -163,6 +163,8 @@ class MorphoEntity(BaseLendingEntity):
         """Borrow loan units; cumulative LTV must stay within ``max_ltv``."""
         if amount_in_product < 0:
             raise MorphoException(f"borrow amount must be >= 0, got {amount_in_product}")
+        if amount_in_product == 0:
+            return
         if self._internal_state.collateral == 0:
             raise MorphoException("no collateral available to borrow against")
         self._require_prices()
@@ -269,7 +271,7 @@ class MorphoEntity(BaseLendingEntity):
         """Morpho ``liquidate``: liquidatable when ``ltv > lltv``; close the whole debt at LIF."""
         if self._internal_state.borrowed == 0:
             return
-        if self._internal_state.collateral > 0 and self.ltv <= self.lltv:
+        if not self.ltv > self.lltv:  # written so that a non-finite LTV never liquidates
             return
         price = self._global_state.collateral_price
         seized = self._internal_state.collateral
@@ -281,6 +283,11 @@ class MorphoEntity(BaseLendingEntity):
 
     def update_state(self, state: MorphoGlobalState) -> None:
         """Validate rates, apply the snapshot, accrue, then check liquidation."""
+        for name in ("collateral_price", "debt_price", "lending_rate", "borrowing_rate"):
+            if not math.isfinite(getattr(state, name)):
+                raise MorphoException(f"{name} must be finite, got {getattr(state, name)}")
+        if state.collateral_market_price is not None and not math.isfinite(state.collateral_market_price):
+            raise MorphoException(f"collateral_market_price must be finite, got {state.collateral_market_price}")
         if state.lending_rate < -1:
             raise MorphoException(f"lending_rate must be >= -1, got {state.lending_rate}")
         if state.borrowing_rate < -1:

@@ -335,7 +335,14 @@ Instruments with a maturity share `BaseFixedTermEntity`
   own oracle (often a linear discount), the market prices it off the
   implied APY. `MorphoGlobalState.collateral_price` is the oracle price
   (health, `max_borrow`, liquidation) and `collateral_market_price` the
-  market price (PnL); the observation builder feeds both.
+  market price (PnL); the observation builder feeds both. Morpho Blue
+  collateral earns nothing, so `MorphoMarketLoader` emits
+  `lending_rate = 0` and keeps the supplier APY in `supply_apy`.
+- **Fail loudly on bad prices.** The entities reject non-finite prices
+  and rates in `update_state` (a NaN from a join gap must never read as
+  a liquidation), refuse a swap the pool cannot fill instead of
+  partially filling it, and cap the AMM's post-trade PT share with the
+  configured `max_pool_share`.
 - **Rollover** across maturities is not an entity concern: register the
   next maturity as a second named entity and move cash with
   `BaseStrategy.transfer`. The shipped strategies unwind at expiry.
@@ -346,7 +353,11 @@ so the amount one entity just produced is exactly what the next entity
 consumes within one action list, and the "flash device" for repaying
 debt — `repay` first, then free and sell the collateral, then withdraw
 the principal from the PT entity — which keeps `total_balance` honest
-without a flash-loan entity.
+without a flash-loan entity. The repayment is solved by bisection on
+the PT entity's own `quote_sell` (fee and impact included), so the sale
+always covers the principal and the post-repay LTV lands on the
+target; loan units and notional are converted at `debt_price` at every
+step, so a loan token that is not the accounting asset works too.
 
 ## Loaders, caching and the data pipeline
 

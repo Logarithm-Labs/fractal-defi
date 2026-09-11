@@ -77,7 +77,8 @@ def test_history_is_ascending_aligned_and_converted_to_per_bar_rates():
     assert len(history) == 6  # live unaligned point dropped
     assert history.index.is_monotonic_increasing and history.index[0] == pd.Timestamp(START)
     assert history["borrowing_rate"].iloc[0] == pytest.approx(math.log1p(0.09) * 3600 / SECONDS_PER_YEAR)
-    assert history["lending_rate"].iloc[0] == pytest.approx(math.log1p(0.08) * 3600 / SECONDS_PER_YEAR)
+    assert (history["lending_rate"] == 0.0).all()  # Morpho Blue collateral earns nothing
+    assert history["supply_apy"].iloc[0] == pytest.approx(0.08)  # the supplier-side rate stays available
     assert list(history.columns) == ["lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
                                      "rate_at_target"]
     assert history["borrow_apy"].iloc[0] == 0.09 and history["utilization"].iloc[0] == 0.82

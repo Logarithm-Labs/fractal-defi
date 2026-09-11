@@ -25,14 +25,19 @@ TimeLike = Union[np.ndarray, Sequence[int], Sequence[pd.Timestamp], pd.DatetimeI
 def _to_utc_index(time: TimeLike) -> pd.DatetimeIndex:
     """Coerce an array-like of timestamps to a UTC-aware ``DatetimeIndex`` named ``time``.
 
-    Integer arrays are rejected: pandas would read them as nanoseconds
+    Numeric arrays are rejected: pandas would read them as nanoseconds
     and a REST loader's epoch seconds would land in 1970. Convert with
     an explicit ``unit`` before building a struct.
     """
+    if isinstance(time, (pd.DatetimeIndex, pd.Series)) and pd.api.types.is_datetime64_any_dtype(time):
+        idx = pd.DatetimeIndex(time)  # fast path: no round trip through object arrays
+        idx = idx.tz_localize("UTC") if idx.tz is None else idx.tz_convert("UTC")
+        idx.name = "time"
+        return idx
     arr = np.asarray(time)
-    if arr.size > 0 and np.issubdtype(arr.dtype, np.integer):
+    if arr.size > 0 and np.issubdtype(arr.dtype, np.number):
         raise TypeError(
-            "struct time index must be datetime-like; convert integer epochs explicitly "
+            "struct time index must be datetime-like; convert numeric epochs explicitly "
             "with pd.to_datetime(values, unit='s'|'ms', utc=True)"
         )
     idx = pd.to_datetime(arr, utc=True)

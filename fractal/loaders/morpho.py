@@ -270,10 +270,13 @@ class MorphoMarketLoader(Loader):
         bar_seconds = self.resolution * 3600
         if self.compounding == "continuous":
             df["borrowing_rate"] = df["borrow_apy"].apply(lambda apy: math.log1p(apy) * bar_seconds / SECONDS_PER_YEAR)
-            df["lending_rate"] = df["supply_apy"].apply(lambda apy: math.log1p(apy) * bar_seconds / SECONDS_PER_YEAR)
         else:
             df["borrowing_rate"] = df["borrow_apy"] * bar_seconds / SECONDS_PER_YEAR
-            df["lending_rate"] = df["supply_apy"] * bar_seconds / SECONDS_PER_YEAR
+        # Morpho Blue collateral never earns the supply rate (only loan-token
+        # suppliers do), and ``LendingHistory.lending_rates`` is credited to
+        # collateral by the entities: emit 0 there and keep the market's
+        # supplier APY in the optional ``supply_apy`` column.
+        df["lending_rate"] = 0.0
         for col in cols:
             if col not in df.columns:
                 df[col] = float("nan")

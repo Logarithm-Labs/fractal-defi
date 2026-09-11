@@ -32,6 +32,38 @@
       "pt_impact_model": "amm",
       "scalar_root": 57.6,
       "ln_fee_rate_root": 0.00098686
+    },
+    "susde_25sep2025_dai": {
+      "description": "Full-life replay through the September-2025 carry compression: PT-sUSDe on the Morpho PT-sUSDE/DAI market (loan ≠ accounting asset, stable-to-stable).",
+      "chain_id": 1,
+      "pendle_market": "0xa36b60a14a1a5247912584768c6e53e1a269a9f7",
+      "pendle_name": "PT-sUSDe-25SEP2025",
+      "morpho_market": "0xc6ae8e71e11ef511acee3f6cc6ad2af67b862877d459e3789905f537c85db5e3",
+      "morpho_name": "PT-sUSDE-25SEP2025 / DAI",
+      "lltv": 0.915,
+      "start": "2025-06-05",
+      "end": "2025-09-26",
+      "bar": "day",
+      "oracle_model": "market",
+      "pt_impact_model": "rate_spread",
+      "scalar_root": 0.0,
+      "ln_fee_rate_root": 0.0
+    },
+    "reusd_10dec2026": {
+      "description": "Event replay on hourly bars: PT-reUSD on Morpho PT-reUSD/USDC through the 2026-08-25 implied-APY spike ($36M of liquidations on the market). Pendle serves hourly rows for ~60 days only; older bars are stretched from daily with a warning.",
+      "chain_id": 1,
+      "pendle_market": "0x13285bcbc27f92b47b4edb99d744c07b48c977c0",
+      "pendle_name": "PT-reUSD-10DEC2026",
+      "morpho_market": "0x1e9d614631a7df0ec07fb05b2c8cb2491575fd1a63a33bf187a6afb295a4fc64",
+      "morpho_name": "PT-reUSD-10DEC2026 / USDC",
+      "lltv": 0.915,
+      "start": "2026-07-15",
+      "end": "2026-09-10",
+      "bar": "hour",
+      "oracle_model": "market",
+      "pt_impact_model": "rate_spread",
+      "scalar_root": 0.0,
+      "ln_fee_rate_root": 0.0
     }
   },
   "hedged": {
@@ -43,7 +75,10 @@
       "binance_ticker": "ETHUSDT",
       "boros_market": 129,
       "boros_name": "BINANCE-ETHUSDT-25DEC2026",
-      "boros_underlying": ["ETH", "Binance"],
+      "boros_underlying": [
+        "ETH",
+        "Binance"
+      ],
       "start": "2026-03-01",
       "end": null,
       "bar": "day",

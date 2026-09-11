@@ -1,8 +1,10 @@
 """L1 tests for :class:`HedgedPTStrategy` / :class:`PerpHedgedPT`: params,
 entity checks, the action lists of each ``predict`` branch."""
+from datetime import timedelta
+
 import pytest
 
-from fractal.core.base import Observation
+from fractal.core.base import Action, Observation
 from fractal.core.base.strategy import NamedEntity
 from fractal.core.entities import (
     BorosEntity,
@@ -16,7 +18,7 @@ from fractal.core.entities import (
     SimpleSpotExchange,
 )
 from fractal.strategies import HedgedPTException, HedgedPTParams, HedgedPTStrategy, PerpHedgedPT, PerpHedgedPTParams
-from tests.core.pendle_synthetic import synthetic_hedged_observations
+from tests.core.pendle_synthetic import EXPIRY, synthetic_hedged_observations
 
 
 def params(**overrides) -> PerpHedgedPTParams:
@@ -34,6 +36,13 @@ def strategy(**overrides) -> PerpHedgedPT:
 
 def names(actions):
     return [(a.entity_name, a.action.action) for a in actions]
+
+
+def _execute(strat, actions):
+    """Resolve delegates and run an action list the way ``BaseStrategy.step`` does."""
+    for action in actions:
+        args = {k: (v(strat) if callable(v) else v) for k, v in action.action.args.items()}
+        strat.get_entity(action.entity_name).execute(Action(action.action.action, args))
 
 
 @pytest.mark.core
@@ -95,6 +104,7 @@ def test_entry_lists_with_and_without_boros():
     assert names(plain._enter()) == [("PT", "deposit"), ("HEDGE", "deposit"), ("PT", "buy"), ("HEDGE", "open_position")]
     assert plain._enter()[1].action.args["amount_in_notional"] == pytest.approx(10_000 / 3)
     boros = strategy(USE_BOROS=True, BOROS_MARGIN_SHARE=0.1)
+    boros.boros.update_state(BorosGlobalState(seconds_to_expiry=60 * 86_400, mark_rate=0.08, underlying_price=2_000.0))
     actions = boros._enter()
     assert names(actions) == [("PT", "deposit"), ("HEDGE", "deposit"), ("BOROS", "deposit"), ("PT", "buy"),
                               ("HEDGE", "open_position"), ("BOROS", "open_position")]
@@ -176,3 +186,63 @@ def test_partial_observations_without_boros_are_accepted():
     bare = Observation(timestamp=obs[1].timestamp, states={"PT": obs[1].states["PT"], "HEDGE": obs[1].states["HEDGE"]})
     strat.step(bare)  # no BOROS state this bar → fine
     assert strat.boros.size != 0
+
+
+@pytest.mark.core
+def test_early_exit_closes_a_live_boros_leg():
+    """The YU matures after the PT exit: the exit list must close the Boros
+    position explicitly (a matured YU is skipped instead)."""
+    strat = strategy(USE_BOROS=True, EXIT_BEFORE_EXPIRY_DAYS=10)
+    obs = synthetic_hedged_observations(days=30, boros_mark_apr=0.08,
+                                        boros_maturity=EXPIRY + timedelta(days=90))
+    strat.step(obs[0])
+    assert strat.boros.size < 0
+    for observation in obs[1:]:
+        strat.step(observation)
+        if strat._exited:
+            break
+    assert strat._exited and strat.pt.internal_state.amount == 0
+    assert strat.boros.size == 0 and not strat.boros.is_matured
+    assert strat.hedge.size == 0
+
+    matured = strategy(USE_BOROS=True)
+    obs = synthetic_hedged_observations(days=30, boros_mark_apr=0.08)  # YU matures with the PT
+    matured.step(obs[0])
+    matured.hedge.update_state(HyperliquidGlobalState(mark_price=2_000.0))
+    matured.pt.update_state(PendlePTGlobalState(seconds_to_expiry=0.0, implied_apy=0.05, asset_price=2_000.0))
+    matured.boros.update_state(BorosGlobalState(seconds_to_expiry=0.0, mark_rate=0.08, underlying_price=2_000.0))
+    assert names(matured.predict()) == [("HEDGE", "close_position"), ("PT", "redeem")]
+
+
+@pytest.mark.core
+def test_boros_leg_opens_lazily_when_the_yu_market_lists_after_entry():
+    strat = strategy(USE_BOROS=True)
+    obs = synthetic_hedged_observations(days=30, boros_mark_apr=0.08)
+    first = Observation(timestamp=obs[0].timestamp, states={"PT": obs[0].states["PT"], "HEDGE": obs[0].states["HEDGE"]})
+    strat.step(first)  # no BOROS quote yet: entry must not touch the YU
+    assert strat.boros.size == 0 and strat.hedge.size < 0
+    assert strat.boros.balance == pytest.approx(1_000.0)  # margin share parked
+    strat.step(obs[1])  # first quote → open against the hedge target
+    assert strat.boros.size == pytest.approx(strat.target_hedge_size(), rel=1e-9)
+
+
+@pytest.mark.core
+def test_margin_rebalance_lands_on_target_leverage_and_resyncs_boros():
+    strat = strategy(USE_BOROS=True, HEDGE_LEVERAGE_BAND=(1.2, 3.5))
+    obs = synthetic_hedged_observations(days=60, boros_mark_apr=0.08)
+    strat.step(obs[0])
+    up = 2_000.0 * 1.35
+    strat.hedge.update_state(HyperliquidGlobalState(mark_price=up))
+    strat.pt.update_state(PendlePTGlobalState(seconds_to_expiry=59 * 86_400 - 1, implied_apy=0.05, asset_price=up,
+                                              total_pt=1e9, total_sy=1e9, scalar_root=50.0))
+    strat.boros.update_state(BorosGlobalState(seconds_to_expiry=59 * 86_400 - 1, mark_rate=0.08, underlying_price=up))
+    assert strat.hedge.leverage > 3.5
+    _execute(strat, strat.predict())
+    assert strat.hedge.leverage == pytest.approx(2.0, rel=0.02)
+    assert strat.boros.size == pytest.approx(strat.hedge.size, rel=1e-6)
+    # a drift re-size keeps both legs equal even when the YU had diverged
+    strat.boros._internal_state.size *= 0.5
+    strat.pt._internal_state.amount *= 1.10
+    _execute(strat, strat.predict())
+    assert strat.boros.size == pytest.approx(strat.hedge.size, rel=1e-6)
+    assert strat.hedge.size == pytest.approx(strat.target_hedge_size(), rel=1e-6)

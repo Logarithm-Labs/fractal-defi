@@ -195,3 +195,19 @@ def test_ohlcv_parses_both_shapes_and_pages(monkeypatch, csv):
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert loader._cache_key().startswith("1-0x")
+
+
+@pytest.mark.core
+def test_daily_fallback_covers_a_window_older_than_the_hourly_retention(monkeypatch):
+    """An empty hourly response (window entirely older than ~60 days) must
+    still produce a stretched daily history instead of an empty frame."""
+    monkeypatch.setattr("fractal.loaders.pendle._time.sleep", lambda s: None)
+    end = START + timedelta(days=3)
+    http = _FakePendleHttp(hourly_from=end + timedelta(days=30))  # hourly retention starts after the window
+    loader = PendleMarketLoader(MARKET, 1, START, end, expiry=EXPIRY, http=http)
+    with pytest.warns(UserWarning, match="after the window"):
+        history = loader.read(with_run=True)
+    assert len(history) == 3 * 24 + 1
+    assert history.index[0] == pd.Timestamp(START) and history.index[-1] == pd.Timestamp(end)
+    frames = [p["time_frame"] for u, p in http.calls if "historical-data" in u]
+    assert frames == ["hour", "day"]

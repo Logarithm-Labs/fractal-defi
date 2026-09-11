@@ -255,7 +255,24 @@ class PendlePTEntity(BaseFixedTermEntity, BaseSpotEntity):
             "ln_fee_rate_root": state.ln_fee_rate_root,
             "implied_apy": state.implied_apy,
             "years": self.years_to_expiry,
+            "max_proportion": self.max_pool_share,
         }
+
+    def quote_buy(self, amount_in_notional: float) -> float:
+        """PT received for ``amount_in_notional`` at the current state (no side effects)."""
+        if amount_in_notional < 0:
+            raise PendlePTException(f"quote amount must be >= 0, got {amount_in_notional}")
+        if amount_in_notional == 0:
+            return 0.0
+        return self._quote_buy(amount_in_notional / self._global_state.asset_price)
+
+    def quote_sell(self, amount_in_product: float) -> float:
+        """Notional received for selling ``amount_in_product`` PT now (no side effects)."""
+        if amount_in_product < 0:
+            raise PendlePTException(f"quote amount must be >= 0, got {amount_in_product}")
+        if amount_in_product == 0:
+            return 0.0
+        return self._quote_sell(amount_in_product) * self._global_state.asset_price
 
     def _quote_buy(self, asset_in: float) -> float:
         state = self._global_state

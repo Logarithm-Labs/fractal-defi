@@ -204,3 +204,32 @@ def test_two_instances_do_not_share_state():
     a.action_deposit(10.0)
     assert b.internal_state.cash == 0.0
     assert a.internal_state is not b.internal_state
+
+
+@pytest.mark.core
+def test_oversized_amm_buy_is_refused_not_partially_filled():
+    entity = PendlePTEntity(PendlePTConfig(impact_model="amm"))
+    entity.update_state(PendlePTGlobalState(seconds_to_expiry=0.5 * 365 * 86_400, implied_apy=0.05,
+                                            total_pt=1_000.0, total_sy=1_000.0, scalar_root=40.0))
+    entity.action_deposit(5_000.0)
+    with pytest.raises(PendlePTException, match="not executable"):
+        entity.action_buy(5_000.0)
+    assert entity.internal_state.cash == 5_000.0 and entity.internal_state.amount == 0.0
+    small = entity.quote_buy(100.0)
+    entity.action_buy(100.0)
+    assert entity.internal_state.amount == pytest.approx(small)
+    assert entity.quote_sell(entity.internal_state.amount) < 100.0  # round trip pays fee + impact
+
+
+@pytest.mark.core
+def test_max_pool_share_config_is_applied_to_sells():
+    tight = PendlePTEntity(PendlePTConfig(impact_model="amm", max_pool_share=0.51))
+    loose = PendlePTEntity(PendlePTConfig(impact_model="amm", max_pool_share=0.96))
+    state = PendlePTGlobalState(seconds_to_expiry=0.5 * 365 * 86_400, implied_apy=0.05,
+                                total_pt=1_000.0, total_sy=1_000.0, scalar_root=40.0)
+    for entity in (tight, loose):
+        entity.update_state(state)
+        entity.action_inject_product(100.0)
+    with pytest.raises(PendlePTException, match="PT share"):
+        tight.action_sell(100.0)
+    loose.action_sell(100.0)

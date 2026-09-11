@@ -121,16 +121,17 @@ def rate_scalar(scalar_root: float, years: float) -> float:
     return scalar_root / years
 
 
-def _proportion(total_pt: float, total_asset: float, net_pt_to_account: float = 0.0) -> float:
+def _proportion(total_pt: float, total_asset: float, net_pt_to_account: float = 0.0,
+                max_proportion: float = MAX_MARKET_PROPORTION) -> float:
     total = total_pt + total_asset
     if total_pt <= 0.0 or total_asset <= 0.0:
         raise ValueError(f"pool reserves must be > 0, got total_pt={total_pt}, total_asset={total_asset}")
     proportion = (total_pt - net_pt_to_account) / total
     if proportion <= 0.0:
         raise ValueError("trade would drain the pool's PT reserve")
-    if proportion > MAX_MARKET_PROPORTION:
+    if proportion > max_proportion:
         raise ValueError(
-            f"trade pushes the pool's PT share to {proportion:.4f} > {MAX_MARKET_PROPORTION}"
+            f"trade pushes the pool's PT share to {proportion:.4f} > {max_proportion}"
         )
     return proportion
 
@@ -150,9 +151,10 @@ def exchange_rate(
     scalar: float,
     anchor: float,
     net_pt_to_account: float,
+    max_proportion: float = MAX_MARKET_PROPORTION,
 ) -> float:
     """``MarketMathCore._getExchangeRate``: asset per PT for a trade of ``net_pt_to_account``."""
-    proportion = _proportion(total_pt, total_asset, net_pt_to_account)
+    proportion = _proportion(total_pt, total_asset, net_pt_to_account, max_proportion)
     rate = math.log(proportion / (1.0 - proportion)) / scalar + anchor
     if rate < 1.0:
         raise ValueError("exchange rate below one: the trade is not executable on the curve")
@@ -168,6 +170,7 @@ def amm_swap_exact_pt(
     ln_fee_rate_root: float,
     implied_apy: float,
     years: float,
+    max_proportion: float = MAX_MARKET_PROPORTION,
 ) -> AmmQuote:
     """``MarketMathCore.calcTrade`` for an exact PT amount (buy ``> 0``, sell ``< 0``).
 
@@ -179,6 +182,7 @@ def amm_swap_exact_pt(
         ln_fee_rate_root: market ``lnFeeRateRoot`` (router-specific; ~5e-4 on live markets).
         implied_apy: current implied APY (sets ``lnImpliedRate`` for the anchor).
         years: time to expiry in years.
+        max_proportion: post-trade PT share cap (``0.96`` on-chain).
     """
     if net_pt_to_account == 0.0:
         return AmmQuote(0.0, 0.0, 0.0, ln_rate(implied_apy))
@@ -187,7 +191,7 @@ def amm_swap_exact_pt(
     scalar = rate_scalar(scalar_root, years)
     current_ln_rate = ln_rate(implied_apy)
     anchor = rate_anchor(total_pt, total_asset, scalar, current_ln_rate, years)
-    pre_fee_exchange_rate = exchange_rate(total_pt, total_asset, scalar, anchor, net_pt_to_account)
+    pre_fee_exchange_rate = exchange_rate(total_pt, total_asset, scalar, anchor, net_pt_to_account, max_proportion)
     pre_fee_asset_to_account = -net_pt_to_account / pre_fee_exchange_rate
     fee_rate = math.exp(ln_fee_rate_root * years)
     if net_pt_to_account > 0.0:
@@ -198,7 +202,7 @@ def amm_swap_exact_pt(
         fee = -(pre_fee_asset_to_account * (1.0 - fee_rate)) / fee_rate
     net_asset_to_account = pre_fee_asset_to_account - fee
     # Post-trade implied rate: re-read the curve at the new proportion.
-    post_proportion = _proportion(total_pt, total_asset, net_pt_to_account)
+    post_proportion = _proportion(total_pt, total_asset, net_pt_to_account, max_proportion)
     post_exchange_rate = math.log(post_proportion / (1.0 - post_proportion)) / scalar + anchor
     post_ln_rate = math.log(post_exchange_rate) / years
     return AmmQuote(
@@ -218,12 +222,16 @@ def amm_swap_exact_asset_in(
     ln_fee_rate_root: float,
     implied_apy: float,
     years: float,
+    max_proportion: float = MAX_MARKET_PROPORTION,
 ) -> AmmQuote:
     """Buy PT with an exact accounting-asset amount (router ``swapExactSyForPt``).
 
     Bisects :func:`amm_swap_exact_pt` on the PT amount until the asset
     paid matches ``asset_in``; the cost is monotone in the PT amount so
-    the search is well posed. Raises when no executable size exists.
+    the search is well posed. The executable sizes form an interval
+    ``[0, pt_max)`` (beyond it the curve's exchange rate drops below one
+    or the PT reserve is drained); when ``asset_in`` costs more than
+    ``pt_max`` the buy is refused rather than partially filled.
     """
     if asset_in < 0.0:
         raise ValueError(f"asset_in must be >= 0, got {asset_in}")
@@ -232,29 +240,40 @@ def amm_swap_exact_asset_in(
     kwargs = {
         "total_pt": total_pt, "total_asset": total_asset, "scalar_root": scalar_root,
         "ln_fee_rate_root": ln_fee_rate_root, "implied_apy": implied_apy, "years": years,
+        "max_proportion": max_proportion,
     }
 
-    def cost(pt: float):
+    def cost(pt: float) -> float:
         try:
             return -amm_swap_exact_pt(pt, **kwargs).net_asset_to_account
         except ValueError:
-            return math.inf
+            return math.nan
 
     lo, hi = 0.0, total_pt * (1.0 - 1e-9)
-    if cost(hi) < asset_in:
-        raise ValueError("asset_in exceeds what the pool can sell: the buy is not executable")
+    if math.isnan(cost(hi)):  # find the largest executable size
+        for _ in range(_BISECTION_MAX_ITER):
+            mid = 0.5 * (lo + hi)
+            if math.isnan(cost(mid)):
+                hi = mid
+            else:
+                lo = mid
+        hi = lo
+    max_cost = cost(hi)
+    if math.isnan(max_cost) or max_cost < asset_in:
+        raise ValueError(
+            f"asset_in {asset_in:.6g} exceeds the pool's executable size (max {max_cost:.6g}): "
+            "the buy is not executable"
+        )
+    lo = 0.0
     for _ in range(_BISECTION_MAX_ITER):
         mid = 0.5 * (lo + hi)
         if cost(mid) < asset_in:
             lo = mid
         else:
             hi = mid
-        if hi - lo <= _BISECTION_TOL * max(1.0, hi):
-            break
-    return amm_swap_exact_pt(lo, **kwargs)
+    return amm_swap_exact_pt(hi, **kwargs)
 
 
-# --------------------------------------------------------------- fallback
 def _effective_ln_rate(implied_apy: float, fee_ln_rate: float, impact_ln_rate_per_share: float,
                        share: float, sign: float) -> float:
     if fee_ln_rate < 0.0 or impact_ln_rate_per_share < 0.0 or share < 0.0:

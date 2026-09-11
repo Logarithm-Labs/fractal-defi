@@ -200,3 +200,26 @@ def test_liquidation_price_and_insolvency_branches():
     assert entity.health_factor == 0.0
     with pytest.raises(MorphoException, match="non-finite"):
         entity.calculate_repay(0.1)
+
+
+@pytest.mark.core
+@pytest.mark.parametrize("field", ["collateral_price", "debt_price", "collateral_market_price"])
+def test_nan_prices_are_rejected_instead_of_liquidating(field):
+    entity = MorphoEntity(lltv=0.915)
+    entity.update_state(MorphoGlobalState(collateral_price=1.0, debt_price=1.0))
+    entity.action_deposit(100.0)
+    entity.action_borrow(50.0)
+    bad = MorphoGlobalState(collateral_price=1.0, debt_price=1.0, collateral_market_price=1.0)
+    setattr(bad, field, float("nan"))
+    with pytest.raises(MorphoException, match="finite"):
+        entity.update_state(bad)
+    assert entity.internal_state.collateral == 100.0 and entity.internal_state.borrowed == 50.0
+    assert entity.internal_state.liquidation_count == 0
+
+
+@pytest.mark.core
+def test_zero_borrow_is_a_no_op_even_without_collateral():
+    entity = MorphoEntity()
+    entity.update_state(MorphoGlobalState(collateral_price=1.0, debt_price=1.0))
+    entity.action_borrow(0.0)
+    assert entity.internal_state.borrowed == 0.0

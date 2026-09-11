@@ -152,10 +152,17 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         return abs(self.hedge.size - target) / abs(target)
 
     def equity(self) -> float:
-        total = self.pt.balance + self.hedge.balance
+        total = self.investable_equity()
         if self.boros is not None:
             total += self.boros.balance
         return total
+
+    def investable_equity(self) -> float:
+        """PT plus hedge margin — the capital split ``PT : margin = L : 1``."""
+        return self.pt.balance + self.hedge.balance
+
+    def boros_leg_live(self) -> bool:
+        return self.boros is not None and not self.boros.is_matured
 
     # ----------------------------------------------------------- predict
     def predict(self) -> List[ActionToTake]:  # pylint: disable=too-many-return-statements
@@ -184,6 +191,11 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         if hedge.balance <= 0 and hedge.size == 0 and pt.internal_state.amount > 0:
             self._debug("Hedge liquidated — re-funding it from PT")
             return self._refund_hedge()
+        boros_missing = (self.boros_leg_live() and self.boros.size == 0 and hedge.size != 0
+                         and self.boros.internal_state.liquidation_count == 0)
+        if boros_missing:
+            self._debug("Boros leg not open yet (listed after entry) — opening it against the hedge")
+            return [ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()}))]
         lo, hi = params.HEDGE_LEVERAGE_BAND
         if hedge.size != 0 and (hedge.leverage > hi or hedge.leverage < lo):
             self._debug(f"Hedge leverage {hedge.leverage:.3f} outside the band — moving margin")
@@ -196,6 +208,15 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
     # ------------------------------------------------------------ blocks
     def _hedge_delta(self) -> _Once:
         return _Once(lambda s: s.target_hedge_size() - s.hedge.size)
+
+    def _boros_delta(self) -> _Once:
+        """Yield units to trade so the Boros leg matches the hedge target, not the perp's delta."""
+        return _Once(lambda s: s.target_hedge_size() - s.boros.size)
+
+    def _boros_sync(self) -> List[ActionToTake]:
+        if self.boros_leg_live() and self.boros.size != 0:
+            return [ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()}))]
+        return []
 
     def _enter(self) -> List[ActionToTake]:
         params = self._params
@@ -213,21 +234,21 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
             actions.append(ActionToTake("BOROS", Action("deposit", {"amount_in_notional": boros_share})))
         actions.append(ActionToTake("PT", Action("buy", {"amount_in_notional": pt_share})))
         actions.append(ActionToTake("HEDGE", Action("open_position", {"amount_in_product": delta})))
-        if self.boros is not None:
-            actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": delta})))
+        if self.boros_leg_live():  # a YU market listed after the PT window opens later (see predict)
+            actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()})))
         return actions
 
     def _resize_hedge(self) -> List[ActionToTake]:
-        delta = self._hedge_delta()
-        actions = [ActionToTake("HEDGE", Action("open_position", {"amount_in_product": delta}))]
-        if self.boros is not None and not self.boros.is_matured:
-            actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": delta})))
+        actions = [ActionToTake("HEDGE", Action("open_position", {"amount_in_product": self._hedge_delta()}))]
+        actions.extend(self._boros_sync())
         return actions
 
     def _rebalance_margin(self) -> List[ActionToTake]:
         """Bring the hedge margin back to ``|size|·mark / TARGET_HEDGE_LEVERAGE``."""
         hedge, pt = self.hedge, self.pt
-        target_margin = abs(hedge.size) * hedge.global_state.mark_price / self._params.TARGET_HEDGE_LEVERAGE
+        # Split the investable capital ``PT : margin = L : 1`` (the entry rule):
+        # sizing on the pre-move hedge would land at the band edge instead.
+        target_margin = self.investable_equity() / (1.0 + self._params.TARGET_HEDGE_LEVERAGE)
         delta = target_margin - hedge.balance
         actions: List[ActionToTake] = []
         if delta > 0:
@@ -246,28 +267,28 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
             actions.append(ActionToTake("PT", Action("buy", {"amount_in_notional": _Once(
                 lambda s: s.pt.internal_state.cash)})))
         actions.append(ActionToTake("HEDGE", Action("open_position", {"amount_in_product": self._hedge_delta()})))
+        actions.extend(self._boros_sync())
         return actions
 
     def _refund_hedge(self) -> List[ActionToTake]:
         """After a hedge liquidation: sell part of the PT to re-margin and re-open the short."""
         pt = self.pt
-        target_margin = self.equity() / (1.0 + self._params.TARGET_HEDGE_LEVERAGE)
+        target_margin = self.investable_equity() / (1.0 + self._params.TARGET_HEDGE_LEVERAGE)
         shortfall = max(0.0, target_margin - pt.internal_state.cash)
         units = min(shortfall / pt.current_price * 1.01, pt.internal_state.amount) if shortfall > 0 else 0.0
         move = _Once(lambda s: s.pt.internal_state.cash)
-        delta = self._hedge_delta()
         actions = [ActionToTake("PT", Action("sell", {"amount_in_product": units}))]
         actions.extend(self.transfer("PT", "HEDGE", move))
-        actions.append(ActionToTake("HEDGE", Action("open_position", {"amount_in_product": delta})))
-        if self.boros is not None and not self.boros.is_matured:
+        actions.append(ActionToTake("HEDGE", Action("open_position", {"amount_in_product": self._hedge_delta()})))
+        if self.boros_leg_live():
             actions.append(ActionToTake("BOROS", Action("close_position", {})))
-            actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": delta})))
+            actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()})))
         return actions
 
     def _exit(self, redeem: bool) -> List[ActionToTake]:
         all_pt = _Once(lambda s: s.pt.internal_state.amount)
         actions = [ActionToTake("HEDGE", Action("close_position", {}))]
-        if self.boros is not None and not self.boros.is_matured:
+        if self.boros_leg_live():
             actions.append(ActionToTake("BOROS", Action("close_position", {})))
         actions.append(ActionToTake("PT", Action("redeem" if redeem else "sell", {"amount_in_product": all_pt})))
         return actions

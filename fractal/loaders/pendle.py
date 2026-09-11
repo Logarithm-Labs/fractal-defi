@@ -248,15 +248,22 @@ class PendleMarketLoader(Loader):
 
     def extract(self) -> None:
         rows = self._fetch(self.time_frame, self.start_time, self.end_time)
-        if self.time_frame == "hour" and self.daily_fallback and rows:
-            first = datetime.fromtimestamp(int(_epoch_seconds([r["timestamp"] for r in rows]).min()),
-                                           tz=self.start_time.tzinfo)
+        if self.time_frame == "hour" and self.daily_fallback:
+            # Pendle keeps ~60 days of hourly rows: fill the older part of the
+            # window (or all of it, when the hourly response is empty) from the
+            # daily series, stretched to the hourly grid.
+            if rows:
+                first = datetime.fromtimestamp(int(_epoch_seconds([r["timestamp"] for r in rows]).min()),
+                                               tz=self.start_time.tzinfo)
+            else:
+                first = self.end_time + timedelta(seconds=1)
             if first > self.start_time + timedelta(hours=2):
-                daily = self._fetch("day", self.start_time, first - timedelta(seconds=1))
+                daily = self._fetch("day", self.start_time, min(first - timedelta(seconds=1), self.end_time))
                 if daily:
                     warnings.warn(
-                        f"PendleMarketLoader: hourly history for {self.market_address} starts at {first}; "
-                        f"{len(daily)} daily bars before it are stretched to hourly"
+                        f"PendleMarketLoader: hourly history for {self.market_address} starts at "
+                        f"{first if rows else 'after the window'}; {len(daily)} daily bars before it are "
+                        "stretched to hourly"
                     )
                     for row in daily:
                         row["_stretched"] = True

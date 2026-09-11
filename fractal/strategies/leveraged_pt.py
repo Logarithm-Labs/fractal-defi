@@ -59,6 +59,30 @@ class _Once:
         return self._value
 
 
+def _debt_price(strategy: BaseStrategy) -> float:
+    """Notional per loan unit (``1`` when the lender's state leaves it unset)."""
+    return strategy.get_entity("LENDING").global_state.debt_price or 1.0
+
+
+def _units_for_proceeds(pt: PendlePTEntity, notional: float, tolerance: float = 1e-9) -> float:
+    """PT units whose sale yields at least ``notional`` at the current quote.
+
+    Fixed-point iteration on ``PendlePTEntity.quote_sell`` (fee and impact
+    included), so the repayment never comes up short after the sale.
+    """
+    if notional <= 0.0:
+        return 0.0
+    units = notional / pt.current_price
+    for _ in range(12):
+        proceeds = pt.quote_sell(units)
+        if proceeds >= notional * (1.0 + tolerance):
+            return units
+        if proceeds <= 0.0:
+            return math.inf  # the market cannot absorb the sale at any size
+        units *= notional / proceeds * (1.0 + 10 * tolerance)
+    return units
+
+
 @dataclass
 class LeveragedPTParams(BaseStrategyParams):
     """Hyperparameters.
@@ -67,6 +91,7 @@ class LeveragedPTParams(BaseStrategyParams):
     TARGET_LTV / TARGET_LEVERAGE: exactly one; ``ℓ = 1 − 1/L``.
     MAX_LOOPS: manual loop count (``MULTIPLY_MODE="loop"``); blocks
         self-terminate once the increment falls below ``MIN_LOOP_INCREMENT``.
+        ``0`` holds the PT unlevered (no entry loops and no band boost).
     REBALANCE_LTV_BAND: ``(lo, hi)`` — boost below ``lo``, repay to target above ``hi``.
     MIN_HEALTH_FACTOR: repay to target when the lending health factor drops below it.
     MIN_CARRY_SPREAD: deleverage fully when ``implied_apy − borrow_apy`` falls below it.
@@ -106,7 +131,6 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
     """Abstract PT-looping strategy; a venue subclass registers ``PT`` and ``LENDING``."""
 
     #: Extra PT sold when repaying so fees and impact still cover the flash principal.
-    SELL_SLACK: float = 0.01
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
@@ -199,9 +223,10 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
     def predict(self) -> List[ActionToTake]:  # pylint: disable=too-many-return-statements
         pt, lending, params = self.pt, self.lending, self._params
         self._borrow_apy_window.append(self.borrow_apy())
-        wiped = (
-            lending.internal_state.collateral == 0 and lending.internal_state.borrowed == 0
-            and pt.internal_state.amount == 0 and pt.internal_state.cash == 0
+        empty = lending.internal_state.collateral == 0 and lending.internal_state.borrowed == 0
+        wiped = empty and (
+            lending.internal_state.liquidation_count > 0  # seized in full; PT may hold slack cash
+            or (pt.internal_state.amount == 0 and pt.internal_state.cash == 0)
         )
         if self._deposited and not self._exited and wiped:
             raise LeveragedPTException(
@@ -236,7 +261,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         if lending.internal_state.borrowed > 0 and above_band:
             self._debug(f"LTV {lending.ltv:.4f} above band — repaying to target")
             return self._repay_to(self._target_ltv)
-        if lending.ltv < lo:
+        if lending.ltv < lo and params.MAX_LOOPS > 0:
             self._debug(f"LTV {lending.ltv:.4f} below band — boosting")
             return self._boost()
         return []
@@ -262,12 +287,13 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             return amount if amount >= dust else 0.0
 
         d_cash, d_pt, d_bor = _Once(_cash), _Once(_pt_units), _Once(_borrow)
+        d_bor_notional = _Once(lambda s: d_bor(s) * _debt_price(s))
         return [
             ActionToTake("PT", Action("buy", {"amount_in_notional": d_cash})),
             ActionToTake("LENDING", Action("deposit", {"amount_in_notional": d_pt})),
             ActionToTake("PT", Action("remove_product", {"amount": d_pt})),
             ActionToTake("LENDING", Action("borrow", {"amount_in_product": d_bor})),
-            ActionToTake("PT", Action("deposit", {"amount_in_notional": d_bor})),
+            ActionToTake("PT", Action("deposit", {"amount_in_notional": d_bor_notional})),
         ]
 
     def _close_block(self) -> List[ActionToTake]:
@@ -297,63 +323,78 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             ActionToTake("PT", Action("buy", {"amount_in_notional": d_all})),
             ActionToTake("LENDING", Action("deposit", {"amount_in_notional": d_pt})),
             ActionToTake("PT", Action("remove_product", {"amount": d_pt})),
-            ActionToTake("LENDING", Action("borrow", {"amount_in_product": repay_flash})),
+            ActionToTake("LENDING", Action("borrow", {"amount_in_product": _Once(
+                lambda s: repay_flash / _debt_price(s))})),
             ActionToTake("PT", Action("deposit", {"amount_in_notional": repay_flash})),
             ActionToTake("PT", Action("withdraw", {"amount_in_notional": repay_flash})),
         ]
 
     def _boost(self) -> List[ActionToTake]:
         actions: List[ActionToTake] = []
-        for _ in range(max(1, self._params.MAX_LOOPS)):
+        for _ in range(self._params.MAX_LOOPS):
             actions.extend(self._loop_block())
         actions.extend(self._close_block())
         return actions
 
     def _repay_to(self, target_ltv: float) -> List[ActionToTake]:
         """Flash device: repay → withdraw PT → sell it → return the flash principal."""
-        slack = self.SELL_SLACK
 
         def _repay(strategy: BaseStrategy) -> float:
-            """Loan units to repay so that LTV lands on ``target_ltv`` *after* the
-            collateral sold to fund the repayment has left the market:
-            ``(D − R) / (C − k·R) = t`` ⇒ ``R = (D − t·C) / (1 − t·k)`` with
-            ``k`` the oracle value removed per unit of debt repaid."""
+            """Loan units ``R`` to repay so that LTV lands on ``target_ltv`` *after*
+            the collateral sold to fund the repayment has left the market:
+            ``(D − R·p_d) / ((C − W(R))·p_o) = t`` with ``W(R)`` the PT units whose
+            sale (fee and impact included, from the entity's quote) yields ``R·p_d``.
+            Solved by bisection; when even the whole collateral cannot reach the
+            target the position is deleveraged fully."""
             lending = strategy.get_entity("LENDING")
             pt = strategy.get_entity("PT")
             borrowed = lending.internal_state.borrowed
             if borrowed == 0:
                 return 0.0
             if target_ltv == 0.0:
-                return borrowed  # exact: the closed form would leave float dust behind
-            debt_price = lending.global_state.debt_price or 1.0
-            debt_value, coll_value = lending.debt_value, lending.collateral_value
-            k = (1.0 + slack) * lending.global_state.collateral_price / pt.current_price
-            denominator = 1.0 - target_ltv * k
-            if denominator <= 0:
+                return borrowed  # exact: a closed form would leave float dust behind
+            debt_price = _debt_price(strategy)
+            debt_value, collateral = lending.debt_value, lending.internal_state.collateral
+            oracle = lending.global_state.collateral_price
+
+            def gap(repay_units: float) -> float:
+                remaining = collateral - min(_units_for_proceeds(pt, repay_units * debt_price), collateral)
+                if remaining <= 0:
+                    return -math.inf
+                return (debt_value - repay_units * debt_price) / (remaining * oracle) - target_ltv
+
+            if gap(borrowed) > 0:
                 return borrowed  # selling collateral cannot bring LTV down: deleverage fully
-            repay_value = (debt_value - target_ltv * coll_value) / denominator
-            return max(0.0, min(repay_value / debt_price, borrowed))
+            lo, hi = 0.0, borrowed
+            for _ in range(60):
+                mid = 0.5 * (lo + hi)
+                if gap(mid) > 0:
+                    lo = mid
+                else:
+                    hi = mid
+            return hi
 
         d_repay = _Once(_repay)
 
         def _withdraw(strategy: BaseStrategy) -> float:
             lending = strategy.get_entity("LENDING")
             pt = strategy.get_entity("PT")
-            repay_value = d_repay(strategy) * (lending.global_state.debt_price or 1.0)
+            repay_value = d_repay(strategy) * _debt_price(strategy)
             if repay_value == 0.0:
                 return 0.0
-            units = repay_value / pt.current_price * (1.0 + slack)
             if target_ltv == 0.0:
-                units = lending.internal_state.collateral  # full deleverage frees everything
+                return lending.internal_state.collateral  # full deleverage frees everything
+            units = _units_for_proceeds(pt, repay_value)  # sized on the entity's own quote (fee + impact)
             return min(units, lending.internal_state.collateral)
 
         d_withdraw = _Once(_withdraw)
+        d_repay_notional = _Once(lambda s: d_repay(s) * _debt_price(s))
         return [
             ActionToTake("LENDING", Action("repay", {"amount_in_product": d_repay})),
             ActionToTake("LENDING", Action("withdraw", {"amount_in_notional": d_withdraw})),
             ActionToTake("PT", Action("inject_product", {"amount": d_withdraw})),
             ActionToTake("PT", Action("sell", {"amount_in_product": d_withdraw})),
-            ActionToTake("PT", Action("withdraw", {"amount_in_notional": d_repay})),
+            ActionToTake("PT", Action("withdraw", {"amount_in_notional": d_repay_notional})),
         ]
 
     def _unwind(self, redeem: bool) -> List[ActionToTake]:
@@ -367,5 +408,6 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             ActionToTake("LENDING", Action("withdraw", {"amount_in_notional": d_coll})),
             ActionToTake("PT", Action("inject_product", {"amount": d_coll})),
             ActionToTake("PT", Action(exit_action, {"amount_in_product": d_all_pt})),
-            ActionToTake("PT", Action("withdraw", {"amount_in_notional": d_debt})),
+            ActionToTake("PT", Action("withdraw", {"amount_in_notional": _Once(
+                lambda s: d_debt(s) * _debt_price(s))})),
         ]

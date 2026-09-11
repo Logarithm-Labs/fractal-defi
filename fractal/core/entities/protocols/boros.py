@@ -332,8 +332,10 @@ class BorosEntity(BaseFixedTermEntity, BasePerpEntity):
     def update_state(self, state: BorosGlobalState) -> None:
         """Validate → apply → settle the period (if any) → maturity → liquidation."""
         self._validate_term(state)
-        if state.underlying_price <= 0:
-            raise BorosException(f"underlying_price must be > 0, got {state.underlying_price}")
+        if not math.isfinite(state.underlying_price) or state.underlying_price <= 0:
+            raise BorosException(f"underlying_price must be finite and > 0, got {state.underlying_price}")
+        if not math.isfinite(state.funding_period_seconds):
+            raise BorosException(f"funding_period_seconds must be finite, got {state.funding_period_seconds}")
         if state.funding_period_seconds < 0:
             raise BorosException(f"funding_period_seconds must be >= 0, got {state.funding_period_seconds}")
         if not math.isfinite(state.mark_rate) or not math.isfinite(state.funding_rate):

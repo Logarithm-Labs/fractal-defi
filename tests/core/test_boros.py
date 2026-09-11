@@ -246,3 +246,15 @@ def test_update_state_validation_and_dispatch():
     assert entity.size == 0.0
     with pytest.raises(BorosException, match="increased"):
         entity.update_state(state(seconds_to_expiry=DAYS_30 + 1.0))
+
+
+@pytest.mark.core
+def test_nan_underlying_price_is_rejected_instead_of_liquidating():
+    entity = BorosEntity()
+    entity.update_state(BorosGlobalState(seconds_to_expiry=30 * 86_400, mark_rate=0.10, underlying_price=1.0))
+    entity.action_deposit(10_000.0)
+    entity.action_open_position(1.0)
+    with pytest.raises(BorosException, match="finite"):
+        entity.update_state(BorosGlobalState(seconds_to_expiry=29 * 86_400, mark_rate=0.10,
+                                             underlying_price=float("nan")))
+    assert entity.size == 1.0 and entity.internal_state.liquidation_count == 0
