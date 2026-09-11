@@ -10,7 +10,7 @@ from typing import Callable, List, Optional, Sequence, Union
 
 from fractal.core.base import Observation
 from fractal.core.base.time import SECONDS_PER_DAY, SECONDS_PER_YEAR
-from fractal.core.entities import MorphoGlobalState, PendlePTGlobalState
+from fractal.core.entities import BorosGlobalState, HyperliquidGlobalState, MorphoGlobalState, PendlePTGlobalState
 from fractal.core.entities.models.morpho_math import per_bar_borrow_rate
 from fractal.core.entities.models.pendle_math import linear_discount_oracle_price, pt_price_from_apy
 
@@ -67,3 +67,47 @@ def _at(series, index: int) -> float:
 
 def days_to_seconds(days: float) -> float:
     return days * SECONDS_PER_DAY
+
+
+def synthetic_hedged_observations(
+    days: int = 90,
+    *,
+    bar_hours: float = 8.0,
+    implied_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.05,
+    price: Union[float, Sequence[float], Callable[[int], float]] = 2_000.0,
+    funding_rate: Union[float, Sequence[float], Callable[[int], float]] = 0.0001,
+    boros_mark_apr: Optional[Union[float, Sequence[float], Callable[[int], float]]] = None,
+    boros_maturity: Optional[datetime] = None,
+    expiry: datetime = EXPIRY,
+    past_expiry_bars: int = 1,
+) -> List[Observation]:
+    """Volatile-underlying PT + perp hedge (+ Boros when ``boros_mark_apr`` is given).
+
+    Bars are ``bar_hours`` apart (8h = one Binance funding period, so every
+    bar carries a funding settlement); ``funding_rate`` is the raw
+    per-period rate applied on each bar to both the perp and the YU.
+    """
+    bars = int(days * 24 / bar_hours) + past_expiry_bars
+    start = expiry - timedelta(days=days)
+    step = timedelta(hours=bar_hours)
+    boros_maturity = boros_maturity or expiry
+    observations: List[Observation] = []
+    for i in range(bars + 1):
+        ts = start + i * step
+        seconds = (expiry - ts).total_seconds()
+        spot = _at(price, i)
+        funding = _at(funding_rate, i)
+        states = {
+            "PT": PendlePTGlobalState(
+                seconds_to_expiry=seconds, implied_apy=_at(implied_apy, i), asset_price=spot,
+                total_pt=1e9, total_sy=1e9, scalar_root=50.0, ln_fee_rate_root=0.0,
+            ),
+            "HEDGE": HyperliquidGlobalState(mark_price=spot, funding_rate=funding),
+        }
+        if boros_mark_apr is not None:
+            states["BOROS"] = BorosGlobalState(
+                seconds_to_expiry=(boros_maturity - ts).total_seconds(), mark_rate=_at(boros_mark_apr, i),
+                funding_rate=funding, funding_period_seconds=bar_hours * 3600, underlying_price=spot,
+            )
+        observations.append(Observation(timestamp=ts, states=states))
+    return observations
