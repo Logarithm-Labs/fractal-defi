@@ -83,7 +83,9 @@ def _epoch_seconds(values: Iterable[Any]) -> pd.Series:
     if pd.api.types.is_numeric_dtype(series):
         numeric = series.astype("int64")
         return (numeric // 1000) if numeric.abs().max() > 10 ** 11 else numeric
-    return (pd.to_datetime(series, utc=True).astype("int64") // 10 ** 9).astype("int64")
+    # Resolution-agnostic (pandas 3 parses strings to datetime64[us], pandas 2 to [ns]).
+    parsed = pd.to_datetime(series, utc=True)
+    return ((parsed - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(seconds=1)).astype("int64")
 
 
 def _token(value: Any) -> Optional[str]:
