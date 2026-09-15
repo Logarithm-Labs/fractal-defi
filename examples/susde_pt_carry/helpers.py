@@ -92,7 +92,7 @@ def observations(frame: pd.DataFrame, cfg: dict, variant: str) -> List[Observati
             ),
         }
         spot, funding = float(row["spot"]), float(row["funding_rate"])
-        if variant == "boros" and not math.isnan(row["boros_mark_apr"]) and row["boros_seconds_to_expiry"] > 0:
+        if variant == "boros" and not math.isnan(row["boros_mark_apr"]):  # from listing on, through maturity
             states["BOROS"] = BorosGlobalState(
                 seconds_to_expiry=float(row["boros_seconds_to_expiry"]), mark_rate=float(row["boros_mark_apr"]),
                 funding_rate=funding, funding_period_seconds=float(bar_seconds), underlying_price=spot,

@@ -43,8 +43,8 @@ def _observations(df: pd.DataFrame, variant: str):
                 collateral_market_price=float(row["LENDING_collateral_market_price"]),
             ),
         }
-        listed = variant == "boros" and not pd.isna(row.get("BOROS_mark_rate", float("nan")))
-        if listed and float(row["BOROS_seconds_to_expiry"]) > 0:  # the YU market lists after entry
+        mark = row.get("BOROS_mark_rate", float("nan"))
+        if variant == "boros" and not pd.isna(mark) and mark != 0.0:  # 0.0 = the entity's default before listing
             states["BOROS"] = BorosGlobalState(
                 seconds_to_expiry=float(row["BOROS_seconds_to_expiry"]), mark_rate=float(row["BOROS_mark_rate"]),
                 funding_rate=float(row["BOROS_funding_rate"]),
@@ -60,8 +60,12 @@ def _observations(df: pd.DataFrame, variant: str):
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("market,bar_hours,impact", [("susde_25sep2025", 24, "rate_spread"),
-                                                     ("susde_26nov2026", 1, "amm")])
+@pytest.mark.parametrize("market,bar_hours,impact", [
+    ("susde_25sep2025", 24, "rate_spread"), ("susde_27nov2025_usds", 24, "rate_spread"),
+    ("usde_27nov2025_usds_btc", 24, "rate_spread"), ("susde_5feb2026_usdc", 24, "rate_spread"),
+    ("usde_5feb2026_usdc_btc", 24, "rate_spread"), ("susde_7may2026_pyusd", 24, "rate_spread"),
+    ("susde_26nov2026", 1, "amm"), ("susds_26nov2026", 1, "rate_spread"),
+])
 @pytest.mark.parametrize("variant", ["none", "boros", "perp"])
 def test_susde_carry_replays_the_reference_run(market, bar_hours, impact, variant):
     df = _load(f"{market}_{variant}.csv")
@@ -79,7 +83,7 @@ def test_susde_carry_replays_the_reference_run(market, bar_hours, impact, varian
     assert out["LENDING_liquidation_count"].max() == 0
     for value in result.get_default_metrics().__dict__.values():
         assert math.isfinite(value)
-    if market == "susde_25sep2025":  # held to redemption: everything unwound
+    if not market.endswith("26nov2026"):  # held to redemption: everything unwound
         last = out.iloc[-1]
         assert last["LENDING_borrowed"] == 0.0 and last["PT_amount"] == 0.0
         if variant == "boros":

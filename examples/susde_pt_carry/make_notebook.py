@@ -19,6 +19,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+plt.rcParams.update({"figure.dpi": 72, "savefig.dpi": 72, "figure.max_open_warning": 0})
 RESULTS = "results"
 YEAR = 365 * 86400
 validation = pd.read_csv(os.path.join(RESULTS, "validation.csv"))
@@ -34,12 +35,21 @@ variants = ["none", "boros", "perp"]
 print(markets, {k: len(v) for k, v in runs.items()})''')
 
 md("## 1. Equity curves")
-code('''fig, axes = plt.subplots(1, len(markets), figsize=(7 * len(markets), 4), squeeze=False)
-for ax, market in zip(axes[0], markets):
+code('''def market_axes(n, height=3.6):
+    cols = 2
+    rows = (n + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(7 * cols, height * rows), squeeze=False)
+    flat = axes.flatten()
+    for ax in flat[n:]:
+        ax.axis("off")
+    return fig, flat[:n]
+
+fig, axes = market_axes(len(markets))
+for ax, market in zip(axes, markets):
     for variant in variants:
         df = runs[f"{market}_{variant}"]
         ax.plot(df["timestamp"], df["net_balance"] / df["net_balance"].iloc[0] - 1, label=variant)
-    ax.set_title(market); ax.set_ylabel("equity return"); ax.grid(alpha=0.3); ax.legend()
+    ax.set_title(market); ax.set_ylabel("equity return"); ax.grid(alpha=0.3); ax.legend(fontsize=8)
     ax.tick_params(axis="x", rotation=30)
 plt.tight_layout()''')
 
@@ -61,7 +71,7 @@ code('''def decompose(df):
     return out.fillna(0.0)
 
 decomp = {name: decompose(df) for name, df in runs.items()}
-fig, axes = plt.subplots(len(markets), len(variants), figsize=(6 * len(variants), 3.6 * len(markets)), squeeze=False)
+fig, axes = plt.subplots(len(markets), len(variants), figsize=(5 * len(variants), 2.6 * len(markets)), squeeze=False)
 for i, market in enumerate(markets):
     for j, variant in enumerate(variants):
         d = decomp[f"{market}_{variant}"].cumsum()
@@ -82,12 +92,12 @@ code('''cols = ["market", "variant", "bars", "leverage_at_entry", "pt_apy_at_ent
         "boros_mark_apr_mean", "realised_apy", "max_drawdown", "hedge_coverage_mean", "hedge_pnl", "min_health_factor",
         "liquidations"]
 validation[cols].round(4)''')
-code('''fig, axes = plt.subplots(1, len(markets), figsize=(7 * len(markets), 3.6), squeeze=False)
-for ax, market in zip(axes[0], markets):
+code('''fig, axes = market_axes(len(markets), height=3.2)
+for ax, market in zip(axes, markets):
     for variant in variants:
         df = runs[f"{market}_{variant}"]
         ax.plot(df["timestamp"], df["net_balance"] / df["net_balance"].cummax() - 1, label=variant)
-    ax.set_title(f"{market}: drawdown"); ax.grid(alpha=0.3); ax.legend(); ax.tick_params(axis="x", rotation=30)
+    ax.set_title(f"{market}: drawdown"); ax.grid(alpha=0.3); ax.legend(fontsize=8); ax.tick_params(axis="x", rotation=30)
 plt.tight_layout()''')
 
 md("## 4. Costs\n\n`entry_cost` = equity after the entry loops minus the 100k deposit (swap fee + impact); `costs_total` = residual of the decomposition after entry (re-lever / de-lever swaps, hedge fees); turnover = bars where the debt moved by more than 1 %.")
@@ -132,8 +142,8 @@ code('''for market in markets:
     display(g.pivot_table(index="cell", columns="target_ltv", values="max_drawdown").round(4))''')
 
 md("## 6. Hedge leg: coverage, settlements and mark-to-maturity")
-code('''fig, axes = plt.subplots(1, len(markets), figsize=(7 * len(markets), 3.6), squeeze=False)
-for ax, market in zip(axes[0], markets):
+code('''fig, axes = market_axes(len(markets), height=3.2)
+for ax, market in zip(axes, markets):
     df = runs[f"{market}_boros"]
     if "BOROS_size" in df:
         cov = (df["BOROS_size"].fillna(0) * df["BOROS_underlying_price"].fillna(0)

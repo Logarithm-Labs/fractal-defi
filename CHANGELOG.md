@@ -131,8 +131,11 @@ when the observations carry `fee_growth0/1`.
   README section comparing the numbers with published figures.
 - **`examples/susde_pt_carry/`** — the sUSDe PT leveraged loan of #83 in
   three variants (plain loop, + Boros long YU, + Binance basis leg) on
-  PT-sUSDe-25SEP2025 / DAI (full life) and PT-sUSDe-26NOV2026 / USDC
-  (hourly), `grid.py` over LTV × hedge × margin share × ratio, and
+  eight instruments: six expired PT-sUSDe / PT-USDe markets (SEP2025,
+  NOV2025, FEB2026, MAY2026 maturities, ETH or BTC floating legs) held
+  to redemption and two live markets (PT-sUSDe-26NOV2026,
+  PT-sUSDS-26NOV2026) on hourly bars, `grid.py` over LTV × hedge ×
+  margin share × ratio, and
   `analysis.ipynb` (equity curves, PnL decomposition, APY, drawdown,
   costs per run).
 
