@@ -106,6 +106,14 @@ when the observations carry `fee_growth0/1`.
   quote for the post-sale LTV, loan units converted at `debt_price`,
   smoothed carry / borrow-APY gates, hold-to-expiry redemption or early
   exit.
+- **`RateHedgedLeveragedPTStrategy` / `MorphoRateHedgedLeveragedPT`** —
+  the PT loop plus a floating-rate receiver leg that offsets the loan's
+  floating cost: `RATE_HEDGE="boros"` (long yield units sized to
+  `HEDGE_RATIO × debt`, capped by the margin parked in the leg, opened
+  lazily when the market lists, re-synced after every loop action) or
+  `RATE_HEDGE="perp"` (delta-neutral spot + short perp basis leg sized by
+  its own capital, `hedge_coverage` reported); `"none"` is byte-identical
+  to `MorphoLeveragedPT`.
 - **`HedgedPTStrategy` / `PerpHedgedPT`** — long PT of a volatile
   underlying hedged with a short perp sized to the PT delta, margin
   band that re-splits capital `PT : margin = L : 1`, optional Boros
@@ -121,6 +129,12 @@ when the observations carry `fee_growth0/1`.
   `validation.csv` against the closed-form carry, a `sensitivity.py`
   grid (target LTV, loops, carry-gate smoothing, oracle model) and a
   README section comparing the numbers with published figures.
+- **`examples/susde_pt_carry/`** — the sUSDe PT leveraged loan of #83 in
+  three variants (plain loop, + Boros long YU, + Binance basis leg) on
+  PT-sUSDe-25SEP2025 / DAI (full life) and PT-sUSDe-26NOV2026 / USDC
+  (hourly), `grid.py` over LTV × hedge × margin share × ratio, and
+  `analysis.ipynb` (equity curves, PnL decomposition, APY, drawdown,
+  costs per run).
 
 ### Changed
 

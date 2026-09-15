@@ -1,0 +1,41 @@
+{
+  "susde_25sep2025": {
+    "description": "Full life to redemption: PT-sUSDe-25SEP2025 looped on Morpho PT-sUSDE/DAI; floating leg on Boros BINANCE-ETHUSDT-26SEP2025 (quotes from 2025-07-31) or a Binance ETHUSDT basis position.",
+    "chain_id": 1,
+    "pendle_market": "0xa36b60a14a1a5247912584768c6e53e1a269a9f7",
+    "pendle_name": "PT-sUSDe-25SEP2025",
+    "morpho_market": "0xc6ae8e71e11ef511acee3f6cc6ad2af67b862877d459e3789905f537c85db5e3",
+    "morpho_name": "PT-sUSDE-25SEP2025 / DAI",
+    "lltv": 0.915,
+    "start": "2025-06-05",
+    "end": "2025-09-26",
+    "bar": "day",
+    "oracle_model": "market",
+    "pt_impact_model": "rate_spread",
+    "scalar_root": 0.0,
+    "ln_fee_rate_root": 0.0,
+    "binance_ticker": "ETHUSDT",
+    "boros_market": 3,
+    "boros_name": "BINANCE-ETHUSDT-26SEP2025"
+  },
+  "susde_26nov2026": {
+    "description": "Live market on hourly bars: PT-sUSDe-26NOV2026 looped on Morpho PT-sUSDE/USDC (exact AMM replay); floating leg on Boros BINANCE-ETHUSDT-25DEC2026 or a Binance ETHUSDT basis position.",
+    "chain_id": 1,
+    "pendle_market": "0x47ad2cd1dd15739a7a035b9d3b7828d916fef77e",
+    "pendle_name": "PT-sUSDe-26NOV2026",
+    "morpho_market": "0x5613b170ded221c588b6e9637b910f49e5508680ceede207f44aa72e5c46cb05",
+    "morpho_name": "PT-sUSDE-26NOV2026 / USDC",
+    "lltv": 0.915,
+    "start": null,
+    "end": null,
+    "days_back": 55,
+    "bar": "hour",
+    "oracle_model": "market",
+    "pt_impact_model": "amm",
+    "scalar_root": 57.6,
+    "ln_fee_rate_root": 0.00098686,
+    "binance_ticker": "ETHUSDT",
+    "boros_market": 129,
+    "boros_name": "BINANCE-ETHUSDT-25DEC2026"
+  }
+}

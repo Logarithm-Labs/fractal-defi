@@ -173,10 +173,12 @@ backtest/.DS_Store
 !examples/dex_replication_backtest/results/methods_grid_results.csv
 # Reference trajectories of the Pendle PT backtests (also slow-test fixtures).
 !examples/pendle_pt_backtests/results/*.csv
+!examples/susde_pt_carry/results/*.csv
 
 # Workshop / tutorial notebooks (the ``*.ipynb`` blanket above keeps
 # scratch notebooks out of git; whitelist the curated ones explicitly).
 !examples/quick_start/quick_start.ipynb
+!examples/susde_pt_carry/analysis.ipynb
 
 *id_rsa
 *id_rsa.pub

@@ -300,8 +300,12 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         """Half loop: deploy whatever cash is left into PT collateral without borrowing."""
         return self._loop_block()[:3]
 
+    def _investable(self) -> float:
+        """Notional the loop itself deploys on entry (subclasses may park part of it elsewhere)."""
+        return self._params.INITIAL_BALANCE
+
     def _enter(self) -> List[ActionToTake]:
-        initial = self._params.INITIAL_BALANCE
+        initial = self._investable()
         if self._params.MULTIPLY_MODE == "flash":
             return self._flash_enter(initial)
         actions = [ActionToTake("PT", Action("deposit", {"amount_in_notional": initial}))]

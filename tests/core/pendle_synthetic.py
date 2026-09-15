@@ -10,7 +10,13 @@ from typing import Callable, List, Optional, Sequence, Union
 
 from fractal.core.base import Observation
 from fractal.core.base.time import SECONDS_PER_DAY, SECONDS_PER_YEAR
-from fractal.core.entities import BorosGlobalState, HyperliquidGlobalState, MorphoGlobalState, PendlePTGlobalState
+from fractal.core.entities import (
+    BorosGlobalState,
+    HyperliquidGlobalState,
+    MorphoGlobalState,
+    PendlePTGlobalState,
+    SimpleSpotExchangeGlobalState,
+)
 from fractal.core.entities.models.morpho_math import per_bar_borrow_rate
 from fractal.core.entities.models.pendle_math import linear_discount_oracle_price, pt_price_from_apy
 
@@ -111,3 +117,43 @@ def synthetic_hedged_observations(
             )
         observations.append(Observation(timestamp=ts, states=states))
     return observations
+
+
+def synthetic_rate_hedged_observations(
+    days: int = 90,
+    *,
+    bar_hours: float = 8.0,
+    implied_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.10,
+    borrow_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.05,
+    funding_rate: Union[float, Sequence[float], Callable[[int], float]] = 0.0,
+    coin_price: Union[float, Sequence[float], Callable[[int], float]] = 2_000.0,
+    boros_mark_apr: Optional[Union[float, Sequence[float], Callable[[int], float]]] = None,
+    boros_maturity: Optional[datetime] = None,
+    boros_from_bar: int = 0,
+    with_perp: bool = False,
+    base_discount: float = 0.06,
+    expiry: datetime = EXPIRY,
+    past_expiry_bars: int = 1,
+    pool_reserves: Optional[float] = 1e9,
+) -> List[Observation]:
+    """Stable PT loop (``PT`` + ``LENDING``) plus the floating-rate legs:
+    ``BOROS`` when ``boros_mark_apr`` is given (from ``boros_from_bar`` on),
+    ``SPOT`` + ``PERP`` when ``with_perp``. ``funding_rate`` is the raw
+    per-bar funding paid on every bar (8h bars = one Binance period)."""
+    base = synthetic_observations(days=days, bar_hours=bar_hours, implied_apy=implied_apy, borrow_apy=borrow_apy,
+                                  base_discount=base_discount, expiry=expiry, past_expiry_bars=past_expiry_bars,
+                                  pool_reserves=pool_reserves)
+    boros_maturity = boros_maturity or expiry
+    for i, observation in enumerate(base):
+        ts = observation.timestamp
+        price, funding = _at(coin_price, i), _at(funding_rate, i)
+        if boros_mark_apr is not None and i >= boros_from_bar:
+            observation.states["BOROS"] = BorosGlobalState(
+                seconds_to_expiry=max((boros_maturity - ts).total_seconds(), 0.0), mark_rate=_at(boros_mark_apr, i),
+                funding_rate=funding, funding_period_seconds=bar_hours * 3600, underlying_price=price,
+            )
+        if with_perp:
+            observation.states["SPOT"] = SimpleSpotExchangeGlobalState(open=price, high=price, low=price,
+                                                                       close=price, volume=0.0)
+            observation.states["PERP"] = HyperliquidGlobalState(mark_price=price, funding_rate=funding)
+    return base
