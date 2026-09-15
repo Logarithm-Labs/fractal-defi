@@ -66,9 +66,86 @@ when the observations carry `fee_growth0/1`.
   out) next to the unchanged linear `apy`, so existing grid results
   stay comparable. Logged to MLflow alongside `apy` (mean / q05 / q95 /
   cvar05 aggregates included).
+- **Pendle PT + Morpho Blue + Boros** — a fixed-term paradigm and three
+  protocol entities (supersedes #83):
+  `BaseFixedTermEntity` / `BaseFixedTermGlobalState` (`seconds_to_expiry`
+  on the global state, `is_matured`, `_check_maturity` hook);
+  `PendlePTEntity` (compounded PT price in the accounting asset,
+  `asset_price` bridge, `pyIndex` redemption haircut, `impact_model`
+  `"amm"` = `MarketMathCore` replay or `"rate_spread"`, side-effect-free
+  `quote_buy` / `quote_sell`, a buy the pool cannot fill is refused
+  rather than partially filled);
+  `MorphoEntity` (a `SimpleLendingEntity` sibling with a single LLTV,
+  oracle price for health and optional market price for PnL, Taylor
+  accrual, liquidation strictly above LLTV that closes the debt at the
+  liquidation incentive factor); `BorosEntity` (fixed-vs-floating yield
+  units in coins on `BasePerpEntity`, per-period settlement,
+  mark-to-maturity, IM/MM with rate and time floors, zero value at
+  maturity). Pure maths in `fractal.core.entities.models.{pendle_math,
+  morpho_math, boros_math}`; `fractal.core.base.time.SECONDS_PER_YEAR`
+  (ACT/365) is the single day-count home.
+- **Pendle / Morpho / Boros loaders** — `PendleMarketLoader` (`/v3`
+  history with the APY breakdown, forward paging, daily prefix where
+  hourly retention runs out, compounded `pt_price_asset`),
+  `PendleOHLCVLoader`, `get_market_info` and `read_market_state`
+  (`readState` over `eth_call` for the AMM parameters);
+  `MorphoMarketLoader` (`marketById`, per-bar borrow rate from the
+  effective APY, `lending_rate = 0` because Morpho Blue collateral earns
+  nothing, optional annual columns, `read_collateral_price`,
+  `read_linear_discount`);
+  `BorosMarketLoader` (`api-boros.pendle.finance`: candles, settlement
+  summary, underlying APR, pre-listing zeros dropped) and
+  `get_market_info`. New structs `PendleMarketHistory`,
+  `BorosMarketHistory`; `LendingHistory` gains optional
+  `utilization` / `borrow_apy` / `supply_apy` / `rate_at_target` columns.
+  Shared: `Loader._utc_index`, `_dt.annualise_funding`,
+  `_dt.require_no_nan`, `fractal.loaders._rpc.eth_call`.
+- **`LeveragedPTStrategy` / `MorphoLeveragedPT`** — PT looping (loop or
+  flash-loan multiply; `MAX_LOOPS=0` holds unlevered), LTV band
+  rebalancing with the repay amount solved on the PT entity's own sell
+  quote for the post-sale LTV, loan units converted at `debt_price`,
+  smoothed carry / borrow-APY gates, hold-to-expiry redemption or early
+  exit.
+- **`RateHedgedLeveragedPTStrategy` / `MorphoRateHedgedLeveragedPT`** —
+  the PT loop plus a floating-rate receiver leg that offsets the loan's
+  floating cost: `RATE_HEDGE="boros"` (long yield units sized to
+  `HEDGE_RATIO × debt`, capped by the margin parked in the leg, opened
+  lazily when the market lists, re-synced after every loop action) or
+  `RATE_HEDGE="perp"` (delta-neutral spot + short perp basis leg sized by
+  its own capital, `hedge_coverage` reported); `"none"` is byte-identical
+  to `MorphoLeveragedPT`.
+- **`HedgedPTStrategy` / `PerpHedgedPT`** — long PT of a volatile
+  underlying hedged with a short perp sized to the PT delta, margin
+  band that re-splits capital `PT : margin = L : 1`, optional Boros
+  yield-unit short to fix the funding (kept in sync with the perp,
+  opened lazily when the YU market lists after entry).
+- **`examples/pendle_pt_backtests/`** — real-data runs on PT-USDe-25SEP2025
+  (Morpho PT-USDe/USDe, full life), PT-sUSDe-25SEP2025 (Morpho
+  PT-sUSDE/DAI, full life through the September-2025 carry
+  compression), PT-reUSD-10DEC2026 (Morpho PT-reUSD/USDC, hourly
+  through the 2026-08-25 spike), PT-sUSDe-26NOV2026 (Morpho
+  PT-sUSDE/USDC, hourly, exact AMM replay) and PT-wstETH-30DEC2027
+  (Binance ETHUSDT perp, Boros BINANCE-ETHUSDT-25DEC2026), with
+  `validation.csv` against the closed-form carry, a `sensitivity.py`
+  grid (target LTV, loops, carry-gate smoothing, oracle model) and a
+  README section comparing the numbers with published figures.
+- **`examples/susde_pt_carry/`** — the sUSDe PT leveraged loan of #83 in
+  three variants (plain loop, + Boros long YU, + Binance basis leg) on
+  eight instruments: six expired PT-sUSDe / PT-USDe markets (SEP2025,
+  NOV2025, FEB2026, MAY2026 maturities, ETH or BTC floating legs) held
+  to redemption and two live markets (PT-sUSDe-26NOV2026,
+  PT-sUSDS-26NOV2026) on hourly bars, `grid.py` over LTV × hedge ×
+  margin share × ratio, and
+  `analysis.ipynb` (equity curves, PnL decomposition, APY, drawdown,
+  costs per run).
 
 ### Changed
 
+- **Loader structs reject numeric time arrays** (`TypeError`): epoch
+  seconds/milliseconds must be converted explicitly with
+  `pd.to_datetime(..., unit=...)` (or `Loader._utc_index`) so a unit is
+  never guessed; datetime inputs take a fast path without an object
+  round trip.
 - **Dependency floors raised** (`setup.py` and `requirements.txt` kept in
   sync; the pre-commit pylint hook pins follow): runtime
   `mlflow>=3.12.0` (was `>=3.11.1`), `requests>=2.34.0` (was

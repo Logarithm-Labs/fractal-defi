@@ -164,6 +164,8 @@ below.
 | [`examples/tau_reset/`](examples/tau_reset/) | Active Uniswap V3 LP with τ-reset rebalancing |
 | [`examples/agentic_trader/`](examples/agentic_trader/) | LLM-driven trading agent over historical klines |
 | [`examples/ml_funding_rate_forecasting/`](examples/ml_funding_rate_forecasting/) | ML pipeline: forecasting Binance funding rates with feature engineering + CatBoost |
+| [`examples/pendle_pt_backtests/`](examples/pendle_pt_backtests/) | Pendle PT looping on Morpho Blue and PT carry hedged with a perp (+ Boros funding lock) on real data |
+| [`examples/susde_pt_carry/`](examples/susde_pt_carry/) | sUSDe PT leveraged loans: plain loop, loop + Boros floating leg, loop + basis leg; parameter grid and an analysis notebook |
 
 After cloning the repo and installing the package, run an example
 directly:
@@ -172,6 +174,7 @@ directly:
 python examples/quick_start/quick_start.py
 python examples/basis/backtest.py
 python examples/tau_reset/backtest.py
+python examples/pendle_pt_backtests/leveraged_pt_backtest.py
 ```
 
 The grid-search variants (`examples/<name>/grid.py`) log results to

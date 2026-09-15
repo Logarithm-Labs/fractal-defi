@@ -9,5 +9,11 @@ Submodules
 
    fractal.strategies.basis_trading_strategy
    fractal.strategies.fixed_range_liquidity_provision
+   fractal.strategies.hedged_pt
    fractal.strategies.hyperliquid_basis
+   fractal.strategies.leveraged_pt
+   fractal.strategies.morpho_leveraged_pt
+   fractal.strategies.morpho_rate_hedged_leveraged_pt
+   fractal.strategies.perp_hedged_pt
+   fractal.strategies.rate_hedged_leveraged_pt
    fractal.strategies.tau_reset_strategy

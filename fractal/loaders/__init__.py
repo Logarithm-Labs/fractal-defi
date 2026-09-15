@@ -8,6 +8,7 @@ from fractal.loaders.binance import (
     BinancePriceLoader,
     BinanceSpotPriceLoader,
 )
+from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
@@ -15,12 +16,16 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidPerpsPricesLoader,
     HyperLiquidPerpsPricesLoader,
 )
+from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
+    BorosMarketHistory,
     FundingHistory,
     KlinesHistory,
     LendingHistory,
+    PendleMarketHistory,
     PoolHistory,
     PriceHistory,
     RateHistory,
@@ -55,6 +60,16 @@ __all__ = [
     "RateHistory",
     "LendingHistory",
     "KlinesHistory",
+    "PendleMarketHistory",
+    "PendleMarketInfo",
+    "PendleMarketState",
+    "PendleMarketLoader",
+    "PendleOHLCVLoader",
+    "MorphoMarketInfo",
+    "MorphoMarketLoader",
+    "BorosMarketHistory",
+    "BorosMarketInfo",
+    "BorosMarketLoader",
     "TrajectoryBundle",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",
