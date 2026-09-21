@@ -141,7 +141,7 @@ def test_collateral_price_series_and_cache_round_trip(monkeypatch, tmp_path):
 def test_read_linear_discount_decodes_the_feed():
     class _Rpc:
         def post(self, url, json=None, timeout=None, headers=None):
-            assert json["method"] == "eth_call" and json["params"][0]["data"] == "0x61d5a1f7"
+            assert json["method"] == "eth_call" and json["params"][0]["data"] == "0x598e5451"
             return {"jsonrpc": "2.0", "id": 1, "result": "0x" + f"{int(0.06 * 1e18):064x}"}
 
     assert read_linear_discount("http://rpc", "0x" + "cd" * 20, http=_Rpc()) == pytest.approx(0.06)

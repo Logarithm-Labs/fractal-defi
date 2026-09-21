@@ -1,8 +1,9 @@
-"""Three variants of the sUSDe PT carry on every market in ``markets.json``:
-the plain Morpho loop, the loop with a Boros long-YU floating leg, and the
-loop with a delta-neutral Binance basis leg.
+"""The sUSDe PT carry on every market in ``markets.json``: the plain Morpho
+loop and the loop with a long Boros yield unit sized as a hedge ratio on the
+PT's mark-to-market.
 
-Writes ``results/<market>_<variant>.csv`` and ``results/validation.csv``.
+Writes ``results/validation.csv`` (one row per market and variant) and the
+trajectory of the showcase market as ``results/<market>_<variant>.csv``.
 Usage: ``python run.py [market_key ...]``
 """
 import os
@@ -13,10 +14,12 @@ from helpers import RESULTS_DIR, VARIANTS, build_frame, load_registry, observati
 
 from fractal.strategies import MorphoRateHedgedLeveragedPT, MorphoRateHedgedLeveragedPTParams
 
+SHOWCASE = "susde_27nov2025_usds"  # the one trajectory kept under version control
 BASE = dict(INITIAL_BALANCE=100_000.0, TARGET_LTV=0.80, MAX_LOOPS=8, REBALANCE_LTV_BAND=(0.70, 0.88),
             MIN_HEALTH_FACTOR=1.03, MIN_CARRY_SPREAD=-0.05, MAX_BORROW_APY=0.40, MIN_DAYS_TO_MATURITY_AT_ENTRY=1,
             PT_FEE_LN_RATE=0.001, PT_IMPACT_LN_RATE_PER_SHARE=0.075,
-            HEDGE_MARGIN_SHARE=0.20, HEDGE_RATIO=1.0, HEDGE_REBALANCE_THRESHOLD=0.05, PERP_TARGET_LEVERAGE=2.0)
+            HEDGE_SIZING="beta", HEDGE_BETA=0.10, HEDGE_MARGIN_SHARE=0.10, HEDGE_REBALANCE_THRESHOLD=0.05,
+            BOROS_EXIT_POLICY="settle")
 
 
 def make_params(cfg: dict, variant: str, **overrides) -> dict:
@@ -30,8 +33,8 @@ def make_params(cfg: dict, variant: str, **overrides) -> dict:
 def run_variant(key: str, cfg: dict, frame, variant: str, **overrides) -> tuple:
     params = make_params(cfg, variant, **overrides)
     strategy = MorphoRateHedgedLeveragedPT(params=MorphoRateHedgedLeveragedPTParams(**params))
-    df = strategy.run(observations(frame, cfg, variant)).to_dataframe()
-    return df, summarise(key, variant, cfg, frame, df, params)
+    result = strategy.run(observations(frame, cfg, variant))
+    return result, summarise(key, variant, cfg, frame, result, params)
 
 
 if __name__ == "__main__":
@@ -43,8 +46,9 @@ if __name__ == "__main__":
         cfg = registry[key]
         frame, _, _ = build_frame(cfg, *window(cfg))
         for variant in VARIANTS:
-            df, summary = run_variant(key, cfg, frame, variant)
-            df.to_csv(os.path.join(RESULTS_DIR, f"{key}_{variant}.csv"), index=False)
+            result, summary = run_variant(key, cfg, frame, variant)
+            if key == SHOWCASE:
+                result.to_dataframe().to_csv(os.path.join(RESULTS_DIR, f"{key}_{variant}.csv"), index=False)
             rows.append(summary)
     out = pd.DataFrame(rows)
     path = os.path.join(RESULTS_DIR, "validation.csv")

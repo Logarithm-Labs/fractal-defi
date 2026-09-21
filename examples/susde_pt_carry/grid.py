@@ -1,44 +1,64 @@
-"""Parameter grid for the sUSDe PT carry: target LTV × hedge kind × hedge
-margin share × hedge ratio. Writes ``results/grid_<market>.csv``.
+"""Parameter grid for the sUSDe PT carry through the standard
+:class:`DefaultPipeline` (one MLflow run per cell): target LTV, hedge kind,
+hedge ratio, margin share and exit policy.
 
-Usage: ``python grid.py [market_key ...]``
+Usage: ``MLFLOW_URI=... python grid.py [market_key]`` (default ``susde_27nov2025_usds``)
 """
-import itertools
 import os
 import sys
+import warnings
 
-import pandas as pd
-from helpers import RESULTS_DIR, build_frame, load_registry, window
-from run import run_variant
+from helpers import build_frame, load_registry, observations, window
+from run import make_params
+from sklearn.model_selection import ParameterGrid
 
-LTVS = (0.60, 0.70, 0.80, 0.86)
-SHARES = (0.10, 0.30)
-RATIOS = (0.5, 1.0)
+from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
+from fractal.strategies import MorphoRateHedgedLeveragedPT
+
+warnings.filterwarnings("ignore")
 
 
-def grid(key: str, cfg: dict) -> pd.DataFrame:
-    frame, _, _ = build_frame(cfg, *window(cfg))
-    rows = []
-    for ltv in LTVS:
-        band = (round(ltv - 0.10, 2), round(min(ltv + 0.08, 0.90), 2))
-        _, row = run_variant(key, cfg, frame, "none", TARGET_LTV=ltv, REBALANCE_LTV_BAND=band)
-        rows.append(dict(row, hedge_margin_share=0.0, hedge_ratio=0.0))
-        for variant, share, ratio in itertools.product(("boros", "perp"), SHARES, RATIOS):
-            _, row = run_variant(key, cfg, frame, variant, TARGET_LTV=ltv, REBALANCE_LTV_BAND=band,
-                                 HEDGE_MARGIN_SHARE=share, HEDGE_RATIO=ratio)
-            rows.append(dict(row, hedge_margin_share=share, hedge_ratio=ratio))
-            print(f"{key} ltv={ltv} {variant} share={share} ratio={ratio} apy={row['realised_apy']:+.4f} "
-                  f"cov={row['hedge_coverage_mean']:.2f} mdd={row['max_drawdown']:+.4f}", flush=True)
-    return pd.DataFrame(rows)
+def build_grid(cfg: dict) -> list:
+    raw_grid = ParameterGrid({
+        "TARGET_LTV": [0.60, 0.70, 0.80, 0.86],
+        "RATE_HEDGE": ["none", "boros"],
+        "HEDGE_BETA": [0.05, 0.10, 0.20],
+        "HEDGE_MARGIN_SHARE": [0.05, 0.10],
+        "BOROS_EXIT_POLICY": ["settle", "close"],
+    })
+    valid_grid = []
+    for cell in raw_grid:
+        if cell["RATE_HEDGE"] == "none" and (cell["HEDGE_BETA"] != 0.10 or cell["HEDGE_MARGIN_SHARE"] != 0.05
+                                             or cell["BOROS_EXIT_POLICY"] != "settle"):
+            continue  # the plain loop has no hedge parameters
+        ltv = cell["TARGET_LTV"]
+        valid_grid.append(make_params(cfg, cell["RATE_HEDGE"], **cell,
+                                      REBALANCE_LTV_BAND=(round(ltv - 0.10, 2), round(min(ltv + 0.08, 0.90), 2))))
+    print(f"Length of valid grid: {len(valid_grid)}")
+    return valid_grid
 
 
 if __name__ == "__main__":
     registry = load_registry()
-    keys = sys.argv[1:] or list(registry)
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    for key in keys:
-        out = grid(key, registry[key])
-        out.to_csv(os.path.join(RESULTS_DIR, f"grid_{key}.csv"), index=False)
-        pd.set_option("display.width", 260)
-        print(out[["variant", "target_ltv", "hedge_margin_share", "hedge_ratio", "leverage_at_entry", "realised_apy",
-                   "max_drawdown", "hedge_coverage_mean", "hedge_pnl", "liquidations"]].round(4).to_string(index=False))
+    key = sys.argv[1] if len(sys.argv) > 1 else "susde_27nov2025_usds"
+    cfg = registry[key]
+    mlflow_uri = os.getenv("MLFLOW_URI")
+    if not mlflow_uri:
+        raise ValueError("MLFLOW_URI isn't set.")
+    start, end = window(cfg)
+    frame, _, _ = build_frame(cfg, start, end)
+    obs = observations(frame, cfg, "boros")  # a superset: the plain loop ignores the BOROS state
+    assert len(obs) > 0
+    experiment_config = ExperimentConfig(
+        strategy_type=MorphoRateHedgedLeveragedPT,
+        backtest_observations=obs,
+        params_grid=build_grid(cfg),
+        debug=False,
+    )
+    mlflow_config = MLflowConfig(
+        mlflow_uri=mlflow_uri,
+        experiment_name=f"susde_pt_carry_{key}_{start:%Y-%m-%d}_{end:%Y-%m-%d}",
+        aws_access_key_id=os.getenv("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.getenv("AWS_SECRET_ACCESS_KEY"),
+    )
+    DefaultPipeline(experiment_config=experiment_config, mlflow_config=mlflow_config).run()

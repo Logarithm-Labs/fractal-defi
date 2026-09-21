@@ -32,10 +32,9 @@ def run_market(key: str, cfg: dict) -> dict:
     ))
     observations = leveraged_observations(frame, cfg)
     result = strategy.run(observations)
-    df = result.to_dataframe()
     os.makedirs(RESULTS_DIR, exist_ok=True)
-    df.to_csv(os.path.join(RESULTS_DIR, f"leveraged_{key}.csv"), index=False)
-    summary = leveraged_summary(key, cfg, frame, df, TARGET_LTV)
+    result.to_dataframe().to_csv(os.path.join(RESULTS_DIR, f"leveraged_{key}.csv"), index=False)
+    summary = leveraged_summary(key, cfg, frame, result, TARGET_LTV)
     summary["expiry"] = expiry
     return summary
 

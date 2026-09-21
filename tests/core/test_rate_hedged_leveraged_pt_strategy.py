@@ -1,8 +1,6 @@
 """L1 + L2 tests for :class:`RateHedgedLeveragedPTStrategy` / :class:`MorphoRateHedgedLeveragedPT`:
-params, entity checks, action lists, hedge sizing, and the closed-form
-behaviour of both floating-rate legs on synthetic paths."""
-import math
-
+params, entity checks, sizing rules, lazy open, exit policies and the
+closed-form behaviour of the overlay on synthetic paths."""
 import pytest
 
 from fractal.core.base import Observation
@@ -18,7 +16,7 @@ from fractal.strategies import (
 from tests.core.pendle_synthetic import EXPIRY, synthetic_rate_hedged_observations
 
 ZERO_FEES = dict(PT_IMPACT_MODEL="rate_spread", PT_FEE_LN_RATE=0.0, PT_IMPACT_LN_RATE_PER_SHARE=0.0,
-                 BOROS_TAKER_FEE_RATE=0.0, BOROS_SETTLE_FEE_RATE=0.0, PERP_TRADING_FEE=0.0, SPOT_TRADING_FEE=0.0)
+                 BOROS_TAKER_FEE_RATE=0.0, BOROS_SETTLE_FEE_RATE=0.0)
 
 
 def params(**overrides) -> MorphoRateHedgedLeveragedPTParams:
@@ -33,8 +31,8 @@ def strategy(**overrides) -> MorphoRateHedgedLeveragedPT:
     return MorphoRateHedgedLeveragedPT(params=params(**overrides))
 
 
-def names(actions):
-    return [(a.entity_name, a.action.action) for a in actions]
+def boros(**overrides):
+    return strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.25, **overrides)
 
 
 @pytest.mark.core
@@ -42,37 +40,19 @@ def test_wiring_and_params_class():
     assert MorphoRateHedgedLeveragedPT.PARAMS_CLS is MorphoRateHedgedLeveragedPTParams
     assert issubclass(MorphoRateHedgedLeveragedPT, RateHedgedLeveragedPTStrategy)
     assert issubclass(MorphoRateHedgedLeveragedPT, MorphoLeveragedPT)
-    plain = strategy()
-    assert plain.hedge_kind == "none" and plain.boros is None and plain.perp is None
-    assert strategy(RATE_HEDGE="boros").boros is not None
-    with_perp = strategy(RATE_HEDGE="perp")
-    assert with_perp.spot is not None and with_perp.perp is not None
+    assert strategy().hedge_kind == "none" and strategy().boros is None
+    assert boros().boros is not None
 
 
 @pytest.mark.core
 @pytest.mark.parametrize("overrides", [
-    {"RATE_HEDGE": "swap"}, {"HEDGE_MARGIN_SHARE": 1.0}, {"HEDGE_RATIO": -0.1}, {"HEDGE_MARGIN_BUFFER": 0.9},
-    {"PERP_LEVERAGE_BAND": (3.0, 4.0)}, {"RATE_HEDGE": "boros", "HEDGE_MARGIN_SHARE": 0.0},
+    {"RATE_HEDGE": "perp"}, {"HEDGE_SIZING": "dv01"}, {"BOROS_EXIT_POLICY": "roll"}, {"HEDGE_MARGIN_SHARE": 1.0},
+    {"HEDGE_RATIO": -0.1}, {"HEDGE_BETA": -0.1}, {"HEDGE_MARGIN_BUFFER": 0.9},
+    {"RATE_HEDGE": "boros", "HEDGE_MARGIN_SHARE": 0.0},
 ])
 def test_param_validation(overrides):
     with pytest.raises(LeveragedPTException):
         strategy(**overrides)
-
-
-@pytest.mark.core
-def test_entry_lists_per_hedge_kind():
-    loop = names(strategy(MAX_LOOPS=1)._enter())
-    boros = strategy(RATE_HEDGE="boros", MAX_LOOPS=1)
-    boros.step(synthetic_rate_hedged_observations(days=10, boros_mark_apr=0.08)[0])
-    assert boros._deposited
-    perp = strategy(RATE_HEDGE="perp", MAX_LOOPS=1)
-    obs = synthetic_rate_hedged_observations(days=10, with_perp=True)
-    perp.step(obs[0])
-    # the loop is the plain one; the hedge deposit comes first and the sizing last
-    assert loop[0] == ("PT", "deposit")
-    assert perp.spot.balance + perp.perp.balance == pytest.approx(1_000.0, rel=1e-9)
-    assert perp.perp.size < 0 and perp.spot.internal_state.amount == pytest.approx(-perp.perp.size)
-    assert boros.boros.balance == pytest.approx(1_000.0, rel=1e-6) or boros.boros.size > 0
 
 
 @pytest.mark.core
@@ -87,36 +67,51 @@ def test_plain_loop_matches_leveraged_pt_exactly():
 
 
 @pytest.mark.core
-def test_boros_leg_is_sized_to_the_debt_and_follows_it():
-    strat = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.25, HEDGE_RATIO=1.0)
+def test_beta_sizing_scales_with_the_pt_value_and_follows_it():
+    strat = boros(HEDGE_BETA=0.10)
     obs = synthetic_rate_hedged_observations(days=60, boros_mark_apr=0.05, coin_price=2_000.0)
     strat.step(obs[0])
-    debt = strat.lending.debt_value
-    assert debt > 0 and strat.boros.size == pytest.approx(debt / 2_000.0, rel=1e-9)
-    assert strat.hedge_coverage() == pytest.approx(1.0, rel=1e-9)
-    # loop above the band → repay to target → the YU follows the smaller debt in the same step
-    shocked = obs[1]
+    assert strat.pt_value() > 0
+    assert strat.hedge_notional() == pytest.approx(0.10 * strat.pt_value(), rel=1e-9)
+    assert strat.hedge_coverage() == pytest.approx(0.10, rel=1e-9)
+    value = strat.pt_value()
+    shocked = obs[1]  # above the band → repay to target → the YU follows the smaller PT value
     shocked.states["LENDING"].collateral_price *= 0.85
     shocked.states["LENDING"].collateral_market_price *= 0.85
     strat.step(shocked)
-    assert strat.lending.debt_value < debt
-    assert strat.hedge_coverage() == pytest.approx(1.0, rel=1e-6)
+    assert strat.pt_value() < value
+    assert strat.hedge_coverage() == pytest.approx(0.10, rel=1e-6)
 
 
 @pytest.mark.core
-def test_boros_size_is_capped_by_the_margin_it_holds():
-    strat = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.02, HEDGE_RATIO=1.0, BOROS_MAX_LEVERAGE=1.55)
-    obs = synthetic_rate_hedged_observations(days=120, boros_mark_apr=0.10, coin_price=2_000.0)
-    strat.step(obs[0])
-    boros = strat.boros
+def test_duration_scaled_beta_and_debt_sizing():
+    scaled = boros(HEDGE_BETA=0.10, HEDGE_DURATION_SCALED=True)
+    late = EXPIRY.replace(month=12, day=31)
+    obs = synthetic_rate_hedged_observations(days=60, boros_mark_apr=0.05, boros_maturity=late)
+    scaled.step(obs[0])
+    ratio = scaled.pt.years_to_expiry / scaled.boros.years_to_expiry
+    assert scaled.hedge_notional() == pytest.approx(0.10 * scaled.pt_value() * ratio, rel=1e-9)
+    debt = boros(HEDGE_SIZING="debt", HEDGE_RATIO=0.5)
+    debt.step(synthetic_rate_hedged_observations(days=60, boros_mark_apr=0.05)[0])
+    assert debt.hedge_notional() == pytest.approx(0.5 * debt.lending.debt_value, rel=1e-9)
+    assert debt.hedge_coverage() == pytest.approx(0.5, rel=1e-9)
+
+
+@pytest.mark.core
+def test_size_is_capped_by_the_margin_the_leg_holds():
+    strat = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.01, HEDGE_SIZING="debt", HEDGE_RATIO=1.0,
+                     BOROS_MAX_LEVERAGE=1.55)
+    strat.step(synthetic_rate_hedged_observations(days=120, boros_mark_apr=0.10)[0])
     assert 0 < strat.hedge_coverage() < 1.0
-    assert boros.balance >= boros.initial_margin * 1.10 * (1 - 1e-9)
+    assert strat.boros.balance >= strat.boros.initial_margin * 1.10 * (1 - 1e-9)
 
 
 @pytest.mark.core
-def test_boros_leg_opens_lazily_and_closes_on_unwind():
-    strat = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.25)
-    obs = synthetic_rate_hedged_observations(days=30, boros_mark_apr=0.05, boros_from_bar=5)
+def test_leg_opens_lazily_and_is_settled_to_its_own_maturity_by_default():
+    strat = boros()
+    late_maturity = EXPIRY.replace(month=12, day=31)
+    obs = synthetic_rate_hedged_observations(days=30, boros_mark_apr=0.05, boros_from_bar=5,
+                                             boros_maturity=late_maturity)
     strat.step(obs[0])
     assert strat.boros.size == 0 and strat.boros.balance == pytest.approx(2_500.0)
     for observation in obs[1:5]:
@@ -127,53 +122,45 @@ def test_boros_leg_opens_lazily_and_closes_on_unwind():
     for observation in obs[6:]:
         strat.step(observation)
     assert strat._exited and strat.lending.internal_state.borrowed == 0.0
-    assert strat.boros.size == 0.0
+    assert strat.boros.size > 0 and not strat.boros.is_matured  # "settle": held past the PT's unwind
+    assert strat.predict() == []
+    closed = boros(BOROS_EXIT_POLICY="close")
+    for observation in synthetic_rate_hedged_observations(days=30, boros_mark_apr=0.05, boros_maturity=late_maturity):
+        closed.step(observation)
+    assert closed._exited and closed.boros.size == 0.0
 
 
 @pytest.mark.core
-def test_boros_long_yu_turns_the_floating_cost_into_the_fixed_rate():
-    """Funding == borrow rate every bar, zero fees: the hedged loop's carry
-    equals a loop borrowing at the Boros fixed rate (on the hedged share)."""
-    days, borrow, fixed = 90, 0.12, 0.06
-    per_bar = borrow * 8 / (24 * 365)  # raw 8h funding equal to the borrow rate
-    kw = dict(days=days, borrow_apy=borrow, implied_apy=0.10, funding_rate=per_bar, coin_price=2_000.0)
-    hedged = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.30, BOROS_MAX_LEVERAGE=50.0)
-    out = hedged.run(synthetic_rate_hedged_observations(boros_mark_apr=fixed, **kw)).to_dataframe()
-    unhedged = strategy(RATE_HEDGE="none").run(synthetic_rate_hedged_observations(**kw)).to_dataframe()
-    assert (out["BOROS_size"].iloc[1:-2] > 0).all()
-    debt = out["LENDING_borrowed"].iloc[1:-2].mean()
-    years = days / 365
-    # the YU receives borrow − fixed on the debt (≈ full coverage) over the hold
-    saved = debt * (borrow - fixed) * years
-    gain = out["net_balance"].iloc[-1] - 7_000.0 - (unhedged["net_balance"].iloc[-1] - 10_000.0) * 0.7
-    assert gain == pytest.approx(saved + 3_000.0, rel=0.03)
+def test_long_yu_offsets_the_pt_mark_to_market():
+    """Implied APY and the Boros mark jump together: with ``HEDGE_DURATION_SCALED``
+    and ``HEDGE_BETA=1`` the yield unit's gain matches the PT's mark-down."""
+    days = 60
+    jump_bar = 30
 
+    def implied(i):
+        return 0.05 if i < jump_bar else 0.08
 
-@pytest.mark.core
-def test_perp_basis_leg_is_delta_neutral_and_receives_funding():
-    def price(i):
-        return 2_000.0 * (1.0 + 0.4 * math.sin(i / 7.0))
+    def mark(i):
+        return 0.05 if i < jump_bar else 0.08
 
-    strat = strategy(RATE_HEDGE="perp", HEDGE_MARGIN_SHARE=0.30, PERP_TARGET_LEVERAGE=2.0,
-                     HEDGE_REBALANCE_THRESHOLD=0.02)
-    obs = synthetic_rate_hedged_observations(days=60, with_perp=True, coin_price=price, funding_rate=0.0002,
-                                             borrow_apy=0.0, implied_apy=0.0)
-    out = strat.run(obs).to_dataframe()
-    leg = out["SPOT_balance"] + out["PERP_balance"]
-    assert (out["PERP_positions_0_amount"].fillna(0).iloc[1:-2] < 0).all()
-    assert leg.iloc[-2] > 3_000.0  # funding received, no price PnL
-    assert leg.iloc[1:-1].pct_change().abs().max() < 0.01  # price swings of ±40 % leave the leg flat
-    assert 0 < strat.hedge_coverage() <= 1.0 or strat._exited
+    kw = dict(days=days, implied_apy=implied, borrow_apy=0.0, funding_rate=0.0)
+    hedged = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.30, HEDGE_BETA=1.0, HEDGE_DURATION_SCALED=True,
+                      BOROS_MAX_LEVERAGE=50.0, HEDGE_REBALANCE_THRESHOLD=1.0)
+    out = hedged.run(synthetic_rate_hedged_observations(boros_mark_apr=mark, **kw)).to_dataframe()
+    plain = strategy(RATE_HEDGE="none").run(synthetic_rate_hedged_observations(**kw)).to_dataframe()
+    before, after = jump_bar - 1, jump_bar  # ``implied``/``mark`` are indexed by bar
+    pt_move = plain["net_balance"].iloc[after] - plain["net_balance"].iloc[before]
+    hedged_move = out["net_balance"].iloc[after] - out["net_balance"].iloc[before]
+    assert pt_move < 0
+    assert hedged_move > pt_move and abs(hedged_move) < 0.5 * abs(pt_move)
 
 
 @pytest.mark.core
 def test_partial_observation_without_boros_is_accepted_after_entry():
-    strat = strategy(RATE_HEDGE="boros", HEDGE_MARGIN_SHARE=0.25)
+    strat = boros()
     obs = synthetic_rate_hedged_observations(days=30, boros_mark_apr=0.05)
     strat.step(obs[0])
     bare = Observation(timestamp=obs[1].timestamp,
                        states={"PT": obs[1].states["PT"], "LENDING": obs[1].states["LENDING"]})
     strat.step(bare)
-    assert strat.boros.size > 0
-    assert strat.boros.global_state.seconds_to_expiry > 0
-    assert isinstance(strat.boros.global_state, BorosGlobalState) and EXPIRY is not None
+    assert strat.boros.size > 0 and isinstance(strat.boros.global_state, BorosGlobalState)

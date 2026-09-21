@@ -29,15 +29,15 @@ import pandas as pd
 
 from fractal.loaders._dt import SECONDS_PER_YEAR, require_no_nan, to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient
-from fractal.loaders._rpc import decode_words, eth_call
 from fractal.loaders.base_loader import Loader, LoaderType
+from fractal.loaders.rpc import decode_words, eth_call, function_selector
 from fractal.loaders.structs import LendingHistory, PriceHistory
 
 MORPHO_GRAPHQL_URL = "https://api.morpho.org/graphql"
 _REQUEST_SLEEP_SECONDS = 0.1
 _MARKET_ID_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
 _INTERVAL_SECONDS = {"HOUR": 3600, "DAY": 86_400}
-_BASE_DISCOUNT_SELECTOR = "0x61d5a1f7"  # baseDiscountPerYear()
+_BASE_DISCOUNT_SELECTOR = function_selector("baseDiscountPerYear()")
 
 _INFO_QUERY = """
 query MarketInfo($id: String!, $cid: Int!) {

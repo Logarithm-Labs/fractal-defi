@@ -19,6 +19,7 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
+from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
     BorosMarketHistory,
@@ -91,6 +92,8 @@ __all__ = [
     "AerodromeSlipstreamPoolHourDataLoader",
     "UniswapV3SwapsLoader",
     "RpcLoaderException",
+    "JsonRpcClient",
+    "RpcCallError",
     "SwapsHistory",
     "StETHLoader",
     "ConstantFundingsLoader",

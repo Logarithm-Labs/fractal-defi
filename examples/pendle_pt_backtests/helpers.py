@@ -4,12 +4,12 @@ import json
 import math
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 import pandas as pd
 
 from fractal.core.base import Observation
-from fractal.core.base.time import SECONDS_PER_DAY, SECONDS_PER_YEAR
+from fractal.core.base.strategy import StrategyResult
 from fractal.core.entities import BorosGlobalState, HyperliquidGlobalState, MorphoGlobalState, PendlePTGlobalState
 from fractal.core.entities.models.pendle_math import linear_discount_oracle_price
 from fractal.loaders import (
@@ -168,21 +168,15 @@ def hedged_observations(frame: pd.DataFrame, cfg: dict, use_boros: bool) -> List
 
 
 # ------------------------------------------------------------ analysis
-def realised_apy(df: pd.DataFrame) -> float:
-    """Compounded annual return of ``net_balance`` over the run."""
-    start, end = df["timestamp"].iloc[0], df["timestamp"].iloc[-1]
-    years = (end - start).total_seconds() / SECONDS_PER_YEAR
-    if years <= 0:
-        return float("nan")
-    return (df["net_balance"].iloc[-1] / df["net_balance"].iloc[0]) ** (1 / years) - 1
-
-
 def closed_form_leveraged_apy(leverage: float, pt_apy: float, borrow_apy: float) -> float:
     """``L · y_pt − (L − 1) · r_borrow``."""
     return leverage * pt_apy - (leverage - 1.0) * borrow_apy
 
 
-def leveraged_summary(key: str, cfg: dict, frame: pd.DataFrame, df: pd.DataFrame, target_ltv: float) -> dict:
+def leveraged_summary(key: str, cfg: dict, frame: pd.DataFrame, result: StrategyResult, target_ltv: float) -> dict:
+    """One validation row: entry leverage, closed-form carry and the library's metrics."""
+    df = result.to_dataframe()
+    metrics = result.get_default_metrics()
     first = df.iloc[0]
     pt_units = first["LENDING_collateral"] + first["PT_amount"]
     p0 = float(frame["pt_price_asset"].iloc[0])
@@ -195,18 +189,10 @@ def leveraged_summary(key: str, cfg: dict, frame: pd.DataFrame, df: pd.DataFrame
         "target_ltv": target_ltv, "leverage_at_entry": leverage,
         "pt_apy_at_entry": float(frame["implied_apy"].iloc[0]),
         "borrow_apy_mean": float(borrow_apys.mean()) if len(borrow_apys) else float("nan"),
-        "realised_apy": realised_apy(df),
+        "realised_apy": metrics.cagr, "max_drawdown": metrics.max_drawdown, "sharpe": metrics.sharpe,
         "closed_form_apy": closed_form_leveraged_apy(leverage, float(frame["implied_apy"].iloc[0]),
                                                      float(borrow_apys.mean()) if len(borrow_apys) else 0.0),
         "final_equity": float(df["net_balance"].iloc[-1]), "liquidations": int(df["LENDING_liquidation_count"].max()),
         "min_health_factor": float((df["LENDING_collateral"] * df["LENDING_collateral_price"] * cfg["lltv"]
                                     / df["LENDING_borrowed"].replace(0, float("nan"))).min()),
     }
-
-
-def days_between(a: datetime, b: datetime) -> float:
-    return (b - a).total_seconds() / SECONDS_PER_DAY
-
-
-def env_data_path() -> Optional[str]:
-    return os.environ.get("DATA_PATH") or None

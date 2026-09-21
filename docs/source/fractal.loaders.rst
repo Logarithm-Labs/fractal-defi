@@ -25,4 +25,5 @@ Submodules
    fractal.loaders.hyperliquid
    fractal.loaders.morpho
    fractal.loaders.pendle
+   fractal.loaders.rpc
    fractal.loaders.structs

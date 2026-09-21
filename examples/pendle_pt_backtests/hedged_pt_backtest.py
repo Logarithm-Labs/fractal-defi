@@ -10,7 +10,7 @@ import os
 import sys
 
 import pandas as pd
-from helpers import RESULTS_DIR, build_hedged_frame, hedged_observations, load_registry, realised_apy, window
+from helpers import RESULTS_DIR, build_hedged_frame, hedged_observations, load_registry, window
 
 from fractal.strategies import PerpHedgedPT, PerpHedgedPTParams
 
@@ -30,7 +30,8 @@ def run_market(key: str, cfg: dict) -> list:
         ))
         run_frame = frame.dropna(subset=["boros_mark_apr"]) if use_boros else frame  # Boros leg needs a quote at entry
         observations = hedged_observations(run_frame, cfg, use_boros)
-        df = strategy.run(observations).to_dataframe()
+        result = strategy.run(observations)
+        df, metrics = result.to_dataframe(), result.get_default_metrics()
         tag = "boros" if use_boros else "perp"
         os.makedirs(RESULTS_DIR, exist_ok=True)
         df.to_csv(os.path.join(RESULTS_DIR, f"hedged_{key}_{tag}.csv"), index=False)
@@ -40,7 +41,8 @@ def run_market(key: str, cfg: dict) -> list:
             "bars": len(df), "start": df["timestamp"].iloc[0], "end": df["timestamp"].iloc[-1],
             "target_ltv": float("nan"), "leverage_at_entry": 2.0,
             "pt_apy_at_entry": float(run_frame["implied_apy"].iloc[0]), "borrow_apy_mean": float("nan"),
-            "realised_apy": realised_apy(df), "closed_form_apy": float("nan"),
+            "realised_apy": metrics.cagr, "max_drawdown": metrics.max_drawdown, "sharpe": metrics.sharpe,
+            "closed_form_apy": float("nan"),
             "final_equity": float(df["net_balance"].iloc[-1]), "liquidations": 0,
             "min_health_factor": float("nan"),
             "spot_move": float(run_frame["spot"].iloc[-1] / run_frame["spot"].iloc[0] - 1),

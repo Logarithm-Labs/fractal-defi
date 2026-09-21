@@ -30,8 +30,8 @@ import pandas as pd
 
 from fractal.loaders._dt import SECONDS_PER_YEAR, require_no_nan, to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient
-from fractal.loaders._rpc import as_signed, decode_words, eth_call
 from fractal.loaders.base_loader import Loader, LoaderType
+from fractal.loaders.rpc import as_signed, decode_words, encode_address, eth_call, function_selector
 from fractal.loaders.structs import KlinesHistory, PendleMarketHistory
 from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 
@@ -41,7 +41,7 @@ _REQUEST_SLEEP_SECONDS = 0.65  # 100 CU/min on the free tier
 _TIME_FRAMES = {"hour": 3600, "day": 86_400, "week": 7 * 86_400}
 _OHLCV_TIME_FRAMES = {"hour": 3600, "day": 86_400, "week": 7 * 86_400}
 _OHLCV_ROW_CAP = 1440
-_READ_STATE_SELECTOR = "0x1a6e2a2c"  # readState(address)
+_READ_STATE_SELECTOR = function_selector("readState(address)")
 
 __all__ = [
     "PENDLE_API",
@@ -151,7 +151,7 @@ def read_market_state(
 ) -> PendleMarketState:
     """One ``eth_call`` to ``readState(router)``; token amounts are returned raw (18-dec WAD)."""
     market = validate_evm_address(market_address, field="market_address")
-    data = _READ_STATE_SELECTOR + router.lower().replace("0x", "").rjust(64, "0")
+    data = _READ_STATE_SELECTOR + encode_address(router)
     words = decode_words(eth_call(rpc_url, market, data, block=block, http=http), 9)
     return PendleMarketState(
         total_pt=as_signed(words[0]) / 1e18,

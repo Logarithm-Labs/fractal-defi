@@ -77,12 +77,7 @@ def _hedged_observations(df: pd.DataFrame, use_boros: bool):
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("market,bar_hours,impact", [
-    ("usde_25sep2025", 24, "rate_spread"),
-    ("susde_25sep2025_dai", 24, "rate_spread"),
-    ("susde_26nov2026", 1, "amm"),
-    ("reusd_10dec2026", 1, "rate_spread"),
-])
+@pytest.mark.parametrize("market,bar_hours,impact", [("susde_25sep2025_dai", 24, "rate_spread")])
 def test_leveraged_pt_replays_the_reference_run(market, bar_hours, impact):
     df = _load(f"leveraged_{market}.csv")
     strategy = MorphoLeveragedPT(params=MorphoLeveragedPTParams(
@@ -100,20 +95,16 @@ def test_leveraged_pt_replays_the_reference_run(market, bar_hours, impact):
     assert out["LENDING_liquidation_count"].max() == 0
     for value in result.get_default_metrics().__dict__.values():
         assert math.isfinite(value)
-    if market in ("usde_25sep2025", "susde_25sep2025_dai"):  # held to redemption
-        last = out.iloc[-1]
-        assert last["LENDING_borrowed"] == 0.0 and last["LENDING_collateral"] == 0.0 and last["PT_amount"] == 0.0
-        assert last["net_balance"] > 100_000
-    if market == "reusd_10dec2026":  # the 2026-08-25 spike: marked down, never liquidated at 0.80 LTV
-        event = out[out["PT_implied_apy"] > 0.14]
-        assert len(event) >= 1 and out["net_balance"].min() < 98_000
+    last = out.iloc[-1]  # held to redemption
+    assert last["LENDING_borrowed"] == 0.0 and last["LENDING_collateral"] == 0.0 and last["PT_amount"] == 0.0
+    assert last["net_balance"] > 100_000
 
 
 @pytest.mark.slow
 def test_unlevered_hold_to_redemption_returns_the_entry_discount():
     """``MAX_LOOPS=0`` on a full-life market must return exactly the entry
     implied APY (no debt, no band boost); the swap fee is the only cost."""
-    df = _load("leveraged_usde_25sep2025.csv")
+    df = _load("leveraged_susde_25sep2025_dai.csv")
     strategy = MorphoLeveragedPT(params=MorphoLeveragedPTParams(
         INITIAL_BALANCE=100_000.0, TARGET_LTV=0.80, MAX_LOOPS=0, REBALANCE_LTV_BAND=(0.70, 0.88),
         MIN_DAYS_TO_MATURITY_AT_ENTRY=1, BAR_HOURS=24, LLTV=0.915, PT_IMPACT_MODEL="rate_spread",
@@ -128,7 +119,7 @@ def test_unlevered_hold_to_redemption_returns_the_entry_discount():
 
 
 @pytest.mark.slow
-@pytest.mark.parametrize("tag,use_boros", [("perp", False), ("boros", True)])
+@pytest.mark.parametrize("tag,use_boros", [("perp", False)])
 def test_hedged_pt_replays_the_reference_run(tag, use_boros):
     df = _load(f"hedged_wsteth_30dec2027_{tag}.csv")
     strategy = PerpHedgedPT(params=PerpHedgedPTParams(

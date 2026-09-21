@@ -3,6 +3,7 @@
 Pinned to markets that exist on 2026-09-11; when they expire, swap the
 ids for live ones from the APIs (see research/pendle_boros_morpho).
 """
+import os
 from datetime import timedelta
 
 import pytest
@@ -85,3 +86,16 @@ def test_boros_market_info_history_and_binance_parity_live():
     assert len(common) >= 3
     for ts in common:
         assert settled[ts] == pytest.approx(annualise_funding(float(funding.loc[ts, "rate"]), 8 * 3600), rel=1e-6)
+
+
+@pytest.mark.integration
+def test_read_market_state_live_matches_the_api_reserves():
+    """``readState`` over a public node: the selector is derived from the
+    signature, so a wrong keccak would revert here."""
+    from fractal.loaders.pendle import read_market_state  # pylint: disable=import-outside-toplevel
+
+    rpc_url = os.environ.get("ETH_RPC_URL", "https://ethereum-rpc.publicnode.com")
+    state = read_market_state(rpc_url, PENDLE_SUSDE_26NOV2026)
+    assert state.total_pt > 0 and state.total_sy > 0
+    assert 1.0 < state.scalar_root < 1_000.0 and 0.0 < state.ln_fee_rate_root < 0.01
+    assert state.expiry == int(pendle_market_info(1, PENDLE_SUSDE_26NOV2026).expiry.timestamp())
