@@ -39,14 +39,14 @@ repos:
   #    pre-commit and ``pip install -e ".[dev]"`` resolve to the
   #    same major.
   - repo: https://github.com/PyCQA/isort
-    rev: 8.0.1
+    rev: 9.0.1
     hooks:
       - id: isort
         files: ^(fractal|tests|examples)/.*\.py$
 
   # 3. flake8 on touched files (fast, ~1s)
   - repo: https://github.com/PyCQA/flake8
-    rev: 7.3.0
+    rev: 7.4.1
     hooks:
       - id: flake8
         files: ^(fractal|tests)/
@@ -73,12 +73,12 @@ repos:
         types: [python]
         files: ^fractal/
         additional_dependencies:
-          - pylint>=4.0.6
-          - mlflow>=3.12.0
+          - pylint>=4.0.9
+          - mlflow>=3.16.0
           - pandas>=2.3.3
           - numpy>=2.2.6
           - loguru>=0.7.3
-          - requests>=2.34.0
+          - requests>=2.34.2
           - scikit-learn>=1.7.2
 
       - id: pylint-tests
@@ -89,13 +89,13 @@ repos:
         types: [python]
         files: ^tests/
         additional_dependencies:
-          - pylint>=4.0.6
+          - pylint>=4.0.9
           - pytest>=9.1.1
-          - mlflow>=3.12.0
+          - mlflow>=3.16.0
           - pandas>=2.3.3
           - numpy>=2.2.6
           - loguru>=0.7.3
-          - requests>=2.34.0
+          - requests>=2.34.2
           - scikit-learn>=1.7.2
 
   # 5. pytest -m core — full offline test suite (~1100 tests, ~10s).

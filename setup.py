@@ -4,11 +4,11 @@ from setuptools import find_packages, setup
 
 # Runtime deps installed for end users; dev/lint/test tooling lives in the [dev] extra.
 RUNTIME_REQUIRES = [
-    "mlflow>=3.12.0",
+    "mlflow>=3.16.0",
     "pandas>=2.3.3",
     "numpy>=2.2.6",
     "loguru>=0.7.3",
-    "requests>=2.34.0",
+    "requests>=2.34.2",
     "scikit-learn>=1.7.2",
 ]
 
@@ -16,14 +16,14 @@ DEV_REQUIRES = [
     "pytest>=9.1.1",
     "pytest-timeout>=2.4.0",
     "pytest-cov>=7.1.0",
-    "pylint>=4.0.6",
-    "flake8>=7.3.0",
-    "isort>=8.0.1",
-    "pre-commit>=4.6.1",
+    "pylint>=4.0.9",
+    "flake8>=7.4.1",
+    "isort>=9.0.1",
+    "pre-commit>=4.6.2",
     "sphinx>=8.1.3",
     "sphinx-rtd-theme>=3.1.0",
     # Release tooling — used by ``make build`` / ``make release`` / smoke harness.
-    "build>=1.5.1",
+    "build>=1.6.1",
     "twine>=7.0.0",
 ]
 
