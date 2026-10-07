@@ -1,6 +1,6 @@
 """Live smoke tests for the Pendle, Morpho and Boros loaders (no keys needed).
 
-Pinned to markets that exist on 2026-09-11; when they expire, swap the
+Pinned to markets that exist on 2026-10-07; when they expire, swap the
 ids for live ones from the APIs (see research/pendle_boros_morpho).
 """
 import os
@@ -23,7 +23,7 @@ from fractal.loaders.pendle import get_market_info as pendle_market_info
 
 PENDLE_SUSDE_26NOV2026 = "0x47ad2cd1dd15739a7a035b9d3b7828d916fef77e"
 MORPHO_PT_REUSD_USDC = "0x1e9d614631a7df0ec07fb05b2c8cb2491575fd1a63a33bf187a6afb295a4fc64"
-BOROS_BINANCE_BTC_25SEP2026 = 130
+BOROS_BINANCE_BTC_27NOV2026 = 221
 
 
 @pytest.mark.integration
@@ -67,12 +67,12 @@ def test_morpho_market_info_and_history_live():
 
 @pytest.mark.integration
 def test_boros_market_info_history_and_binance_parity_live():
-    info = boros_market_info(BOROS_BINANCE_BTC_25SEP2026)
+    info = boros_market_info(BOROS_BINANCE_BTC_27NOV2026)
     assert info.payment_period_seconds == 8 * 3600
     assert 0 < info.k_im < 1 and 0 < info.k_mm <= info.k_im
     assert 0.03 < info.rate_floor < 0.15
     end = utcnow() - timedelta(hours=2)
-    loader = BorosMarketLoader(BOROS_BINANCE_BTC_25SEP2026, end - timedelta(days=2), end, maturity=info.maturity,
+    loader = BorosMarketLoader(BOROS_BINANCE_BTC_27NOV2026, end - timedelta(days=2), end, maturity=info.maturity,
                                underlying=("BTC", "Binance"))
     history = loader.read(with_run=True)
     assert len(history) >= 40
