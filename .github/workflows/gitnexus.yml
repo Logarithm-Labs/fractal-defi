@@ -1,0 +1,39 @@
+name: gitnexus
+
+# PR-only, same gitflow policy as CI.yml. Builds a throwaway knowledge-graph
+# index on the runner, then maps the PR diff to indexed symbols and affected
+# execution flows. Informational: the job reports what a change touches; it
+# does not gate merging until explicit failure rules are added.
+on:
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  graph-impact:
+    runs-on: ubuntu-latest
+    steps:
+      # v4.4.0 — pin third-party actions to immutable SHAs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        # Full history so the PR base ref is available for compare scope.
+        with:
+          fetch-depth: 0
+
+      # Do not restore only .gitnexus/parse-cache: a non-empty index directory
+      # without GitNexus ownership metadata is intentionally rejected as
+      # "unowned". A cold build is ~30 seconds for this repository.
+      - name: Build GitNexus index
+        run: npx -y gitnexus@1.6.12 analyze --index-only
+
+      - name: Map PR diff to affected symbols and flows
+        run: |
+          node .gitnexus/run.cjs detect-changes \
+            --scope compare \
+            --base-ref "${{ github.event.pull_request.base.sha }}" \
+            --limit 100
