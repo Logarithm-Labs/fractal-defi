@@ -18,3 +18,4 @@ Submodules
 
    fractal.core.base.action
    fractal.core.base.entity
+   fractal.core.base.time

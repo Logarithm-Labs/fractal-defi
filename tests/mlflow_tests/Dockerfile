@@ -15,9 +15,10 @@
 # be inspected from the host.
 FROM python:3.11-slim
 
+# MLflow 2.14.1 imports FallbackAsyncAdaptedQueuePool, removed in SQLAlchemy 2.1.
 RUN pip install --no-cache-dir \
         mlflow==2.14.1 \
-        sqlalchemy \
+        "sqlalchemy<2.1" \
     && mkdir -p /mlflow/artifacts
 
 WORKDIR /mlflow

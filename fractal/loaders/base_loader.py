@@ -112,6 +112,21 @@ class Loader(ABC):
         else:
             raise ValueError(f"Loader type {self.loader_type} not supported")
 
+    def _utc_index(self, col: str = "time", unit: str = "s") -> pd.DatetimeIndex:
+        """UTC ``DatetimeIndex`` named ``time`` from an epoch column of ``_data``.
+
+        Loaders that keep their time column as integer epoch values
+        survive CSV **and** JSON cache round trips unchanged; ``read``
+        rebuilds the typed struct from raw columns with this helper
+        instead of carrying a per-loader copy of the conversion.
+        """
+        if self._data is None or col not in self._data.columns:
+            raise ValueError(f"cannot build a time index: column {col!r} is missing from loader data")
+        idx = pd.to_datetime(self._data[col].astype("int64"), unit=unit, utc=True)
+        idx = pd.DatetimeIndex(idx)
+        idx.name = "time"
+        return idx
+
     def run(self) -> None:
         """Execute the full pipeline: extract → transform → load."""
         self.extract()
