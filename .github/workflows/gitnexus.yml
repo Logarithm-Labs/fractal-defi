@@ -7,7 +7,6 @@ name: gitnexus
 on:
   pull_request:
     branches: [main, dev]
-  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -20,23 +19,15 @@ jobs:
   graph-impact:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      # v4.4.0 — pin third-party actions to immutable SHAs.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         # Full history so the PR base ref is available for compare scope.
         with:
           fetch-depth: 0
 
-      # Parse cache (per-file parser output) is the cheap reusable part.
-      # The graph DB itself is not cached: it is rebuilt from the cache and
-      # the checked-out sources, and CI-generated artifacts are never stored
-      # back into git.
-      - name: Restore GitNexus parse cache
-        uses: actions/cache@v4
-        with:
-          path: .gitnexus/parse-cache
-          key: gitnexus-parse-cache-${{ runner.os }}-${{ github.event.pull_request.base.sha }}
-          restore-keys: |
-            gitnexus-parse-cache-${{ runner.os }}-
-
+      # Do not restore only .gitnexus/parse-cache: a non-empty index directory
+      # without GitNexus ownership metadata is intentionally rejected as
+      # "unowned". A cold build is ~30 seconds for this repository.
       - name: Build GitNexus index
         run: npx -y gitnexus@1.6.12 analyze --index-only
 
