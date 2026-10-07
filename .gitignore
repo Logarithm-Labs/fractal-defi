@@ -215,3 +215,10 @@ tests/mlflow_tests/output/
 .pi/
 .gitnexus/
 .auto/
+
+# Per-tool agent adapters and personal overrides (AGENTS.md is the canonical shared file)
+.claude/
+.codex/
+CLAUDE.md
+CLAUDE.local.md
+AGENTS.override.md
