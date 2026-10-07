@@ -13,7 +13,8 @@ Claude Code, and others). The setup is vendor-neutral:
 | `.claude/` | no | Claude Code local settings and generated skill adapters. |
 | `.codex/` | no | Codex local config. |
 | `.pi/` | no | pi local runtime state. |
-| `CLAUDE.md`, `CLAUDE.local.md`, `AGENTS.override.md` | no | Generated twin / personal overrides. |
+| `CLAUDE.md` | yes | One-line pointer to `AGENTS.md` (Supabase pattern) so Claude Code reads the same canonical file. |
+| `CLAUDE.local.md`, `AGENTS.override.md` | no | Personal overrides. |
 
 ## One-time setup
 
@@ -62,6 +63,8 @@ node .gitnexus/run.cjs analyze
 This updates the block between the GitNexus markers in `AGENTS.md` and leaves
 all hand-written content intact. It may also refresh skill files under
 `.claude/skills/` and `.agents/skills/` — commit any intentional updates there.
+`analyze` may regenerate `CLAUDE.md` as a full copy; if that happens, restore
+the one-line pointer (`@AGENTS.md`) and commit only the canonical file.
 
 ## Using the graph from an agent
 
