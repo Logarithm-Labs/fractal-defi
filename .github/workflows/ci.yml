@@ -108,6 +108,33 @@ jobs:
           fail_ci_if_error: false   # don't gate the suite on Codecov outage
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  # Optional performance signal. Manual-only and non-gating until repeated
+  # hosted-runner measurements establish a stable regression threshold.
+  benchmarks:
+    name: Offline performance benchmarks
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - run: pip install -e ".[dev]"
+      - name: Run deterministic benchmarks
+        run: >-
+          pytest -m benchmark --benchmark-only tests/benchmarks
+          --benchmark-json=benchmark-results.json
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: benchmark-results
+          path: benchmark-results.json
+          retention-days: 30
+          if-no-files-found: warn
+
   # 3. Sphinx docs build with ``-W`` so any new warning fails CI.
   #    Release-context only: push to main, manual dispatch, or any
   #    PR targeting main. Skipped on regular dev pushes / PRs to keep

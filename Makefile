@@ -31,7 +31,7 @@ TESTS    := tests
 EXAMPLES := examples
 
 .PHONY: help setup install pre-commit format lint \
-        test test-slow test-integration test-all test-e2e smoke \
+        test test-slow test-integration test-all test-e2e smoke benchmark profile profile-view \
         docs docs-strict docs-serve docs-clean \
         clean clean-runs clean-all \
         build release-test release post-release
@@ -55,6 +55,9 @@ help:
 	@echo "    test-all         every layer combined (core + slow + integration)"
 	@echo "    test-e2e         Docker MLflow end-to-end harness"
 	@echo "    smoke            build wheel, install in throwaway venv, run imports + tests against it"
+	@echo "    benchmark        run deterministic offline performance benchmarks"
+	@echo "    profile          write cProfile + text reports under profile-artifacts/"
+	@echo "    profile-view     open the generated profile in SnakeViz"
 	@echo ""
 	@echo "  Docs:"
 	@echo "    docs             build Sphinx html (open docs/build/html/index.html)"
@@ -116,6 +119,15 @@ test-e2e:
 
 smoke:
 	bash scripts/smoke/run.sh
+
+benchmark:
+	pytest -m benchmark --benchmark-only tests/benchmarks
+
+profile:
+	$(PYTHON) scripts/profile_backtest.py
+
+profile-view: profile
+	snakeviz profile-artifacts/fractal-backtest.prof
 
 # ─── docs ─────────────────────────────────────────────────────────
 docs:
