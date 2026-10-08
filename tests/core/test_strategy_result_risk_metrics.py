@@ -243,3 +243,32 @@ def test_zero_balance_transition_keeps_ratio_metrics_finite():
     for key in ("sortino", "calmar", "var_95", "cvar_95", "omega_ratio", "time_in_drawdown"):
         assert math.isfinite(m.__dict__[key]), f"{key} is not finite: {m.__dict__[key]}"
     assert m.sharpe == 0.0  # unchanged pre-existing behaviour
+
+
+@pytest.mark.core
+def test_float_noise_gain_does_not_produce_infinite_ratios():
+    """A 1-ulp "gain" with no downside is noise, not a loss-free strategy."""
+    result = _result_from_balances([100.0, 100.0, 100.00000000000001])
+    m = result.get_metrics(result.to_dataframe())
+    assert (m.sortino, m.calmar, m.omega_ratio) == (0.0, 0.0, 0.0)
+
+
+@pytest.mark.core
+def test_negative_starting_balance_is_degenerate():
+    """Returns are undefined against a non-positive base: a run that loses
+    money from a negative balance must not report a positive return or
+    ``+inf`` ratios."""
+    result = _result_from_balances([-100.0, -150.0, -200.0])
+    m = result.get_metrics(result.to_dataframe())
+    assert all(value == 0.0 for value in m.__dict__.values())
+
+
+@pytest.mark.core
+def test_nan_drawdown_does_not_produce_infinite_calmar():
+    """A hand-built frame with a NaN balance makes ``max_drawdown`` NaN; calmar
+    must not fall into the "no drawdown" branch and report ``+inf``."""
+    result = _result_from_balances([100.0, 100.5, 101.0])
+    df = result.to_dataframe()
+    df.loc[1, "net_balance"] = np.nan
+    m = result.get_metrics(df)
+    assert m.calmar != math.inf
