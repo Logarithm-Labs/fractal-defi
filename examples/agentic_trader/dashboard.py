@@ -25,7 +25,7 @@ def load_candle_data(filepath: str) -> pd.DataFrame:
     try:
         df = pd.read_csv(filepath)
     except Exception as e:
-        raise Exception(f"Error reading {filepath}: {e}")
+        raise Exception(f"Error reading {filepath}: {e}") from e
 
     df['Date'] = pd.to_datetime(df['timestamp'], errors='coerce')
     df.sort_values('Date', inplace=True)
@@ -54,7 +54,7 @@ def parse_log_file(log_file_path: str) -> pd.DataFrame:
     last_observation = None
 
     try:
-        with open(log_file_path, 'r') as f:
+        with open(log_file_path) as f:
             for line in f:
                 # Update last_observation if the line contains an Observation timestamp.
                 if "Observation:" in line:

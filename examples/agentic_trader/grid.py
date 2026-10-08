@@ -3,7 +3,6 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from datetime import datetime
-from typing import List
 
 from prompts import BEARISH_PROMPT, BULLISH_PROMPT, NEUTRAL_PROMPT
 from sklearn.model_selection import ParameterGrid
@@ -18,7 +17,7 @@ from fractal.loaders.binance import BinanceKlinesLoader
 
 
 # Load prices from Binance and build observations
-def build_observations() -> List[Observation]:
+def build_observations() -> list[Observation]:
     # Load prices from Binance
     binance_klines = BinanceKlinesLoader('BTCUSDT', interval='1d',
                                          start_time=datetime(2024, 1, 1),
@@ -26,10 +25,10 @@ def build_observations() -> List[Observation]:
                                          loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
-    observations: List[Observation] = [
+    observations: list[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': SimpleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
         for timestamp, o, h, l, c in zip(binance_klines.index, binance_klines['open'], binance_klines['high'],
-                                         binance_klines['low'], binance_klines['close'])
+                                         binance_klines['low'], binance_klines['close'], strict=False)
     ]
     return observations
 

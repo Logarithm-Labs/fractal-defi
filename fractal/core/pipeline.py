@@ -22,9 +22,10 @@ Design notes:
 """
 import os
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import asdict, dataclass, is_dataclass
 from io import StringIO
-from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Type, Union
+from typing import Any
 
 import mlflow
 import numpy as np
@@ -55,10 +56,10 @@ class MLflowConfig:
 
     experiment_name: str
     mlflow_uri: str
-    tags: Optional[Dict[str, str]] = None
-    aws_access_key_id: Optional[str] = None
-    aws_secret_access_key: Optional[str] = None
-    run_name_formatter: Optional[Callable[[Union[BaseStrategyParams, Dict]], str]] = None
+    tags: dict[str, str] | None = None
+    aws_access_key_id: str | None = None
+    aws_secret_access_key: str | None = None
+    run_name_formatter: Callable[[BaseStrategyParams | dict], str] | None = None
 
 
 # Pre-1.3.0 alias — the brand is ``MLflow`` (lowercase ``f``); the
@@ -83,17 +84,17 @@ class ExperimentConfig:
             data or coarser/finer sampling.
         debug (Optional[bool]): Enable strategy debug logging.
     """
-    strategy_type: Type[BaseStrategy]
-    params_grid: Union[Iterable[BaseStrategyParams], ParameterGrid]
-    observations_storage_type: Optional[Type[ObservationsStorage]] = None
-    backtest_observations: Optional[List[Observation]] = None
-    backtest_trajectories: Optional[List[List[Observation]]] = None
-    window_size: Optional[int] = None
+    strategy_type: type[BaseStrategy]
+    params_grid: Iterable[BaseStrategyParams] | ParameterGrid
+    observations_storage_type: type[ObservationsStorage] | None = None
+    backtest_observations: list[Observation] | None = None
+    backtest_trajectories: list[list[Observation]] | None = None
+    window_size: int | None = None
     step_size: int = 24
-    debug: Optional[bool] = False
+    debug: bool | None = False
 
 
-def _params_to_dict(params: Union[BaseStrategyParams, Mapping, Any]) -> Dict[str, Any]:
+def _params_to_dict(params: BaseStrategyParams | Mapping | Any) -> dict[str, Any]:
     """Coerce ``params`` to a plain dict for ``mlflow.log_params``.
 
     Accepts:
@@ -163,7 +164,7 @@ class Pipeline(ABC):
             self._connected = True
 
     @abstractmethod
-    def grid_step(self, params: Union[BaseStrategyParams, Dict]) -> None:
+    def grid_step(self, params: BaseStrategyParams | dict) -> None:
         """
         Run a step of the pipeline. Each step runs a full experiment with a set of parameters.
 
@@ -183,7 +184,7 @@ class Pipeline(ABC):
 class DefaultPipeline(Pipeline):
     """Standard pipeline implementation: backtest + trajectories + scenario."""
 
-    def _log_secondary_metrics(self, metrics: List[StrategyMetrics], prefix: str) -> None:
+    def _log_secondary_metrics(self, metrics: list[StrategyMetrics], prefix: str) -> None:
         """Aggregate per-trajectory metrics into mean/quantile/cvar series."""
         sharpe = np.array([metric.sharpe for metric in metrics])
         apy = np.array([metric.apy for metric in metrics])
@@ -226,10 +227,10 @@ class DefaultPipeline(Pipeline):
             mlflow.log_artifact(launcher.last_created_instance.logger.logs_path)
 
     def _log_trajectories(self, launcher: Launcher) -> None:
-        strategy_data_list: List[StrategyResult] = launcher.run_multiple_trajectories(
+        strategy_data_list: list[StrategyResult] = launcher.run_multiple_trajectories(
             self._config.backtest_trajectories, debug=False
         )
-        metrics: List[StrategyMetrics] = [
+        metrics: list[StrategyMetrics] = [
             sd.get_metrics(sd.to_dataframe()) for sd in strategy_data_list
         ]
         metrics_df = pd.DataFrame([m.__dict__ for m in metrics])
@@ -239,13 +240,13 @@ class DefaultPipeline(Pipeline):
         self._log_secondary_metrics(metrics, prefix="backtest_trajectories")
 
     def _log_scenario(self, launcher: Launcher) -> None:
-        strategy_data_list: List[StrategyResult] = launcher.run_scenario(
+        strategy_data_list: list[StrategyResult] = launcher.run_scenario(
             self._config.backtest_observations,
             window_size=self._config.window_size,
             step_size=self._config.step_size,
             debug=False,
         )
-        metrics: List[StrategyMetrics] = [
+        metrics: list[StrategyMetrics] = [
             sd.get_metrics(sd.to_dataframe()) for sd in strategy_data_list
         ]
         metrics_df = pd.DataFrame([m.__dict__ for m in metrics])
@@ -254,7 +255,7 @@ class DefaultPipeline(Pipeline):
         mlflow.log_text(csv_buffer.getvalue(), "window_trajectories_metrics.csv")
         self._log_secondary_metrics(metrics, prefix="window_trajectories")
 
-    def grid_step(self, params: Union[BaseStrategyParams, Dict]) -> None:
+    def grid_step(self, params: BaseStrategyParams | dict) -> None:
         """
         Run a step of the pipeline. Each step runs a full experiment with a set of parameters.
         Check ExperimentConfig for the different types of experiments that can be run.
@@ -267,7 +268,7 @@ class DefaultPipeline(Pipeline):
             strategy_type=self._config.strategy_type, params=params,
             observations_storage_type=self._config.observations_storage_type,
         )
-        run_name: Optional[str] = None
+        run_name: str | None = None
         if self._mlflow_config.run_name_formatter:
             run_name = self._mlflow_config.run_name_formatter(params)
 

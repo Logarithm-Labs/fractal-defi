@@ -1,4 +1,3 @@
-from typing import List
 
 from agents import Agent
 from pydantic import BaseModel
@@ -10,7 +9,7 @@ class AgentAction(BaseModel):
     reasoning: str
 
 
-def create_agent(prompt: str, tools: List, model: str) -> Agent:
+def create_agent(prompt: str, tools: list, model: str) -> Agent:
     return Agent(
         name="Trader",
         instructions=prompt,

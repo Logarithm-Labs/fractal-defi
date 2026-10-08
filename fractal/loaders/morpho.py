@@ -23,7 +23,7 @@ import math
 import re
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -69,9 +69,9 @@ __all__ = [
     "MORPHO_GRAPHQL_URL",
     "MorphoLoaderException",
     "MorphoMarketInfo",
+    "MorphoMarketLoader",
     "get_market_info",
     "read_linear_discount",
-    "MorphoMarketLoader",
 ]
 
 
@@ -85,7 +85,7 @@ def _validate_market_id(value: str) -> str:
     return value.lower()
 
 
-def _graphql(http: HttpClient, query: str, variables: Dict[str, Any]) -> Dict[str, Any]:
+def _graphql(http: HttpClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
     payload = http.post(MORPHO_GRAPHQL_URL, json={"query": query, "variables": variables})
     if not isinstance(payload, dict):
         raise MorphoLoaderException(f"Morpho GraphQL: expected a JSON object, got {type(payload).__name__}")
@@ -110,14 +110,14 @@ class MorphoMarketInfo:
     collateral_asset: str
     collateral_symbol: str
     collateral_decimals: int
-    oracle_address: Optional[str]
-    oracle_type: Optional[str]
-    irm_address: Optional[str]
+    oracle_address: str | None
+    oracle_type: str | None
+    irm_address: str | None
     fee: float
-    borrow_apy: Optional[float] = None
-    supply_apy: Optional[float] = None
-    utilization: Optional[float] = None
-    oracle_price: Optional[float] = None
+    borrow_apy: float | None = None
+    supply_apy: float | None = None
+    utilization: float | None = None
+    oracle_price: float | None = None
 
     @property
     def price_scale(self) -> float:
@@ -130,7 +130,7 @@ def _wad(value: Any) -> float:
     return number / 1e18 if number > 1.0 else number
 
 
-def get_market_info(market_id: str, chain_id: int, http: Optional[HttpClient] = None) -> MorphoMarketInfo:
+def get_market_info(market_id: str, chain_id: int, http: HttpClient | None = None) -> MorphoMarketInfo:
     """Fetch LLTV, assets, oracle and the current state of one market."""
     client = http or HttpClient()
     data = _graphql(client, _INFO_QUERY, {"id": _validate_market_id(market_id), "cid": int(chain_id)})
@@ -159,7 +159,7 @@ def read_linear_discount(
     feed_address: str,
     *,
     block: str = "latest",
-    http: Optional[HttpClient] = None,
+    http: HttpClient | None = None,
 ) -> float:
     """``baseDiscountPerYear()`` of a ``PendleSparkLinearDiscountOracle`` feed, as a fraction."""
     result = eth_call(rpc_url, feed_address, _BASE_DISCOUNT_SELECTOR, block=block, http=http)
@@ -167,7 +167,7 @@ def read_linear_discount(
 
 
 # ------------------------------------------------------- market history
-def _series_to_df(points: Optional[List[Dict[str, Any]]], col: str) -> pd.DataFrame:
+def _series_to_df(points: list[dict[str, Any]] | None, col: str) -> pd.DataFrame:
     if not points:
         return pd.DataFrame({"x": pd.Series(dtype="int64"), col: pd.Series(dtype=float)})
     df = pd.DataFrame(points)
@@ -193,13 +193,13 @@ class MorphoMarketLoader(Loader):
         market_id: str,
         chain_id: int,
         start_time: datetime,
-        end_time: Optional[datetime] = None,
+        end_time: datetime | None = None,
         *,
         resolution: int = 1,
         interval: str = "HOUR",
         compounding: str = "continuous",
         loader_type: LoaderType = LoaderType.CSV,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         if interval not in _INTERVAL_SECONDS:

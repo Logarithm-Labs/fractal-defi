@@ -34,7 +34,7 @@ def test_action_open_zero_amount_does_not_call_clearing():
     e.action_deposit(1000)
     for _ in range(5):
         e.action_open_position(0)
-    assert e._internal_state.positions == []
+    assert e._internal_state.positions == []  # pylint: disable=use-implicit-booleaness-not-comparison
     assert e._internal_state.collateral == 1000
 
 

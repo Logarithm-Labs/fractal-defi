@@ -21,26 +21,27 @@ Example — every ``Supply`` of one Aave V3 pool::
         reserve, on_behalf_of = topic_to_address(log["topics"][1]), topic_to_address(log["topics"][3])
         amount, referral = decode_words(log["data"], 2)
 """
-from typing import Any, Dict, Iterator, List, Optional, Sequence, Union
+from collections.abc import Iterator, Sequence
+from typing import Any
 
 from fractal.loaders._http import HttpClient, LoaderHttpError
 
 __all__ = [
-    "RpcCallError",
     "JsonRpcClient",
-    "eth_call",
-    "decode_words",
+    "RpcCallError",
     "as_signed",
     "decode_address",
-    "topic_to_address",
-    "topic_to_int",
-    "keccak256",
+    "decode_words",
+    "encode_address",
+    "eth_call",
     "event_topic",
     "function_selector",
-    "encode_address",
+    "keccak256",
+    "topic_to_address",
+    "topic_to_int",
 ]
 
-BlockTag = Union[int, str]
+BlockTag = int | str
 
 
 class RpcCallError(RuntimeError):
@@ -68,7 +69,7 @@ def _rotl(value: int, shift: int) -> int:
     return ((value << shift) | (value >> (64 - shift))) & _MASK if shift else value
 
 
-def _keccak_f(state: List[List[int]]) -> None:
+def _keccak_f(state: list[list[int]]) -> None:
     for constant in _ROUND_CONSTANTS:
         parity = [state[x][0] ^ state[x][1] ^ state[x][2] ^ state[x][3] ^ state[x][4] for x in range(5)]
         delta = [parity[(x - 1) % 5] ^ _rotl(parity[(x + 1) % 5], 1) for x in range(5)]
@@ -115,7 +116,7 @@ def function_selector(signature: str) -> str:
 
 
 # --------------------------------------------------------------- decoding
-def decode_words(hex_result: str, count: int) -> List[int]:
+def decode_words(hex_result: str, count: int) -> list[int]:
     """Split ABI-encoded static data (``0x…``) into ``count`` unsigned 256-bit words."""
     body = hex_result[2:] if hex_result.startswith("0x") else hex_result
     if len(body) < 64 * count:
@@ -162,7 +163,7 @@ class JsonRpcClient:
         http: injectable transport (offline tests pass a fake).
     """
 
-    def __init__(self, rpc_url: str, http: Optional[HttpClient] = None) -> None:
+    def __init__(self, rpc_url: str, http: HttpClient | None = None) -> None:
         self.rpc_url = rpc_url
         self._http = http or HttpClient()
         self._id = 0
@@ -181,7 +182,7 @@ class JsonRpcClient:
     def block_number(self) -> int:
         return int(self.call("eth_blockNumber", []), 16)
 
-    def get_block(self, block: BlockTag = "latest", full_transactions: bool = False) -> Dict[str, Any]:
+    def get_block(self, block: BlockTag = "latest", full_transactions: bool = False) -> dict[str, Any]:
         result = self.call("eth_getBlockByNumber", [_hex_block(block), full_transactions])
         if not isinstance(result, dict):
             raise RpcCallError(f"eth_getBlockByNumber({block!r}) returned {result!r}")
@@ -201,13 +202,13 @@ class JsonRpcClient:
     # -------------------------------------------------------------- logs
     def get_logs(
         self,
-        address: Optional[Union[str, Sequence[str]]],
-        topics: Optional[Sequence[Optional[Union[str, Sequence[str]]]]],
+        address: str | Sequence[str] | None,
+        topics: Sequence[str | Sequence[str] | None] | None,
         from_block: BlockTag,
         to_block: BlockTag,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """One ``eth_getLogs`` over ``[from_block, to_block]``."""
-        query: Dict[str, Any] = {"fromBlock": _hex_block(from_block), "toBlock": _hex_block(to_block)}
+        query: dict[str, Any] = {"fromBlock": _hex_block(from_block), "toBlock": _hex_block(to_block)}
         if address is not None:
             query["address"] = address
         if topics is not None:
@@ -219,14 +220,14 @@ class JsonRpcClient:
 
     def iter_logs(
         self,
-        address: Optional[Union[str, Sequence[str]]],
-        topics: Optional[Sequence[Optional[Union[str, Sequence[str]]]]],
+        address: str | Sequence[str] | None,
+        topics: Sequence[str | Sequence[str] | None] | None,
         from_block: int,
-        to_block: Optional[int] = None,
+        to_block: int | None = None,
         *,
         chunk_size: int = 10_000,
         min_chunk: int = 500,
-    ) -> Iterator[Dict[str, Any]]:
+    ) -> Iterator[dict[str, Any]]:
         """Logs over a block range, one ``eth_getLogs`` per chunk.
 
         Nodes reject oversized ranges either as a JSON-RPC error or at
@@ -257,7 +258,7 @@ def eth_call(
     data: str,
     *,
     block: BlockTag = "latest",
-    http: Optional[HttpClient] = None,
+    http: HttpClient | None = None,
 ) -> str:
     """One-shot ``eth_call`` (see :meth:`JsonRpcClient.eth_call`)."""
     return JsonRpcClient(rpc_url, http=http).eth_call(to, data, block=block)

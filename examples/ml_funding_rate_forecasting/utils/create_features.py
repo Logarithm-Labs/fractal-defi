@@ -22,7 +22,7 @@ def extract_time_series_features(funding_rate_series: pd.Series) -> dict:
 
     # 3. Trend — linear regression
     x = np.arange(len(series))
-    slope, intercept, r_value, p_value, std_err = linregress(x, series)
+    slope, _intercept, r_value, _p_value, _std_err = linregress(x, series)
     features["trend_slope"] = norm(slope)
     features["trend_r2"] = r_value**2
 

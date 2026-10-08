@@ -54,8 +54,8 @@ if __name__ == "__main__":
     path = os.path.join(RESULTS_DIR, "validation.csv")
     if os.path.exists(path):
         previous = pd.read_csv(path)
-        done = set(zip(out["market"], out["variant"]))
-        keep = previous[[(m, v) not in done for m, v in zip(previous["market"], previous["variant"])]]
+        done = set(zip(out["market"], out["variant"], strict=False))
+        keep = previous[[(m, v) not in done for m, v in zip(previous["market"], previous["variant"], strict=False)]]
         out = pd.concat([keep, out], ignore_index=True)
     out.to_csv(path, index=False)
     pd.set_option("display.width", 260)

@@ -1,6 +1,5 @@
 """``LeveragedPTStrategy`` wired to a Pendle PT market and a Morpho Blue market."""
 from dataclasses import dataclass
-from typing import Optional
 
 from fractal.core.base.strategy import NamedEntity
 from fractal.core.entities import MorphoEntity, PendlePTConfig, PendlePTEntity
@@ -16,7 +15,7 @@ class MorphoLeveragedPTParams(LeveragedPTParams):
     PT_IMPACT_MODEL / PT_FEE_LN_RATE / PT_IMPACT_LN_RATE_PER_SHARE: see :class:`PendlePTConfig`.
     """
     LLTV: float = 0.915
-    MAX_LTV: Optional[float] = None
+    MAX_LTV: float | None = None
     PT_IMPACT_MODEL: str = "amm"
     PT_FEE_LN_RATE: float = 0.001
     PT_IMPACT_LN_RATE_PER_SHARE: float = 0.075

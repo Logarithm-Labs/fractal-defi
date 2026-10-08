@@ -1,4 +1,3 @@
-from typing import List, Optional, Type
 
 from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy import BaseStrategy, BaseStrategyParams, StrategyResult
@@ -11,10 +10,10 @@ class Launcher:
     - Multiple trajectories
     - Scenario (multiple fractals in sliding window across the observations)
     """
-    def __init__(self, strategy_type: Type[BaseStrategy], params: BaseStrategyParams,
-                 observations_storage_type: Optional[Type[ObservationsStorage]] = None):
-        self._strategy_type: Type[BaseStrategy] = strategy_type
-        self._observations_storage_type: Type[ObservationsStorage] = observations_storage_type
+    def __init__(self, strategy_type: type[BaseStrategy], params: BaseStrategyParams,
+                 observations_storage_type: type[ObservationsStorage] | None = None):
+        self._strategy_type: type[BaseStrategy] = strategy_type
+        self._observations_storage_type: type[ObservationsStorage] = observations_storage_type
         self._params: BaseStrategyParams = params
         self._last_created_instance: BaseStrategy | None = None
 
@@ -36,15 +35,15 @@ class Launcher:
     def last_created_instance(self) -> BaseStrategy | None:
         return self._last_created_instance
 
-    def run_strategy(self, observations: List[Observation], debug: bool = False) -> StrategyResult:
+    def run_strategy(self, observations: list[Observation], debug: bool = False) -> StrategyResult:
         """
         Run strategy for a single trajectory.
         """
         strategy: BaseStrategy = self.strategy_instance(debug=debug)
         return strategy.run(observations)
 
-    def run_multiple_trajectories(self, observations: List[List[Observation]],
-                                  debug: bool = False) -> List[StrategyResult]:
+    def run_multiple_trajectories(self, observations: list[list[Observation]],
+                                  debug: bool = False) -> list[StrategyResult]:
         """
         Run the fractal for multiple trajectories.
         For simulation, we run the fractal for multiple Monte Carlo simulated trajectories.
@@ -58,9 +57,9 @@ class Launcher:
         return [self.run_strategy(obs, debug=debug) for obs in observations]
 
     def run_scenario(self,
-                     observations: List[Observation],
+                     observations: list[Observation],
                      window_size: int = 24 * 30, step_size: int = 24,
-                     debug: bool = False) -> List[StrategyResult]:
+                     debug: bool = False) -> list[StrategyResult]:
         """
         Run the scenario (multiple fractals in sliding window across the observations).
         """

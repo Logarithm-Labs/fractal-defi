@@ -15,7 +15,6 @@ pays the fee out of the product received; selling pays the fee out of
 the notional received. ``balance`` is computed at the close price.
 """
 from dataclasses import dataclass
-from typing import Optional
 
 from fractal.core.base.entity import EntityException, GlobalState
 from fractal.core.entities.base.spot import BaseSpotEntity, BaseSpotInternalState
@@ -43,7 +42,7 @@ class SimpleSpotExchangeInternalState(BaseSpotInternalState):
 class SimpleSpotExchange(BaseSpotEntity):
     """Single-asset spot exchange driven by OHLCV bars."""
 
-    def __init__(self, trading_fee: Optional[float] = 0.005) -> None:
+    def __init__(self, trading_fee: float | None = 0.005) -> None:
         """
         Args:
             trading_fee: Fee charged on the received asset on each trade.

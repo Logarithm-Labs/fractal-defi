@@ -26,7 +26,6 @@ or held to its own maturity where it settles at zero cost
 (``"settle"``, the default). ``RATE_HEDGE="none"`` is the plain loop.
 """
 from dataclasses import dataclass
-from typing import List, Optional
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy
 from fractal.core.entities import BorosEntity
@@ -98,7 +97,7 @@ class RateHedgedLeveragedPTStrategy(LeveragedPTStrategy):
         return self._params.RATE_HEDGE
 
     @property
-    def boros(self) -> Optional[BorosEntity]:
+    def boros(self) -> BorosEntity | None:
         return self.get_entity("BOROS") if self.hedge_kind == "boros" else None
 
     def hedge_balance(self) -> float:
@@ -128,7 +127,7 @@ class RateHedgedLeveragedPTStrategy(LeveragedPTStrategy):
         return self._params.INITIAL_BALANCE * (1.0 - share)
 
     # ----------------------------------------------------------- predict
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         deposited_before, exited_before = self._deposited, self._exited
         actions = super().predict()
         if self.hedge_kind == "none":
@@ -180,15 +179,15 @@ class RateHedgedLeveragedPTStrategy(LeveragedPTStrategy):
         return abs(boros.size - target) > self._params.HEDGE_REBALANCE_THRESHOLD * max(abs(target), 1e-12)
 
     # ------------------------------------------------------------ blocks
-    def _hedge_deposit(self) -> List[ActionToTake]:
+    def _hedge_deposit(self) -> list[ActionToTake]:
         share = self._params.INITIAL_BALANCE * self._params.HEDGE_MARGIN_SHARE
         return [ActionToTake("BOROS", Action("deposit", {"amount_in_notional": share}))]
 
-    def _hedge_resize(self) -> List[ActionToTake]:
+    def _hedge_resize(self) -> list[ActionToTake]:
         delta = _Once(lambda s: self._target_size(s) - s.get_entity("BOROS").size)
         return [ActionToTake("BOROS", Action("open_position", {"amount_in_product": delta}))]
 
-    def _hedge_exit(self) -> List[ActionToTake]:
+    def _hedge_exit(self) -> list[ActionToTake]:
         boros = self.boros
         if self._params.BOROS_EXIT_POLICY == "settle" or self._leg_frozen(boros) or boros.size == 0:
             return []  # the entity closes the unit at its maturity; settlements run until then

@@ -23,7 +23,6 @@ lending backends. Differences that follow the protocol:
 """
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 from fractal.core.base.entity import EntityException, GlobalState, InternalState
 from fractal.core.entities.base.lending import BaseLendingEntity
@@ -54,7 +53,7 @@ class MorphoGlobalState(GlobalState):
     debt_price: float = 0.0
     lending_rate: float = 0.0
     borrowing_rate: float = 0.0
-    collateral_market_price: Optional[float] = None
+    collateral_market_price: float | None = None
 
 
 @dataclass
@@ -78,8 +77,8 @@ class MorphoEntity(BaseLendingEntity):
         self,
         *,
         lltv: float = 0.86,
-        max_ltv: Optional[float] = None,
-        liquidation_incentive_factor: Optional[float] = None,  # pylint: disable=redefined-outer-name
+        max_ltv: float | None = None,
+        liquidation_incentive_factor: float | None = None,  # pylint: disable=redefined-outer-name
         collateral_is_volatile: bool = True,
     ) -> None:
         """

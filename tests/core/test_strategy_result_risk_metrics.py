@@ -127,7 +127,7 @@ def test_monotone_gain_ranks_above_same_path_with_one_small_loss():
     below the same path with one extra -0.1% bar on the ratio metrics."""
     gains = [0.01, 0.02, 0.015, 0.01]
     clean = _metrics_for(gains)
-    dented = _metrics_for(gains + [-0.001])
+    dented = _metrics_for([*gains, -0.001])
     assert dented.sortino > 0 and dented.calmar > 0 and dented.omega_ratio > 0
     assert clean.sortino > dented.sortino
     assert clean.calmar > dented.calmar

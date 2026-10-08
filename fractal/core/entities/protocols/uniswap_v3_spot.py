@@ -46,7 +46,7 @@ class UniswapV3SpotEntity(BaseSpotEntity):
         return self.trading_fee
 
     @property
-    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def TRADING_FEE(self) -> float:
         """Deprecated alias for :attr:`trading_fee`.
 
         Python convention reserves UPPERCASE for module/class constants;

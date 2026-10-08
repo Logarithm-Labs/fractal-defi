@@ -13,13 +13,13 @@ sequences) to the constructors below. Integer epochs are rejected on
 purpose: convert them explicitly with ``pd.to_datetime(..., unit="s",
 utc=True)`` (or ``Loader._utc_index``) so the unit is never guessed.
 """
-from typing import List, Optional, Sequence, Union
+from collections.abc import Sequence
 
 import numpy as np
 import pandas as pd
 
-ArrayLike = Union[np.ndarray, Sequence[float], pd.Series]
-TimeLike = Union[np.ndarray, Sequence[int], Sequence[pd.Timestamp], pd.DatetimeIndex]
+ArrayLike = np.ndarray | Sequence[float] | pd.Series
+TimeLike = np.ndarray | Sequence[int] | Sequence[pd.Timestamp] | pd.DatetimeIndex
 
 
 def _to_utc_index(time: TimeLike) -> pd.DatetimeIndex:
@@ -91,10 +91,10 @@ class LendingHistory(pd.DataFrame):
         lending_rates: ArrayLike,
         borrowing_rates: ArrayLike,
         time: TimeLike,
-        utilization: Optional[ArrayLike] = None,
-        borrow_apy: Optional[ArrayLike] = None,
-        supply_apy: Optional[ArrayLike] = None,
-        rate_at_target: Optional[ArrayLike] = None,
+        utilization: ArrayLike | None = None,
+        borrow_apy: ArrayLike | None = None,
+        supply_apy: ArrayLike | None = None,
+        rate_at_target: ArrayLike | None = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
@@ -155,9 +155,9 @@ class PoolHistory(pd.DataFrame):
         fees: np.ndarray,
         liquidity: np.ndarray,
         time: np.ndarray,
-        prices: Optional[np.ndarray] = None,
-        fee_growth0: Optional[np.ndarray] = None,
-        fee_growth1: Optional[np.ndarray] = None,
+        prices: np.ndarray | None = None,
+        fee_growth0: np.ndarray | None = None,
+        fee_growth1: np.ndarray | None = None,
     ):
         data = {
             "tvl": np.asarray(tvls, dtype=float),
@@ -210,7 +210,7 @@ class SwapsHistory(pd.DataFrame):
 # Simulation loaders fan out into multiple trajectories. We expose the
 # return type as a named alias so downstream code can `isinstance`-check
 # / annotate cleanly without leaking ``List[PriceHistory]`` everywhere.
-TrajectoryBundle = List[PriceHistory]
+TrajectoryBundle = list[PriceHistory]
 
 
 class PendleMarketHistory(pd.DataFrame):
@@ -249,7 +249,7 @@ class PendleMarketHistory(pd.DataFrame):
     ):
         values = (implied_apy, pt_price_asset, pt_price_usd, sy_price_usd, pt_price_sy,
                   underlying_apy, tvl, total_pt, total_sy, seconds_to_expiry)
-        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values)}
+        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values, strict=False)}
         super().__init__(data=data, index=_to_utc_index(time))
 
 
@@ -288,7 +288,7 @@ class BorosMarketHistory(pd.DataFrame):
     ):
         values = (mark_apr_open, mark_apr_high, mark_apr_low, mark_apr_close, volume,
                   underlying_apr, settlement_apr, oi, seconds_to_expiry)
-        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values)}
+        data = {name: np.asarray(col, dtype=float) for name, col in zip(self.COLUMNS, values, strict=False)}
         super().__init__(data=data, index=_to_utc_index(time))
 
 
@@ -302,11 +302,11 @@ class KlinesHistory(pd.DataFrame):
     def __init__(  # pylint: disable=redefined-builtin
         self,
         time: np.ndarray,
-        open: np.ndarray,  # noqa: A002 - shadowing built-in is the natural OHLCV name
+        open: np.ndarray,
         high: np.ndarray,
         low: np.ndarray,
         close: np.ndarray,
-        volume: Optional[np.ndarray] = None,
+        volume: np.ndarray | None = None,
     ):
         open_ = np.asarray(open, dtype=float)
         if volume is None:

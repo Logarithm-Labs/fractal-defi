@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Generic, List, Optional, TypeVar
+from typing import Generic, TypeVar
 
 from fractal.core.base.action import Action
 
@@ -76,10 +77,10 @@ class BaseEntity(ABC, Generic[GS, IS]):
         # Concrete subclasses populate ``_internal_state`` / ``_global_state``
         # inside ``_initialize_states``; no need to pre-set to None.
         # Optional telemetry hook (issue #68): set by the owning strategy.
-        self._execution_recorder: Optional[Callable[[str, float, float], None]] = None
+        self._execution_recorder: Callable[[str, float, float], None] | None = None
         self._initialize_states()
 
-    def attach_execution_recorder(self, recorder: Optional[Callable[[str, float, float], None]]) -> None:
+    def attach_execution_recorder(self, recorder: Callable[[str, float, float], None] | None) -> None:
         """Attach (or detach with ``None``) an execution-telemetry recorder.
 
         Called by :class:`BaseStrategy` at registration time. The recorder
@@ -107,7 +108,7 @@ class BaseEntity(ABC, Generic[GS, IS]):
         """
         raise NotImplementedError
 
-    def get_available_actions(self) -> List[str]:
+    def get_available_actions(self) -> list[str]:
         """List actions exposed by ``action_*`` methods.
 
         Walks the **class**, not the instance, so we never accidentally

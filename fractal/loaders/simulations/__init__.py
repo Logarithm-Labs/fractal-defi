@@ -4,6 +4,6 @@ from fractal.loaders.simulations.monte_carlo_gbm import MonteCarloPriceLoader
 
 __all__ = [
     "ConstantFundingsLoader",
-    "MonteCarloPriceLoader",
     "MonteCarloHourPriceLoader",  # deprecated alias of MonteCarloPriceLoader
+    "MonteCarloPriceLoader",
 ]

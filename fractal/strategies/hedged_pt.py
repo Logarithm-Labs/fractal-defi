@@ -22,8 +22,8 @@ may skip ``BOROS`` on bars without Boros data
 For a *stable* PT (PT-sUSDe) there is no price leg to hedge — use
 :class:`LeveragedPTStrategy` with ``MAX_LOOPS=0`` instead.
 """
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams
 from fractal.core.base.time import SECONDS_PER_DAY
@@ -41,7 +41,7 @@ class _Once:
 
     def __init__(self, fn: Callable[[BaseStrategy], float]) -> None:
         self._fn = fn
-        self._value: Optional[float] = None
+        self._value: float | None = None
 
     def __call__(self, strategy: BaseStrategy) -> float:
         if self._value is None:
@@ -68,7 +68,7 @@ class HedgedPTParams(BaseStrategyParams):
     """
     INITIAL_BALANCE: float
     TARGET_HEDGE_LEVERAGE: float = 2.0
-    HEDGE_LEVERAGE_BAND: Tuple[float, float] = (1.0, 4.0)
+    HEDGE_LEVERAGE_BAND: tuple[float, float] = (1.0, 4.0)
     HEDGE_REBALANCE_THRESHOLD: float = 0.02
     USE_BOROS: bool = False
     BOROS_MARGIN_SHARE: float = 0.10
@@ -133,7 +133,7 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         return self.get_entity("HEDGE")
 
     @property
-    def boros(self) -> Optional[BorosEntity]:
+    def boros(self) -> BorosEntity | None:
         return self.get_entity("BOROS") if self._params.USE_BOROS else None
 
     def days_to_expiry(self) -> float:
@@ -165,7 +165,7 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         return self.boros is not None and not self.boros.is_matured
 
     # ----------------------------------------------------------- predict
-    def predict(self) -> List[ActionToTake]:  # pylint: disable=too-many-return-statements
+    def predict(self) -> list[ActionToTake]:  # pylint: disable=too-many-return-statements
         params, pt, hedge = self._params, self.pt, self.hedge
         if self._deposited and not self._exited and self.equity() == 0:
             raise HedgedPTException("strategy fully wiped after the initial deposit — refusing to re-fund")
@@ -175,9 +175,9 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
                     f"only {self.days_to_expiry():.1f} days to expiry at entry, below "
                     f"MIN_DAYS_TO_MATURITY_AT_ENTRY={params.MIN_DAYS_TO_MATURITY_AT_ENTRY}"
                 )
-            if self.boros is not None and params.BOROS_MATURITY_POLICY == "match_pt":
-                if self.boros.seconds_to_expiry < pt.seconds_to_expiry:
-                    raise HedgedPTException("BOROS_MATURITY_POLICY='match_pt' but the YU matures before the PT")
+            if (self.boros is not None and params.BOROS_MATURITY_POLICY == "match_pt"
+                    and self.boros.seconds_to_expiry < pt.seconds_to_expiry):
+                raise HedgedPTException("BOROS_MATURITY_POLICY='match_pt' but the YU matures before the PT")
             self._deposited = True
             self._debug("Entering the hedged PT position")
             return self._enter()
@@ -213,12 +213,12 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         """Yield units to trade so the Boros leg matches the hedge target, not the perp's delta."""
         return _Once(lambda s: s.target_hedge_size() - s.boros.size)
 
-    def _boros_sync(self) -> List[ActionToTake]:
+    def _boros_sync(self) -> list[ActionToTake]:
         if self.boros_leg_live() and self.boros.size != 0:
             return [ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()}))]
         return []
 
-    def _enter(self) -> List[ActionToTake]:
+    def _enter(self) -> list[ActionToTake]:
         params = self._params
         initial = params.INITIAL_BALANCE
         boros_share = initial * params.BOROS_MARGIN_SHARE if self.boros is not None else 0.0
@@ -238,19 +238,19 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
             actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()})))
         return actions
 
-    def _resize_hedge(self) -> List[ActionToTake]:
+    def _resize_hedge(self) -> list[ActionToTake]:
         actions = [ActionToTake("HEDGE", Action("open_position", {"amount_in_product": self._hedge_delta()}))]
         actions.extend(self._boros_sync())
         return actions
 
-    def _rebalance_margin(self) -> List[ActionToTake]:
+    def _rebalance_margin(self) -> list[ActionToTake]:
         """Bring the hedge margin back to ``|size|·mark / TARGET_HEDGE_LEVERAGE``."""
         hedge, pt = self.hedge, self.pt
         # Split the investable capital ``PT : margin = L : 1`` (the entry rule):
         # sizing on the pre-move hedge would land at the band edge instead.
         target_margin = self.investable_equity() / (1.0 + self._params.TARGET_HEDGE_LEVERAGE)
         delta = target_margin - hedge.balance
-        actions: List[ActionToTake] = []
+        actions: list[ActionToTake] = []
         if delta > 0:
             shortfall = max(0.0, delta - pt.internal_state.cash)
             if shortfall > 0:
@@ -270,7 +270,7 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
         actions.extend(self._boros_sync())
         return actions
 
-    def _refund_hedge(self) -> List[ActionToTake]:
+    def _refund_hedge(self) -> list[ActionToTake]:
         """After a hedge liquidation: sell part of the PT to re-margin and re-open the short."""
         pt = self.pt
         target_margin = self.investable_equity() / (1.0 + self._params.TARGET_HEDGE_LEVERAGE)
@@ -285,7 +285,7 @@ class HedgedPTStrategy(BaseStrategy[HedgedPTParams]):
             actions.append(ActionToTake("BOROS", Action("open_position", {"amount_in_product": self._boros_delta()})))
         return actions
 
-    def _exit(self, redeem: bool) -> List[ActionToTake]:
+    def _exit(self, redeem: bool) -> list[ActionToTake]:
         all_pt = _Once(lambda s: s.pt.internal_state.amount)
         actions = [ActionToTake("HEDGE", Action("close_position", {}))]
         if self.boros_leg_live():

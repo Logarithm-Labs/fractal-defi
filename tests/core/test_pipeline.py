@@ -2,7 +2,7 @@
 import os
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, List
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,7 +31,7 @@ class _DummyStrategy(BaseStrategy[_Params]):
 
 @pytest.fixture
 def mlflow_calls(monkeypatch):
-    calls: List[tuple] = []
+    calls: list[tuple] = []
 
     def _make_recorder(name):
         def _record(*args, **kwargs):
@@ -162,7 +162,7 @@ def test_aws_env_vars_set_when_config_provides_them(monkeypatch):
 
 @pytest.mark.core
 def test_pipeline_does_not_connect_mlflow_on_init(monkeypatch):
-    called: List[str] = []
+    called: list[str] = []
     monkeypatch.setattr(pipeline_module.mlflow, 'set_tracking_uri',
                         lambda uri: called.append('set_tracking_uri'))
     monkeypatch.setattr(pipeline_module.mlflow, 'get_experiment_by_name',
@@ -262,7 +262,7 @@ def test_grid_step_invokes_run_name_formatter(mlflow_calls):
 
 @pytest.mark.core
 def test_run_iterates_grid_calling_grid_step_per_params(monkeypatch):
-    seen: List[Any] = []
+    seen: list[Any] = []
 
     class _Recorder(DefaultPipeline):
         def grid_step(self, params):

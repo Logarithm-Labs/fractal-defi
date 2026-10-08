@@ -6,7 +6,6 @@ emitting the canonical ``Swap`` event (Uniswap V3, Slipstream, ...).
 Needs an RPC with ``eth_getLogs`` over historic ranges (no archive
 state access). Transport and decoding come from :mod:`fractal.loaders.rpc`.
 """
-from typing import List, Optional
 
 import pandas as pd
 
@@ -43,10 +42,10 @@ class UniswapV3SwapsLoader(Loader):
         token0_decimals: int,
         token1_decimals: int,
         start_block: int,
-        end_block: Optional[int] = None,
+        end_block: int | None = None,
         chunk_size: int = 10_000,
         loader_type: LoaderType = LoaderType.CSV,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         self._rpc_url = rpc_url
@@ -83,7 +82,7 @@ class UniswapV3SwapsLoader(Loader):
         end_block = self.end_block if self.end_block is not None else self._rpc.block_number()
         logs = self._rpc.iter_logs(self.pool, [self.SWAP_TOPIC], self.start_block, end_block,
                                    chunk_size=self.chunk_size)
-        rows: List[dict] = [self._decode_log(log) for log in logs]
+        rows: list[dict] = [self._decode_log(log) for log in logs]
         self._extracted_range = (self.start_block, end_block)
         self._data = pd.DataFrame(rows)
 

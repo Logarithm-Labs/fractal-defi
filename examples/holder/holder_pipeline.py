@@ -2,7 +2,6 @@ import warnings
 
 warnings.filterwarnings('ignore')
 
-from typing import List
 
 import numpy as np
 from binance_entity import BinanceGlobalState
@@ -15,14 +14,14 @@ from fractal.loaders import BinanceDayPriceLoader, LoaderType
 
 
 # Load prices from Binance and build observations
-def build_observations() -> List[Observation]:
+def build_observations() -> list[Observation]:
     # Load prices from Binance
     binance_prices = BinanceDayPriceLoader('BTCUSDT', loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
-    observations: List[Observation] = [
+    observations: list[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': BinanceGlobalState(price=price)})
-        for timestamp, price in zip(binance_prices.index, binance_prices['price'])
+        for timestamp, price in zip(binance_prices.index, binance_prices['price'], strict=False)
     ]
     return observations
 

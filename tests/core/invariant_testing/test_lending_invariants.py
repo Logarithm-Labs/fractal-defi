@@ -139,13 +139,13 @@ def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
 @pytest.mark.core
 def test_aave_rejects_liq_thr_below_max_ltv():
     """``liq_thr >= max_ltv`` invariant validated at construction."""
-    with pytest.raises(EntityException, match="liq_thr.*must be >="):
+    with pytest.raises(EntityException, match=r"liq_thr.*must be >="):
         AaveEntity(max_ltv=0.8, liq_thr=0.7)
 
 
 @pytest.mark.core
 def test_simple_lending_rejects_liq_thr_below_max_ltv():
-    with pytest.raises(SimpleLendingException, match="liq_thr.*must be >="):
+    with pytest.raises(SimpleLendingException, match=r"liq_thr.*must be >="):
         SimpleLendingEntity(max_ltv=0.8, liq_thr=0.7)
 
 

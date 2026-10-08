@@ -28,12 +28,12 @@ __all__ = [
     "LIQUIDATION_BASE_INCENTIVE",
     "LIQUIDATION_INCENTIVE_SLOPE",
     "LIQUIDATION_PROTOCOL_FEE_RATE",
-    "settlement_pnl_coin",
     "fixed_leg_coin",
+    "liquidation_penalty_fraction",
+    "margin_coin",
     "mark_to_maturity_coin",
     "open_fee_coin",
-    "margin_coin",
-    "liquidation_penalty_fraction",
+    "settlement_pnl_coin",
 ]
 
 

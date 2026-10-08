@@ -5,7 +5,7 @@ the requested window is exhausted. Returns a :class:`FundingHistory`.
 """
 import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -25,14 +25,14 @@ class BinanceFundingLoader(Loader):
         self,
         ticker: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        http: Optional[BinanceHttp] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        http: BinanceHttp | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         self.ticker: str = ticker.upper()
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
         self.http = http or BinanceHttp()
 
     def _cache_key(self) -> str:
@@ -40,8 +40,8 @@ class BinanceFundingLoader(Loader):
         e = to_ms(self.end_time) if self.end_time is not None else "now"
         return f"{self.ticker}-{s}-{e}"
 
-    def _fetch(self, start_ms: Optional[int], end_ms: Optional[int]) -> List[Dict[str, Any]]:
-        params: Dict[str, Any] = {"symbol": self.ticker, "limit": self._MAX_LIMIT}
+    def _fetch(self, start_ms: int | None, end_ms: int | None) -> list[dict[str, Any]]:
+        params: dict[str, Any] = {"symbol": self.ticker, "limit": self._MAX_LIMIT}
         if start_ms is not None:
             params["startTime"] = start_ms
         if end_ms is not None:
@@ -53,10 +53,10 @@ class BinanceFundingLoader(Loader):
 
     def get_funding_rates(
         self,
-        ticker: Optional[str] = None,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-    ) -> List[Dict[str, Any]]:
+        ticker: str | None = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> list[dict[str, Any]]:
         symbol = (ticker or self.ticker).upper()
         # Allow per-call overrides while keeping defaults from constructor.
         local = BinanceFundingLoader(
@@ -66,7 +66,7 @@ class BinanceFundingLoader(Loader):
             end_time=end_time or self.end_time,
             http=self.http,
         )
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         cursor = to_ms(local.start_time) if local.start_time is not None else None
         end_ms = to_ms(local.end_time) if local.end_time is not None else None
         while True:

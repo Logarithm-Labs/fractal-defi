@@ -4,7 +4,6 @@ import json
 import math
 import os
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List
 
 import pandas as pd
 
@@ -27,7 +26,7 @@ RESULTS_DIR = os.path.join(HERE, "results")
 _BAR_HOURS = {"hour": 1, "day": 24}
 
 
-def load_registry() -> Dict[str, Dict[str, dict]]:
+def load_registry() -> dict[str, dict[str, dict]]:
     with open(os.path.join(HERE, "markets.json"), encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -95,7 +94,7 @@ def sy_exchange_rate(row) -> float:
     return float(sy_usd * pt_asset / pt_usd)
 
 
-def leveraged_observations(frame: pd.DataFrame, cfg: dict) -> List[Observation]:
+def leveraged_observations(frame: pd.DataFrame, cfg: dict) -> list[Observation]:
     observations = []
     for ts, row in frame.iterrows():
         observations.append(Observation(timestamp=ts.to_pydatetime(), states={
@@ -143,7 +142,7 @@ def build_hedged_frame(cfg: dict, start: datetime, end: datetime) -> tuple:
     return frame, info.expiry, boros_maturity
 
 
-def hedged_observations(frame: pd.DataFrame, cfg: dict, use_boros: bool) -> List[Observation]:
+def hedged_observations(frame: pd.DataFrame, cfg: dict, use_boros: bool) -> list[Observation]:
     bar_seconds = _BAR_HOURS[cfg["bar"]] * 3600
     observations = []
     for ts, row in frame.iterrows():

@@ -18,7 +18,7 @@ from fractal.loaders._http import LoaderHttpError
 
 
 @pytest.hookimpl(hookwrapper=True, tryfirst=True)
-def pytest_runtest_call(item):  # noqa: D401  (pytest hook signature)
+def pytest_runtest_call(item):
     outcome = yield
     if outcome.excinfo is None:
         return

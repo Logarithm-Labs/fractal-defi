@@ -22,9 +22,10 @@ AMM impact model is wanted.
 """
 import time as _time
 import warnings
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -48,11 +49,11 @@ __all__ = [
     "PENDLE_ROUTER",
     "PendleLoaderException",
     "PendleMarketInfo",
+    "PendleMarketLoader",
     "PendleMarketState",
+    "PendleOHLCVLoader",
     "get_market_info",
     "read_market_state",
-    "PendleMarketLoader",
-    "PendleOHLCVLoader",
 ]
 
 
@@ -61,7 +62,7 @@ class PendleLoaderException(RuntimeError):
 
 
 # ------------------------------------------------------------- helpers
-def _rows(payload: Any) -> List[Dict[str, Any]]:
+def _rows(payload: Any) -> list[dict[str, Any]]:
     """Unwrap ``results``/``data`` envelopes; accept a bare list."""
     if isinstance(payload, list):
         return payload
@@ -88,7 +89,7 @@ def _epoch_seconds(values: Iterable[Any]) -> pd.Series:
     return ((parsed - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(seconds=1)).astype("int64")
 
 
-def _token(value: Any) -> Optional[str]:
+def _token(value: Any) -> str | None:
     """``"1-0xabc…"`` or ``{"address": …}`` → lower-case address."""
     if isinstance(value, dict):
         value = value.get("address")
@@ -104,15 +105,15 @@ class PendleMarketInfo:
     chain_id: int
     address: str
     expiry: datetime
-    pt: Optional[str]
-    yt: Optional[str]
-    sy: Optional[str]
-    underlying_asset: Optional[str]
-    accounting_asset: Optional[str]
-    name: Optional[str] = None
+    pt: str | None
+    yt: str | None
+    sy: str | None
+    underlying_asset: str | None
+    accounting_asset: str | None
+    name: str | None = None
 
 
-def get_market_info(chain_id: int, market_address: str, http: Optional[HttpClient] = None) -> PendleMarketInfo:
+def get_market_info(chain_id: int, market_address: str, http: HttpClient | None = None) -> PendleMarketInfo:
     """Fetch expiry and token addresses so callers never type an expiry by hand."""
     address = validate_evm_address(market_address, field="market_address")
     client = http or HttpClient()
@@ -147,7 +148,7 @@ def read_market_state(
     *,
     router: str = PENDLE_ROUTER,
     block: str = "latest",
-    http: Optional[HttpClient] = None,
+    http: HttpClient | None = None,
 ) -> PendleMarketState:
     """One ``eth_call`` to ``readState(router)``; token amounts are returned raw (18-dec WAD)."""
     market = validate_evm_address(market_address, field="market_address")
@@ -186,13 +187,13 @@ class PendleMarketLoader(Loader):
         market_address: str,
         chain_id: int,
         start_time: datetime,
-        end_time: Optional[datetime] = None,
+        end_time: datetime | None = None,
         *,
         time_frame: str = "hour",
         daily_fallback: bool = True,
-        expiry: Optional[datetime] = None,
+        expiry: datetime | None = None,
         loader_type: LoaderType = LoaderType.CSV,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         if time_frame not in ("hour", "day"):
@@ -205,9 +206,9 @@ class PendleMarketLoader(Loader):
             raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
         self.time_frame = time_frame
         self.daily_fallback = daily_fallback
-        self._expiry: Optional[datetime] = to_utc(expiry) if expiry is not None else None
+        self._expiry: datetime | None = to_utc(expiry) if expiry is not None else None
         self._http = http or HttpClient()
-        self._rows: List[Dict[str, Any]] = []
+        self._rows: list[dict[str, Any]] = []
 
     @property
     def expiry(self) -> datetime:
@@ -223,11 +224,11 @@ class PendleMarketLoader(Loader):
         )
 
     # ---------------------------------------------------------- fetch
-    def _fetch(self, time_frame: str, start: datetime, end: datetime) -> List[Dict[str, Any]]:
+    def _fetch(self, time_frame: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
         """Forward-paging fetch of one time frame over ``[start, end]``."""
         url = f"{PENDLE_API}/v3/{self.chain_id}/markets/{self.market_address}/historical-data"
         step_seconds = _TIME_FRAMES[time_frame]
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         cursor = start
         while cursor <= end:
             payload = self._http.get(url, params={
@@ -263,7 +264,7 @@ class PendleMarketLoader(Loader):
                     warnings.warn(
                         f"PendleMarketLoader: hourly history for {self.market_address} starts at "
                         f"{first if rows else 'after the window'}; {len(daily)} daily bars before it are "
-                        "stretched to hourly"
+                        "stretched to hourly", stacklevel=2,
                     )
                     for row in daily:
                         row["_stretched"] = True
@@ -330,11 +331,11 @@ class PendleOHLCVLoader(Loader):
         token_address: str,
         chain_id: int,
         start_time: datetime,
-        end_time: Optional[datetime] = None,
+        end_time: datetime | None = None,
         *,
         time_frame: str = "hour",
         loader_type: LoaderType = LoaderType.CSV,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         if time_frame not in _OHLCV_TIME_FRAMES:
@@ -347,7 +348,7 @@ class PendleOHLCVLoader(Loader):
             raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
         self.time_frame = time_frame
         self._http = http or HttpClient()
-        self._rows: List[Dict[str, Any]] = []
+        self._rows: list[dict[str, Any]] = []
 
     def _cache_key(self) -> str:
         return (
@@ -356,7 +357,7 @@ class PendleOHLCVLoader(Loader):
         )
 
     @staticmethod
-    def _parse(payload: Any) -> List[Dict[str, Any]]:
+    def _parse(payload: Any) -> list[dict[str, Any]]:
         """Rows as dicts, or the CSV-in-JSON form ``"time,open,high,low,close,volume\\n…"``."""
         rows = _rows(payload)
         if rows:
@@ -370,7 +371,7 @@ class PendleOHLCVLoader(Loader):
     def extract(self) -> None:
         url = f"{PENDLE_API}/v4/{self.chain_id}/prices/{self.token_address}/ohlcv"
         step_seconds = _OHLCV_TIME_FRAMES[self.time_frame]
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         cursor = self.start_time
         while cursor <= self.end_time:
             payload = self._http.get(url, params={

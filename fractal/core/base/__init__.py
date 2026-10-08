@@ -6,8 +6,16 @@ from fractal.core.base.strategy import ActionToTake, BaseStrategy, BaseStrategyP
 
 __all__ = [
     'Action',
-    'GlobalState', 'InternalState', 'BaseEntity', 'EntityException',
-    'BaseStrategy', 'NamedEntity', 'Observation', 'ActionToTake',
-    'BaseStrategyParams', 'ObservationsStorage',
-    'ExecutionLedger', 'ExecutionRecord',
+    'ActionToTake',
+    'BaseEntity',
+    'BaseStrategy',
+    'BaseStrategyParams',
+    'EntityException',
+    'ExecutionLedger',
+    'ExecutionRecord',
+    'GlobalState',
+    'InternalState',
+    'NamedEntity',
+    'Observation',
+    'ObservationsStorage',
 ]

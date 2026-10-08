@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List, Optional
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity
 from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
@@ -61,9 +60,9 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
         params: TauResetParams,
         *args,
         debug: bool = False,
-        token0_decimals: Optional[int] = None,
-        token1_decimals: Optional[int] = None,
-        tick_spacing: Optional[int] = None,
+        token0_decimals: int | None = None,
+        token1_decimals: int | None = None,
+        tick_spacing: int | None = None,
         **kwargs,
     ):
         # Resolve precedence: constructor kwargs > class-level > sentinel.
@@ -85,7 +84,7 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
                 "and tick_spacing — pass them as constructor kwargs "
                 "(preferred) or set them on the class attribute."
             )
-        super().__init__(params=params, debug=debug, *args, **kwargs)
+        super().__init__(*args, params=params, debug=debug, **kwargs)
         # Instance attribute (NOT class-level) so independent strategy
         # instances run side-by-side without sharing the deposit flag.
         self.deposited_initial_funds = False
@@ -104,7 +103,7 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
             )
         ))
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         """
         Main logic of the strategy. Checks if the price has moved outside
         the predefined range and takes actions if necessary.
@@ -133,7 +132,7 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
             return self._rebalance()
         return []
 
-    def _deposit_to_lp(self) -> List[ActionToTake]:
+    def _deposit_to_lp(self) -> list[ActionToTake]:
         """
         Deposit funds into the Uniswap LP if no position is currently open.
         """
@@ -142,7 +141,7 @@ class TauResetStrategy(BaseStrategy[TauResetParams]):
             action=Action(action='deposit', args={'amount_in_notional': self._params.INITIAL_BALANCE})
         )]
 
-    def _rebalance(self) -> List[ActionToTake]:
+    def _rebalance(self) -> list[ActionToTake]:
         """
         Reallocate liquidity to a new range centered around the new price.
         """

@@ -1,6 +1,5 @@
 """Uniswap V2 hourly pool-data loader (TheGraph)."""
 from datetime import datetime
-from typing import List, Optional
 
 import pandas as pd
 
@@ -22,14 +21,14 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
         pool: str,
         fee_tier: float,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
         self.fee_tier: float = fee_tier
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
 
     def _cache_key(self) -> str:
         s = to_seconds(self.start_time) if self.start_time is not None else "open"
@@ -39,7 +38,7 @@ class EthereumUniswapV2PoolDataLoader(EthereumUniswapV2Loader):
     def extract(self) -> None:
         cursor = to_seconds(self.end_time) if self.end_time is not None else int(utcnow().timestamp())
         floor = to_seconds(self.start_time) if self.start_time is not None else None
-        rows: List[dict] = []
+        rows: list[dict] = []
         while True:
             query = (
                 "{ pairHourDatas(orderBy: hourStartUnix, orderDirection: desc, "

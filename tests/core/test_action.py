@@ -15,7 +15,7 @@ def test_action_construction_with_args():
 def test_action_default_empty_args():
     a = Action("close_position")
     assert a.action == "close_position"
-    assert a.args == {}
+    assert a.args == {}  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 @pytest.mark.core

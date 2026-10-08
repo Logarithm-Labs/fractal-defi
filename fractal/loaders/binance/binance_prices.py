@@ -7,8 +7,9 @@ the candle interval. :class:`BinanceKlinesLoader` reuses the same data
 extraction but emits a :class:`KlinesHistory` with full OHLCV.
 """
 import time
+from collections.abc import Iterable
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -35,7 +36,7 @@ class BinancePriceLoader(Loader):
     # duplicating the whole loader.
     _SECTION = FUTURES_SECTION
     _KLINES_ENDPOINT = "/fapi/v1/klines"
-    _INTERVAL_MS: Dict[str, int] = {
+    _INTERVAL_MS: ClassVar[dict[str, int]] = {
         "m": 60 * 1000,
         "h": 60 * 60 * 1000,
         "d": 24 * 60 * 60 * 1000,
@@ -48,9 +49,9 @@ class BinancePriceLoader(Loader):
         loader_type: LoaderType = LoaderType.CSV,
         inverse_price: bool = False,
         interval: str = "1d",
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        http: Optional[BinanceHttp] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        http: BinanceHttp | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         self.ticker: str = ticker.upper()
@@ -82,8 +83,8 @@ class BinancePriceLoader(Loader):
     def _cache_key(self) -> str:
         return f"{self.ticker}-{self.interval}-{to_ms(self.start_time)}-{to_ms(self.end_time)}"
 
-    def _parse_klines(self, rows: Iterable[List[Any]]) -> List[Dict[str, Any]]:
-        out: List[Dict[str, Any]] = []
+    def _parse_klines(self, rows: Iterable[list[Any]]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
         for item in rows:
             open_ms = int(item[0])
             out.append(
@@ -99,7 +100,7 @@ class BinancePriceLoader(Loader):
         return out
 
     # ----------------------------------------------------------- pagination
-    def get_klines(self) -> List[Dict[str, Any]]:
+    def get_klines(self) -> list[dict[str, Any]]:
         candle_ms = self._candle_ms()
         step_ms = candle_ms * self._MAX_LIMIT
         start_ms = to_ms(self.start_time) or 0
@@ -107,7 +108,7 @@ class BinancePriceLoader(Loader):
         if start_ms >= end_ms:
             return []
 
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         cursor = start_ms
         while cursor < end_ms:
             window_end = min(end_ms, cursor + step_ms - 1)
@@ -139,7 +140,7 @@ class BinancePriceLoader(Loader):
 
         # Dedup by openTime (defensive — pagination overlap should not happen).
         seen: set = set()
-        unique: List[Dict[str, Any]] = []
+        unique: list[dict[str, Any]] = []
         for r in rows:
             ts = int(r["openTime"].value)
             if ts in seen:
@@ -188,9 +189,9 @@ class BinanceDayPriceLoader(BinancePriceLoader):
         ticker: str,
         loader_type: LoaderType = LoaderType.CSV,
         inverse_price: bool = False,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        http: Optional[BinanceHttp] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        http: BinanceHttp | None = None,
     ) -> None:
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price,
@@ -204,9 +205,9 @@ class BinanceHourPriceLoader(BinancePriceLoader):
         ticker: str,
         loader_type: LoaderType = LoaderType.CSV,
         inverse_price: bool = False,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        http: Optional[BinanceHttp] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        http: BinanceHttp | None = None,
     ) -> None:
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price,
@@ -220,9 +221,9 @@ class BinanceMinutePriceLoader(BinancePriceLoader):
         ticker: str,
         loader_type: LoaderType = LoaderType.CSV,
         inverse_price: bool = False,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        http: Optional[BinanceHttp] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        http: BinanceHttp | None = None,
     ) -> None:
         super().__init__(
             ticker=ticker, loader_type=loader_type, inverse_price=inverse_price,
