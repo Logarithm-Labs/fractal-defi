@@ -3,6 +3,8 @@
 Every test drives a real strategy ``step`` so records carry the entity
 name and observation timestamp exactly as production code stamps them.
 """
+import copy
+import pickle
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -111,7 +113,7 @@ def test_deposit_withdraw_and_transfer_are_not_recorded():
     strategy.queue(transfer)
     _step(strategy, {"A": SimpleSpotExchangeGlobalState(close=1.0),
                      "B": SimpleSpotExchangeGlobalState(close=1.0)}, hours=2)
-    assert strategy.execution_ledger.records == []
+    assert not strategy.execution_ledger.records
     assert strategy.execution_ledger.total_traded_notional == 0.0
 
 
@@ -301,7 +303,7 @@ def test_ledger_isolated_per_strategy_instance():
     one.step(_obs({"SPOT": SimpleSpotExchangeGlobalState(close=100.0)}))
     one.step(_obs({"SPOT": SimpleSpotExchangeGlobalState(close=100.0)}, 1))
     assert isinstance(two.execution_ledger, ExecutionLedger)
-    assert two.execution_ledger.records == []
+    assert not two.execution_ledger.records
     assert len(one.execution_ledger.records) == 1
 
 
@@ -330,3 +332,39 @@ def test_perp_label_returns_to_open_after_a_close():
     assert [r.action for r in strategy.execution_ledger.records] == [
         "open_position", "close_position", "open_position",
     ]
+
+
+# ------------------------------------------------- copy / pickle semantics
+def _spot_strategy_with_deposit() -> ScriptedStrategy:
+    strategy = ScriptedStrategy(NamedEntity("SPOT", SimpleSpotExchange(trading_fee=0.005)))
+    strategy.queue([_deposit("SPOT", 1000.0)])
+    _step(strategy, {"SPOT": SimpleSpotExchangeGlobalState(close=100.0)})  # deposit
+    return strategy
+
+
+def test_pickled_strategy_round_trips_and_records_into_its_own_ledger():
+    original = _spot_strategy_with_deposit()
+    clone = pickle.loads(pickle.dumps(original))
+    clone.queue([ActionToTake("SPOT", Action("buy", {"amount_in_notional": 100.0}))])
+    _step(clone, {"SPOT": SimpleSpotExchangeGlobalState(close=100.0)}, hours=1)
+    (record,) = clone.execution_ledger.records
+    assert record.entity == "SPOT"
+    assert record.fee_paid == pytest.approx(0.5)
+    assert not original.execution_ledger.records
+
+
+def test_registered_entity_pickles_on_its_own():
+    strategy = _spot_strategy_with_deposit()
+    entity = strategy.get_entity("SPOT")
+    clone = pickle.loads(pickle.dumps(entity))
+    assert clone.balance == pytest.approx(entity.balance)
+    clone.action_buy(100.0)  # recorder survives the round-trip
+    assert clone.balance == pytest.approx(999.5)  # 0.5 fee on the 100 buy
+    assert not strategy.execution_ledger.records
+
+
+def test_trading_on_deepcopied_entity_leaves_original_ledger_untouched():
+    strategy = _spot_strategy_with_deposit()
+    clone = copy.deepcopy(strategy.get_entity("SPOT"))
+    clone.action_buy(100.0)
+    assert len(strategy.execution_ledger.records) == 0

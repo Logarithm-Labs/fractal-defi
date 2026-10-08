@@ -1,3 +1,4 @@
+import functools
 import typing
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -211,9 +212,12 @@ class BaseStrategy(ABC, Generic[PT]):
             raise ValueError(f"Entity {entity.entity_name} already exists.")
         # Attach execution telemetry: the recorder stamps the registry name
         # onto each recorded trade; the ledger adds the observation timestamp.
+        # A ``functools.partial`` over the bound ``record`` method (not a
+        # lambda) keeps entities and strategies picklable, and lets
+        # ``copy.deepcopy`` give a copied entity its own copied ledger
+        # instead of writing into this strategy's ledger.
         entity.entity.attach_execution_recorder(
-            lambda action, traded_notional, fee_paid, _name=entity.entity_name:
-            self._execution_ledger.record(action, traded_notional, fee_paid, _name)
+            functools.partial(self._execution_ledger.record, entity=entity.entity_name)
         )
         self._entities[entity.entity_name] = entity.entity
 
