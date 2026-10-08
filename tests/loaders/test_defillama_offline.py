@@ -18,6 +18,8 @@ from fractal.loaders.defillama import DefiLlamaDEXLoader, DefiLlamaPoolLoader, D
 from fractal.loaders.defillama.defillama import _parse_chart
 from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
 
+pytestmark = pytest.mark.core
+
 UTC = timezone.utc
 DAY = 86400
 T0 = 1704067200  # 2024-01-01 00:00:00 UTC
