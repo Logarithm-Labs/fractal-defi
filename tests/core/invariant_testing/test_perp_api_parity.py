@@ -24,6 +24,8 @@ SHARED_PUBLIC_API = {
     # Inherited from BaseEntity machinery
     "execute",
     "get_available_actions",
+    "attach_execution_recorder",  # execution telemetry (#68)
+    "record_execution",
     "internal_state",
     "global_state",
     # Lifecycle

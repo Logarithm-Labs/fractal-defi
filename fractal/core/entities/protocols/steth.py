@@ -115,6 +115,7 @@ class StakedETHEntity(BaseLiquidStakingToken):
                 f"Not enough cash to buy: {amount_in_notional} > {self._internal_state.cash}")
         self._internal_state.cash -= amount_in_notional
         self._internal_state.amount += amount_in_notional * (1 - self.trading_fee) / self._global_state.price
+        self.record_execution("buy", amount_in_notional, amount_in_notional * self.trading_fee)
 
     def action_sell(self, amount_in_product: float):
         """
@@ -139,6 +140,10 @@ class StakedETHEntity(BaseLiquidStakingToken):
                 f"Not enough product to sell: {amount_in_product} > {self._internal_state.amount}")
         self._internal_state.amount -= amount_in_product
         self._internal_state.cash += amount_in_product * (1 - self.trading_fee) * self._global_state.price
+        self.record_execution(
+            "sell", amount_in_product * self._global_state.price,
+            amount_in_product * self._global_state.price * self.trading_fee,
+        )
 
     def action_withdraw(self, amount_in_notional: float):
         """

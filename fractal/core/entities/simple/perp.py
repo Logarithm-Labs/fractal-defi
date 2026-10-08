@@ -235,6 +235,12 @@ class SimplePerpEntity(BasePerpEntity):
                     f"max_leverage {self.max_leverage}"
                 )
 
+        # Telemetry: fee already charged on the traded notional above.
+        self.record_execution(
+            "open_position", abs(amount_in_product) * mark_price,
+            abs(amount_in_product) * mark_price * self.trading_fee,
+        )
+
     # ``action_close_position`` is inherited from :class:`BasePerpEntity`
     # (default impl: ``action_open_position(amount_in_product=-self.size)``).
 

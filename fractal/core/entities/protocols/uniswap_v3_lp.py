@@ -450,10 +450,12 @@ class UniswapV3LPEntity(BasePoolEntity):
             # Range entirely above current price — swap full notional → volatile.
             stable_at_mint = 0.0
             volatile_at_mint = (amount_in_notional / p) * (1 - fee)
+            swapped_notional = amount_in_notional
         elif p >= price_upper:
             # Range entirely below — no swap, position is 100% stable.
             stable_at_mint = amount_in_notional
             volatile_at_mint = 0.0
+            swapped_notional = 0.0
         else:
             # In range — split by V3 ratio in notional terms.
             stable_factor = sqp - sqpl                     # stable per L
@@ -463,6 +465,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             volatile_value_pre = amount_in_notional * volatile_value_factor / total_factor
             stable_at_mint = stable_pre
             volatile_at_mint = (volatile_value_pre / p) * (1 - fee)
+            swapped_notional = volatile_value_pre
 
         if self.notional_side == "token0":
             token0_amt, token1_amt = stable_at_mint, volatile_at_mint
@@ -488,6 +491,9 @@ class UniswapV3LPEntity(BasePoolEntity):
         # responsible for affordability checks before issuing the action.
         if self.gas_cost_per_mint > 0:
             self._internal_state.cash -= self.gas_cost_per_mint
+        # Telemetry: only the swapped volatile portion paid a fee.
+        if swapped_notional > 0:
+            self.record_execution("open_position", swapped_notional, swapped_notional * fee)
 
     def action_open_position_from_pair(
         self,
@@ -519,6 +525,11 @@ class UniswapV3LPEntity(BasePoolEntity):
         # A pair-mode mint is still an on-chain mint: same gas as zap-in.
         if self.gas_cost_per_mint > 0:
             self._internal_state.cash -= self.gas_cost_per_mint
+        # Telemetry: the non-notional leftover converts with a fee.
+        volatile_leftover = token1_leftover if self.notional_side == "token0" else token0_leftover
+        if volatile_leftover > 0:
+            swapped_notional = volatile_leftover * p
+            self.record_execution("open_position_from_pair", swapped_notional, swapped_notional * fee)
 
     def action_close_position(self) -> None:
         """Zap-out: burn V3 LP, swap volatile leg back to notional (with fee).
@@ -545,6 +556,10 @@ class UniswapV3LPEntity(BasePoolEntity):
         gas_close = self.gas_cost_per_burn + self.gas_cost_per_collect
         if gas_close > 0:
             self._internal_state.cash -= gas_close
+        # Telemetry: the volatile leg is swapped back with the fee.
+        swapped_notional = volatile_back * p
+        if swapped_notional > 0:
+            self.record_execution("close_position", swapped_notional, swapped_notional * fee)
 
     def update_state(self, state: UniswapV3LPGlobalState) -> None:
         """Apply pool snapshot, rebalance position by V3 formula, accrue fees.

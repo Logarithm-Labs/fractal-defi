@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Generic, List, TypeVar
+from typing import Callable, Generic, List, Optional, TypeVar
 
 from fractal.core.base.action import Action
 
@@ -75,7 +75,29 @@ class BaseEntity(ABC, Generic[GS, IS]):
     def __init__(self):
         # Concrete subclasses populate ``_internal_state`` / ``_global_state``
         # inside ``_initialize_states``; no need to pre-set to None.
+        # Optional telemetry hook (issue #68): set by the owning strategy.
+        self._execution_recorder: Optional[Callable[[str, float, float], None]] = None
         self._initialize_states()
+
+    def attach_execution_recorder(self, recorder: Optional[Callable[[str, float, float], None]]) -> None:
+        """Attach (or detach with ``None``) an execution-telemetry recorder.
+
+        Called by :class:`BaseStrategy` at registration time. The recorder
+        receives ``(action_name, traded_notional, fee_paid)`` for every
+        successful fee-bearing trade.
+        """
+        self._execution_recorder = recorder
+
+    def record_execution(self, action: str, traded_notional: float = 0.0, fee_paid: float = 0.0) -> None:
+        """Record a successful fee-bearing trade (no-op without a recorder).
+
+        Entities call this at the end of fee-bearing ``action_*`` methods
+        with the notional actually traded and the fee charged — both in
+        the portfolio accounting unit. Validation/rollback paths raise
+        before reaching this call, so failed trades are never recorded.
+        """
+        if self._execution_recorder is not None:
+            self._execution_recorder(action, traded_notional, fee_paid)
 
     @abstractmethod
     def _initialize_states(self):

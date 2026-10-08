@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 
 from fractal.core.base.entity import GlobalState, InternalState
+from fractal.core.base.execution import ExecutionRecord
 
 
 @dataclass
@@ -61,6 +62,10 @@ class StrategyResult:
     internal_states: List[Dict[str, InternalState]]
     global_states: List[Dict[str, GlobalState]]
     balances: List[Dict[str, float]]
+    # Cumulative execution telemetry for the run (issue #68). Optional so
+    # existing 4-field constructions remain valid; ``None`` when telemetry
+    # is unavailable (e.g. results built by hand in tests/examples).
+    execution_records: Optional[List[ExecutionRecord]] = None
 
     def get_metrics(self, data: pd.DataFrame, notional_price: Optional[str | float] = None) -> StrategyMetrics:
         """
