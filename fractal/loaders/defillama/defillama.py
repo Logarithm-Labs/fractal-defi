@@ -174,8 +174,14 @@ class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
         complete: dict[int, bool] = {}
         for name in keys:
             epochs, values = _parse_chart(chain_tvls[name].get("tvl") or [], keep_missing=True)
-            for epoch, value in zip(epochs.tolist(), values.tolist(), strict=False):
-                day = _utc_day(epoch)
+            # TVL points are snapshots, not flows: several points from one chain
+            # on one UTC day must collapse to that day's latest snapshot before
+            # the cross-chain sum, otherwise intraday updates double count.
+            order = np.argsort(epochs, kind="stable")
+            per_day: dict[int, float] = {}
+            for epoch, value in zip(epochs[order].tolist(), values[order].tolist(), strict=False):
+                per_day[_utc_day(epoch)] = value
+            for day, value in per_day.items():
                 missing = bool(np.isnan(value))
                 complete[day] = complete.get(day, True) and not missing
                 if not missing:

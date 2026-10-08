@@ -346,3 +346,83 @@ def test_pro_series_is_sorted_and_deduplicated(offline_cache, monkeypatch):
     assert history.index.is_monotonic_increasing
     assert history.index.is_unique
     assert history["rate"].tolist() == pytest.approx([0.11, 0.12])
+
+
+# ---------------------------------------------- per-chain intraday collapse
+@pytest.mark.core
+def test_tvl_loader_same_chain_intraday_points_do_not_double_count(offline_cache):
+    """Two points from one chain on one UTC day are snapshots, not addends."""
+    payload = {
+        "chains": ["A"],
+        "chainTvls": {"A": {"tvl": [
+            {"date": T0, "totalLiquidityUSD": 110.0},
+            {"date": T0 + 13 * 3600, "totalLiquidityUSD": 111.0},
+        ]}},
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    history = loader.read(with_run=True)
+    assert history["tvl"].tolist() == pytest.approx([111.0])
+    assert history.index[0] == pd.Timestamp(T0, unit="s", tz="UTC")
+
+
+@pytest.mark.core
+def test_tvl_loader_sums_per_chain_last_points_across_chains(offline_cache):
+    """Each chain contributes its last point of the day, then chains are summed."""
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            # out of order on purpose: the latest epoch wins, not the last listed
+            "A": {"tvl": [
+                {"date": T0 + 20 * 3600, "totalLiquidityUSD": 105.0},
+                {"date": T0, "totalLiquidityUSD": 100.0},
+                {"date": T0 + DAY, "totalLiquidityUSD": 130.0},
+            ]},
+            "B": {"tvl": [
+                {"date": T0 + 60, "totalLiquidityUSD": 7.0},
+                {"date": T0 + DAY, "totalLiquidityUSD": 9.0},
+            ]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    history = loader.read(with_run=True)
+    assert history["tvl"].tolist() == pytest.approx([112.0, 139.0])
+
+
+@pytest.mark.core
+def test_tvl_loader_day_incomplete_when_chain_last_point_is_null(offline_cache):
+    """A chain whose last point of the day is null leaves that day incomplete."""
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            "A": {"tvl": [{"date": T0, "totalLiquidityUSD": 100.0}]},
+            "B": {"tvl": [
+                {"date": T0, "totalLiquidityUSD": 5.0},
+                {"date": T0 + 3600, "totalLiquidityUSD": None},
+            ]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        history = loader.read(with_run=True)
+    assert any("reported no TVL" in str(w.message) for w in caught)
+    assert len(history) == 0
+
+
+@pytest.mark.core
+def test_tvl_loader_earlier_null_is_superseded_by_later_point(offline_cache):
+    """Only the chain's last point of the day decides completeness."""
+    payload = {
+        "chains": ["A"],
+        "chainTvls": {"A": {"tvl": [
+            {"date": T0, "totalLiquidityUSD": None},
+            {"date": T0 + 3600, "totalLiquidityUSD": 50.0},
+        ]}},
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    history = loader.read(with_run=True)
+    assert history["tvl"].tolist() == pytest.approx([50.0])
