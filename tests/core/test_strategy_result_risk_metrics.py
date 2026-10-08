@@ -6,7 +6,6 @@ cannot silently rewrite its own expectations.
 """
 import math
 from datetime import datetime, timedelta, timezone
-from typing import List
 
 import numpy as np
 import pytest
@@ -17,7 +16,7 @@ UTC = timezone.utc
 HOURS_PER_YEAR = 365 * 24
 
 
-def _balances_from_returns(returns: List[float], initial: float = 100.0) -> List[float]:
+def _balances_from_returns(returns: list[float], initial: float = 100.0) -> list[float]:
     balances, balance = [initial], initial
     for r in returns:
         balance *= 1 + r
@@ -25,7 +24,7 @@ def _balances_from_returns(returns: List[float], initial: float = 100.0) -> List
     return balances
 
 
-def _result_from_balances(balances: List[float], step_hours: int = 1) -> StrategyResult:
+def _result_from_balances(balances: list[float], step_hours: int = 1) -> StrategyResult:
     """Single-entity result whose ``net_balance`` path is exactly ``balances``.
 
     Balance is produced by a constant ``amount=1`` marked at the balance
@@ -43,13 +42,13 @@ def _result_from_balances(balances: List[float], step_hours: int = 1) -> Strateg
     )
 
 
-def _metrics_for(returns: List[float], step_hours: int = 1) -> StrategyMetrics:
+def _metrics_for(returns: list[float], step_hours: int = 1) -> StrategyMetrics:
     result = _result_from_balances(_balances_from_returns(returns), step_hours)
     return result.get_metrics(result.to_dataframe())
 
 
 # ------------------------------------------------------------------ helpers
-def _expected_sortino(returns: List[float], step_hours: int = 1) -> float:
+def _expected_sortino(returns: list[float], step_hours: int = 1) -> float:
     downside = [min(r, 0.0) for r in returns]
     downside_std = math.sqrt(sum(d * d for d in downside) / len(downside))
     if downside_std == 0:
@@ -62,14 +61,14 @@ def _expected_sortino(returns: List[float], step_hours: int = 1) -> float:
     return (sum(returns) / len(returns)) / downside_std * math.sqrt(frequency)
 
 
-def _expected_var_cvar(returns: List[float]):
+def _expected_var_cvar(returns: list[float]):
     values = np.sort(np.array([r for r in returns if math.isfinite(r)]))
     q05 = float(np.quantile(values, 0.05))
     tail_size = max(1, math.ceil(0.05 * values.size))
     return max(0.0, -q05), max(0.0, -float(values[:tail_size].mean()))
 
 
-def _expected_omega(returns: List[float]) -> float:
+def _expected_omega(returns: list[float]) -> float:
     gains = sum(max(r, 0.0) for r in returns)
     losses = sum(max(-r, 0.0) for r in returns)
     return gains / losses if losses > 0 else 0.0
