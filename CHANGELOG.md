@@ -66,6 +66,16 @@ when the observations carry `fee_growth0/1`.
   out) next to the unchanged linear `apy`, so existing grid results
   stay comparable. Logged to MLflow alongside `apy` (mean / q05 / q95 /
   cvar05 aggregates included).
+- **`StrategyMetrics` risk metrics** — `sortino` (annualized,
+  zero-target downside deviation), `calmar` (`apy / |max_drawdown|`),
+  `var_95` / `cvar_95` (positive loss magnitudes from the worst 5% of
+  per-bar returns), `omega_ratio` (gains / losses at a zero threshold)
+  and `time_in_drawdown` (fraction of bars strictly below the running
+  peak). Ratio policy: `sortino` / `calmar` / `omega_ratio` are `+inf`
+  when there is no observed downside with a positive return, so a
+  loss-free path ranks above the same path with any loss; `0.0` means
+  undefined / degenerate input. Logged to MLflow via
+  `metrics.__dict__` (the SQL store clamps `inf` to the max float).
 - **Pendle PT + Morpho Blue + Boros** — a fixed-term paradigm and three
   protocol entities (supersedes #83):
   `BaseFixedTermEntity` / `BaseFixedTermGlobalState` (`seconds_to_expiry`

@@ -101,21 +101,37 @@ def test_zero_metrics_includes_new_fields():
 @pytest.mark.core
 def test_flat_series_yields_all_zero_risk_metrics():
     m = _metrics_for([0.0, 0.0, 0.0, 0.0])
-    assert m.sortino == 0.0  # no downside deviation
-    assert m.calmar == 0.0   # no drawdown
+    # No downside but no positive return either: undefined ratio -> 0.0, not +inf.
+    assert m.sortino == 0.0  # no downside deviation, zero mean
+    assert m.calmar == 0.0   # no drawdown, zero apy
     assert m.var_95 == 0.0 and m.cvar_95 == 0.0
-    assert m.omega_ratio == 0.0  # zero denominator (no losses)
+    assert m.omega_ratio == 0.0  # no losses and no gains
     assert m.time_in_drawdown == 0.0
 
 
 @pytest.mark.core
-def test_all_positive_series_has_zero_downside_and_drawdown_metrics():
+def test_all_positive_series_has_infinite_ratios_and_zero_loss_metrics():
     m = _metrics_for([0.01, 0.02, 0.015])
-    assert m.sortino == 0.0
-    assert m.calmar == 0.0
+    # No observed downside with a positive return: the ratios are unbounded.
+    assert m.sortino == math.inf
+    assert m.calmar == math.inf
+    assert m.omega_ratio == math.inf
+    # Loss magnitudes stay at zero — there are no losses to measure.
     assert m.var_95 == 0.0 and m.cvar_95 == 0.0
-    assert m.omega_ratio == 0.0  # no losing bars → finite 0.0 policy
     assert m.time_in_drawdown == 0.0
+
+
+@pytest.mark.core
+def test_monotone_gain_ranks_above_same_path_with_one_small_loss():
+    """A strictly better path (identical gains, no loss) must never rank
+    below the same path with one extra -0.1% bar on the ratio metrics."""
+    gains = [0.01, 0.02, 0.015, 0.01]
+    clean = _metrics_for(gains)
+    dented = _metrics_for(gains + [-0.001])
+    assert dented.sortino > 0 and dented.calmar > 0 and dented.omega_ratio > 0
+    assert clean.sortino > dented.sortino
+    assert clean.calmar > dented.calmar
+    assert clean.omega_ratio > dented.omega_ratio
 
 
 @pytest.mark.core

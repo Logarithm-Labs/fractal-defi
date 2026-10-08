@@ -14,14 +14,21 @@ class StrategyMetrics:
     """
     Default metrics of the strategy.
 
-    Conventions for the risk metrics added with #68:
+    Conventions for the risk metrics added with #68.
+
+    Ratio policy for ``sortino``, ``calmar`` and ``omega_ratio``: ``+inf``
+    means no observed downside with a positive return (so a loss-free path
+    always ranks above the same path with any loss); ``0.0`` means the
+    ratio is undefined or the input is degenerate (flat or non-positive
+    return with no downside, empty/degenerate data).
 
     * ``sortino`` — annualized downside-only Sharpe with a zero target
       return: ``mean(r) / downside_std * sqrt(frequency)``, where
       ``downside_std`` is the root-mean-square of the negative part of
-      the per-bar returns. ``0.0`` when there is no downside deviation.
-    * ``calmar`` — the linear ``apy / abs(max_drawdown)``. ``0.0`` when
-      there is no drawdown (avoiding a division by zero).
+      the per-bar returns. With no downside deviation: ``+inf`` when the
+      mean return is positive, else ``0.0``.
+    * ``calmar`` — the linear ``apy / abs(max_drawdown)``. With no
+      drawdown: ``+inf`` when ``apy`` is positive, else ``0.0``.
     * ``var_95`` / ``cvar_95`` — **positive loss magnitudes** taken from
       the worst 5% of per-bar returns: ``var_95 = -quantile(r, 0.05)`` and
       ``cvar_95`` is the mean loss over the ``ceil(0.05 * n)`` worst
@@ -29,8 +36,8 @@ class StrategyMetrics:
       losses, and non-finite returns (from a ``0 -> positive`` balance
       transition) are dropped before either is computed.
     * ``omega_ratio`` — ``sum(max(r, 0)) / sum(max(-r, 0))`` at a zero
-      per-bar threshold. ``0.0`` when there are no losing bars
-      (denominator zero; finite-value policy).
+      per-bar threshold. With no losing bars: ``+inf`` when there are
+      gains, else ``0.0``.
     * ``time_in_drawdown`` — fraction of observations **strictly below**
       the running peak of the balance, in ``[0, 1]``.
     """
@@ -42,6 +49,8 @@ class StrategyMetrics:
     # ``-1.0`` when the balance is wiped out. Kept separate from ``apy`` so
     # existing grid results and dashboards stay comparable.
     cagr: float = 0.0
+    # Ratio metrics: ``+inf`` = no observed downside with positive return;
+    # ``0.0`` = undefined / degenerate input (see class docstring).
     sortino: float = 0.0
     calmar: float = 0.0
     var_95: float = 0.0
@@ -82,6 +91,9 @@ class StrategyResult:
             (empty df, single timestamp, zero/non-finite initial balance,
             zero notional_price column) returns ``StrategyMetrics`` filled
             with ``0.0`` rather than raising or returning ``inf``/``nan``.
+            On valid inputs ``sortino`` / ``calmar`` / ``omega_ratio`` are
+            ``+inf`` when there is no observed downside and the return is
+            positive (see ``StrategyMetrics``).
         """
         if data is None or data.empty:
             return self._zero_metrics()
@@ -132,7 +144,10 @@ class StrategyResult:
         max_drawdown = float(np.min(drawdowns)) if drawdowns.size else 0.0
         time_in_drawdown = float(np.mean(net_balance < cumulative_max)) if net_balance.size else 0.0
 
-        calmar = apy / abs(max_drawdown) if max_drawdown < 0 else 0.0
+        if max_drawdown < 0:
+            calmar = apy / abs(max_drawdown)
+        else:
+            calmar = math.inf if apy > 0 else 0.0
 
         returns_values = returns.values if not returns.empty else np.array([])
         # A bar that divides by a zero balance (e.g. ``0 -> positive``) yields a
@@ -144,7 +159,9 @@ class StrategyResult:
         else:
             # Downside-only Sharpe with a zero target, annualized like ``sharpe``.
             downside_std = float(np.sqrt(np.mean(np.minimum(returns_values, 0.0) ** 2)))
-            if downside_std == 0 or not np.isfinite(downside_std):
+            if downside_std == 0:
+                sortino = math.inf if float(returns_values.mean()) > 0 else 0.0
+            elif not np.isfinite(downside_std):
                 sortino = 0.0
             else:
                 sortino = float(returns_values.mean()) / downside_std * np.sqrt(data_frequency)
@@ -161,7 +178,10 @@ class StrategyResult:
 
             gains = float(np.maximum(returns_values, 0.0).sum())
             losses = float(np.maximum(-returns_values, 0.0).sum())
-            omega_ratio = gains / losses if losses > 0 else 0.0
+            if losses > 0:
+                omega_ratio = gains / losses
+            else:
+                omega_ratio = math.inf if gains > 0 else 0.0
 
         return StrategyMetrics(
             accumulated_return=accumulated_return,
