@@ -149,7 +149,9 @@ def test_perp_close_position_records_the_closing_leg():
     strategy.queue([ActionToTake("PERP", Action("close_position", {}))])
     _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=101.0)}, hours=1)
     records = strategy.execution_ledger.records
-    assert [r.action for r in records] == ["open_position", "open_position"]
+    # a flatten must be labelled as a close, not as the ``open_position`` call
+    # it reuses internally (per-open/close telemetry breakdowns depend on it)
+    assert [r.action for r in records] == ["open_position", "close_position"]
     # the closing leg executes at the CURRENT mark (101), so notional and
     # fee are computed on 2.0 × 101
     assert records[1].traded_notional == pytest.approx(202.0)
@@ -311,3 +313,21 @@ def test_entity_recorder_off_by_default_outside_strategies():
     spot._global_state.close = 100.0
     spot.action_buy(100.0)
     assert spot._execution_recorder is None
+
+
+def test_perp_label_returns_to_open_after_a_close():
+    """The close label must not leak into the next entry on that entity."""
+    perp = SimplePerpEntity(trading_fee=0.001, max_leverage=10)
+    strategy = ScriptedStrategy(NamedEntity("PERP", perp))
+    strategy.queue([_deposit("PERP", 1000.0)])
+    strategy.queue([ActionToTake("PERP", Action("open_position", {"amount_in_product": 2.0}))])
+    _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=100.0)})  # deposit
+    _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=100.0)})  # open
+    strategy.queue([ActionToTake("PERP", Action("close_position", {}))])
+    _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=101.0)}, hours=1)
+    assert perp._closing_position is False
+    strategy.queue([ActionToTake("PERP", Action("open_position", {"amount_in_product": 1.0}))])
+    _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=101.0)}, hours=2)
+    assert [r.action for r in strategy.execution_ledger.records] == [
+        "open_position", "close_position", "open_position",
+    ]

@@ -240,7 +240,7 @@ class BorosEntity(BaseFixedTermEntity, BasePerpEntity):
         # Telemetry: taker fee charged above on the traded yield units.
         traded_notional = abs(amount_in_product) * self._global_state.underlying_price
         self.record_execution(
-            "open_position", traded_notional,
+            self._trade_action_label(), traded_notional,
             open_fee_coin(amount_in_product, self.taker_fee_rate, years) * self._global_state.underlying_price,
         )
 

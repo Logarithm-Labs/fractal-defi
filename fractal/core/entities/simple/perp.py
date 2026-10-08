@@ -237,7 +237,7 @@ class SimplePerpEntity(BasePerpEntity):
 
         # Telemetry: fee already charged on the traded notional above.
         self.record_execution(
-            "open_position", abs(amount_in_product) * mark_price,
+            self._trade_action_label(), abs(amount_in_product) * mark_price,
             abs(amount_in_product) * mark_price * self.trading_fee,
         )
 

@@ -36,7 +36,14 @@ class BasePerpInternalState(InternalState):
 
 
 class BasePerpEntity(BaseEntity):
-    """Common interface for perpetual-futures entities."""
+    """Common interface for perpetual-futures entities.
+
+    ``_closing_position`` is ``True`` only while :meth:`action_close_position`
+    drives the open path, so telemetry labels a flatten ``close_position``
+    instead of the ``open_position`` call it reuses internally.
+    """
+
+    _closing_position: bool = False
 
     # Narrow the annotation so polymorphic strategy code sees
     # ``collateral`` on ``self.internal_state`` for any perp entity.
@@ -80,4 +87,12 @@ class BasePerpEntity(BaseEntity):
         that need bespoke close bookkeeping.
         """
         if self.size != 0:
-            self.action_open_position(amount_in_product=-self.size)
+            self._closing_position = True
+            try:
+                self.action_open_position(amount_in_product=-self.size)
+            finally:
+                self._closing_position = False
+
+    def _trade_action_label(self) -> str:
+        """Action name to record for the trade currently being executed."""
+        return "close_position" if self._closing_position else "open_position"
