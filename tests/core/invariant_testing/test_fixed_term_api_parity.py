@@ -22,7 +22,6 @@ from fractal.core.entities.base import BaseFixedTermEntity, BaseLendingEntity, B
 SHARED_LENDING_API = {
     "action_deposit", "action_withdraw", "action_borrow", "action_repay",
     "update_state", "internal_state", "global_state", "execute", "get_available_actions",
-    "attach_execution_recorder", "record_execution",  # execution telemetry (#68)
     "balance", "collateral_value", "debt_value", "ltv", "health_factor", "max_borrow_amount",
     "liquidation_price", "calculate_repay", "max_ltv", "liq_thr", "collateral_is_volatile",
 }
@@ -35,7 +34,6 @@ MORPHO_ONLY = {
 SHARED_PERP_API = {
     "action_deposit", "action_withdraw", "action_open_position", "action_close_position",
     "update_state", "internal_state", "global_state", "execute", "get_available_actions",
-    "attach_execution_recorder", "record_execution",  # execution telemetry (#68)
     "balance", "size", "leverage", "pnl", "maintenance_margin", "trading_fee", "max_leverage",
 }
 SIMPLE_PERP_ONLY = {
@@ -53,7 +51,6 @@ SHARED_SPOT_API = {
     "action_deposit", "action_withdraw", "action_buy", "action_sell",
     "action_inject_product", "action_remove_product",
     "update_state", "internal_state", "global_state", "execute", "get_available_actions",
-    "attach_execution_recorder", "record_execution",  # execution telemetry (#68)
     "balance", "current_price",
 }
 SIMPLE_SPOT_ONLY = {"trading_fee", "effective_fee_rate"}  # PT fees are spreads on the implied rate

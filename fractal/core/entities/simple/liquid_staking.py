@@ -112,7 +112,6 @@ class SimpleLiquidStakingToken(BaseLiquidStakingToken):
         )
         self._internal_state.amount += product_received
         self._internal_state.cash -= amount_in_notional
-        self.record_execution("buy", amount_in_notional, amount_in_notional * self._trading_fee)
 
     def action_sell(self, amount_in_product: float) -> None:
         if amount_in_product < 0:
@@ -129,10 +128,6 @@ class SimpleLiquidStakingToken(BaseLiquidStakingToken):
         )
         self._internal_state.amount -= amount_in_product
         self._internal_state.cash += notional_received
-        self.record_execution(
-            "sell", amount_in_product * self._global_state.price,
-            amount_in_product * self._global_state.price * self._trading_fee,
-        )
 
     # ------------------------------------------------------------ account
     def action_deposit(self, amount_in_notional: float) -> None:

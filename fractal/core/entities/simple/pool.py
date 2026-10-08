@@ -146,10 +146,6 @@ class SimplePoolEntity(BasePoolEntity):
         deployed = amount_in_notional * (1.0 - self.effective_fee_rate / 2)
         share = deployed / self._global_state.tvl
         self._internal_state.liquidity = share * self._global_state.liquidity
-        self.record_execution(
-            "open_position", amount_in_notional / 2,
-            amount_in_notional / 2 * self.effective_fee_rate,
-        )
 
     def action_close_position(self) -> None:
         """Burn LP tokens. Stable half returns at full value, volatile half swaps with fee."""
@@ -161,11 +157,6 @@ class SimplePoolEntity(BasePoolEntity):
         proceeds = share * self._global_state.tvl * (1.0 - self.effective_fee_rate / 2)
         self._internal_state.cash += proceeds
         self._internal_state.liquidity = 0.0
-        # Telemetry: only the swapped half pays the fee.
-        swapped_notional = share * self._global_state.tvl / 2
-        self.record_execution(
-            "close_position", swapped_notional, swapped_notional * self.effective_fee_rate,
-        )
 
     # --------------------------------------------------------- readouts
     @property
