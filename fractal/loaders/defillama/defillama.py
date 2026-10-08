@@ -15,8 +15,9 @@ Pro v2 endpoints (``pro-api.llama.fi/<KEY>/...``, optional):
 The yield-pool endpoints are **not** available on the unauthenticated free
 API (verified 2026-10-08), so they require a DefiLlama Pro key passed as a
 constructor argument or the ``DEFILLAMA_API_KEY`` environment variable.
-The key never appears in cache paths, reprs, logs, or error messages —
-failures re-raise with the key redacted.
+The key never appears in cache paths, reprs, logs, error messages, or
+formatted tracebacks — a Pro request failure re-raises a redacted error
+detached from the key-bearing original.
 """
 import os
 import warnings
@@ -33,9 +34,15 @@ from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
 DEFAULT_BASE_URL = "https://api.llama.fi"
 PRO_BASE_URL = "https://pro-api.llama.fi"
 DEFAULT_FEES_DATA_TYPE = "dailyFees"
+SECONDS_PER_DAY = 86_400
 
 
-def _parse_chart(points: List[Any]) -> Tuple[np.ndarray, np.ndarray]:
+def _utc_day(epoch: int) -> int:
+    """Floor an epoch-seconds timestamp to the start of its UTC day."""
+    return int(epoch) - int(epoch) % SECONDS_PER_DAY
+
+
+def _parse_chart(points: List[Any], keep_missing: bool = False) -> Tuple[np.ndarray, np.ndarray]:
     """Normalize a DefiLlama history chart to ``(epoch_seconds, values)``.
 
     Two response shapes exist in the wild:
@@ -46,6 +53,9 @@ def _parse_chart(points: List[Any]) -> Tuple[np.ndarray, np.ndarray]:
 
     Points with missing values are skipped; timestamps must be integer
     epoch seconds (DefiLlama contract), anything else raises ``ValueError``.
+    With ``keep_missing=True`` an explicit ``null`` is kept as ``NaN`` so a
+    caller can tell "this source did not report that day" from "this source
+    never covered that day".
     """
     epochs: List[int] = []
     values: List[float] = []
@@ -59,10 +69,10 @@ def _parse_chart(points: List[Any]) -> Tuple[np.ndarray, np.ndarray]:
             epoch, value = point[0], point[1]
         else:
             raise ValueError(f"DefiLlama chart point has an unexpected shape: {point!r}")
-        if epoch is None or value is None:
+        if epoch is None or (value is None and not keep_missing):
             continue
         epochs.append(int(epoch))
-        values.append(float(value))
+        values.append(np.nan if value is None else float(value))
     return np.asarray(epochs, dtype=np.int64), np.asarray(values, dtype=float)
 
 
@@ -161,13 +171,27 @@ class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
                     "pass an explicit ``chain`` argument"
                 )
         frames: Dict[int, float] = {}
+        complete: Dict[int, bool] = {}
         for name in keys:
-            epochs, values = _parse_chart(chain_tvls[name].get("tvl", []))
+            epochs, values = _parse_chart(chain_tvls[name].get("tvl") or [], keep_missing=True)
             for epoch, value in zip(epochs.tolist(), values.tolist()):
-                frames[epoch] = frames.get(epoch, 0.0) + value
-        self._data = pd.DataFrame(
-            {"time": sorted(frames), "tvl": [frames[e] for e in sorted(frames)]},
-        )
+                day = _utc_day(epoch)
+                missing = bool(np.isnan(value))
+                complete[day] = complete.get(day, True) and not missing
+                if not missing:
+                    frames[day] = frames.get(day, 0.0) + value
+        # Only whole days are published: summing a day where a selected chain
+        # reported nothing would silently understate the protocol total, which
+        # ``read`` cannot detect because the sum itself is a valid float.
+        days = [day for day in sorted(complete) if complete[day]]
+        if len(days) != len(complete):
+            warnings.warn(
+                f"DefiLlama /protocol/{self.protocol}: dropped "
+                f"{len(complete) - len(days)} day(s) where at least one selected chain "
+                "reported no TVL, rather than understating the total.",
+                UserWarning, stacklevel=3,
+            )
+        self._data = pd.DataFrame({"time": days, "tvl": [frames[day] for day in days]})
 
     def transform(self) -> None:
         if self._data is None or self._data.empty:
@@ -220,7 +244,10 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
         self.fees_data_type: str = fees_data_type
 
     def _cache_subject(self) -> str:
-        return f"dex-{self.protocol}"
+        # The fees column depends on ``fees_data_type``: without it in the key a
+        # dailyRevenue run and a default run share one cache file and the second
+        # read silently returns the first one's metric.
+        return f"dex-{self.protocol}-{self.fees_data_type}"
 
     def extract(self) -> None:
         dex = self._get_json(f"/summary/dexs/{self.protocol}")
@@ -231,8 +258,11 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
                 raise ValueError(f"DefiLlama /summary/{name}/{self.protocol}: no totalDataChart")
         vol_epochs, vol_values = _parse_chart(dex["totalDataChart"])
         fee_epochs, fee_values = _parse_chart(fees["totalDataChart"])
+        # Key on the UTC day, not the raw timestamp: two sources reporting the
+        # same day at different times must join into one row.
+        times = np.concatenate([vol_epochs, fee_epochs])
         self._data = pd.DataFrame({
-            "time": np.concatenate([vol_epochs, fee_epochs]),
+            "time": times - times % SECONDS_PER_DAY,
             "value": np.concatenate([vol_values, fee_values]),
             "kind": ["volume"] * len(vol_epochs) + ["fees"] * len(fee_epochs),
         })
@@ -244,6 +274,10 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
             return
         wide = self._data.pivot_table(index="time", columns="kind",
                                       values="value", aggfunc="first")
+        # A legitimately empty chart (new protocol, null-only fees) drops its
+        # pivot column entirely; reindex so the join reports "nothing to join"
+        # instead of raising KeyError.
+        wide = wide.reindex(columns=["volume", "fees"])
         wide = wide.reset_index().astype({"time": np.int64})
         has_both = wide["volume"].notna() & wide["fees"].notna()
         if int((~has_both).sum()) > 0:
@@ -307,7 +341,10 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
         try:
             return super()._get_json(path, params=params)
         except Exception as exc:
-            raise type(exc)(str(exc).replace(self._api_key, "<redacted>")) from exc
+            # ``from None`` detaches the original exception, whose URL and
+            # response body carry the key; otherwise the credential is still
+            # reachable through ``__cause__`` and any formatted traceback.
+            raise type(exc)(str(exc).replace(self._api_key, "<redacted>")) from None
 
 
 class DefiLlamaYieldsLoader(DefiLlamaProLoader):
@@ -357,7 +394,12 @@ class DefiLlamaYieldsLoader(DefiLlamaProLoader):
         df = self._data.astype({"time": np.int64, "rate": float})
         times = pd.to_datetime(df["time"], unit="s", utc=True)
         mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
-        self._data = df[mask].reset_index(drop=True)
+        # The Pro API does not guarantee ordering or uniqueness; a duplicated or
+        # non-monotonic index breaks downstream time alignment.
+        self._data = (df[mask]
+                      .sort_values("time", kind="stable")
+                      .drop_duplicates("time", keep="last")
+                      .reset_index(drop=True))
 
     def read(self, with_run: bool = False) -> RateHistory:
         if with_run:
@@ -421,7 +463,11 @@ class DefiLlamaPoolLoader(DefiLlamaProLoader):
         df = self._data.astype({"time": np.int64, "tvl": float})
         times = pd.to_datetime(df["time"], unit="s", utc=True)
         mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
-        self._data = df[mask].reset_index(drop=True)
+        # Same normalization as the yield loader (see there).
+        self._data = (df[mask]
+                      .sort_values("time", kind="stable")
+                      .drop_duplicates("time", keep="last")
+                      .reset_index(drop=True))
 
     def read(self, with_run: bool = False) -> TVLHistory:
         if with_run:

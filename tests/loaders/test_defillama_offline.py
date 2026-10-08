@@ -219,3 +219,130 @@ def test_pro_loader_cache_round_trip(offline_cache, monkeypatch):
     fresh = DefiLlamaPoolLoader("pool-1")
     again = fresh.read()
     assert again["tvl"].tolist() == pytest.approx([1000.0, 1100.0, 1200.0])
+
+
+# ------------------------------------------------- review regression fixes
+@pytest.mark.core
+def test_tvl_loader_drops_days_where_a_chain_reports_null(offline_cache):
+    """A per-chain ``null`` must drop the day, not be added as 0.0.
+
+    Summing A=100 with a missing B published 100 as the protocol total with no
+    NaN the ``read`` guard could see, silently understating TVL.
+    """
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            "A": {"tvl": [
+                {"date": T0, "totalLiquidityUSD": 100.0},
+                {"date": T0 + DAY, "totalLiquidityUSD": 300.0},
+            ]},
+            "B": {"tvl": [
+                {"date": T0, "totalLiquidityUSD": 100.0},
+                {"date": T0 + DAY, "totalLiquidityUSD": None},
+            ]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        history = loader.read(with_run=True)
+    assert any("reported no TVL" in str(w.message) for w in caught)
+    # only the fully-reported day survives; 300 must never be published as the total
+    assert history["tvl"].tolist() == pytest.approx([200.0])
+    assert history.index[0] == pd.Timestamp(T0, unit="s", tz="UTC")
+    assert 300.0 not in history["tvl"].tolist()
+
+
+@pytest.mark.core
+def test_tvl_loader_normalizes_a_utc_day_reported_at_different_times(offline_cache):
+    """The same UTC day from two chains is one row, not two partial rows."""
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            "A": {"tvl": [{"date": T0, "totalLiquidityUSD": 100.0}]},
+            "B": {"tvl": [{"date": T0 + 60, "totalLiquidityUSD": 200.0}]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    history = loader.read(with_run=True)
+    assert len(history) == 1
+    assert history["tvl"].tolist() == pytest.approx([300.0])
+    assert history.index[0] == pd.Timestamp(T0, unit="s", tz="UTC")
+
+
+@pytest.mark.core
+def test_dex_cache_key_includes_fees_data_type():
+    """Otherwise a dailyRevenue run is served from the default run's cache."""
+    default = DefiLlamaDEXLoader("proto")
+    revenue = DefiLlamaDEXLoader("proto", fees_data_type="dailyRevenue")
+    assert default._cache_key() != revenue._cache_key()
+
+
+@pytest.mark.core
+def test_dex_loader_returns_empty_history_when_a_chart_is_empty(offline_cache):
+    """An empty (or null-only) fees chart is valid data, not a KeyError."""
+    for fee_chart in ([], [[T0, None]]):
+        loader = DefiLlamaDEXLoader("proto")
+        loader._http = _http_with({
+            "/summary/dexs/proto": {"totalDataChart": _chart([T0, T0 + DAY], [10.0, 20.0])},
+            "/summary/fees/proto": {"totalDataChart": fee_chart},
+        })
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter("always")
+            history = loader.read(with_run=True)
+        assert isinstance(history, DEXHistory) and len(history) == 0
+
+
+@pytest.mark.core
+def test_dex_loader_joins_a_day_reported_at_different_times(offline_cache):
+    """Volume at 00:00 and fees at 01:00 of the same UTC day must join."""
+    loader = DefiLlamaDEXLoader("proto")
+    loader._http = _http_with({
+        "/summary/dexs/proto": {"totalDataChart": _chart([T0], [10.0])},
+        "/summary/fees/proto": {"totalDataChart": _chart([T0 + 3600], [0.5])},
+    })
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        history = loader.read(with_run=True)
+    assert not any("dropped" in str(w.message) for w in caught)
+    assert history["volume"].tolist() == pytest.approx([10.0])
+    assert history["fees"].tolist() == pytest.approx([0.5])
+
+
+@pytest.mark.core
+def test_pro_loader_redaction_covers_cause_and_traceback(monkeypatch, offline_cache):
+    """``from exc`` kept the key-bearing original reachable via ``__cause__``."""
+    import traceback
+
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "sekrit-key")
+    loader = DefiLlamaPoolLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1":
+                               RuntimeError("connection refused for /sekrit-key/yields/chart/pool-1")})
+    with pytest.raises(Exception) as caught:
+        loader.read(with_run=True)
+    formatted = ''.join(traceback.format_exception(caught.value))
+    assert "sekrit-key" not in str(caught.value)
+    assert "sekrit-key" not in formatted
+    assert caught.value.__cause__ is None
+
+
+@pytest.mark.core
+def test_pro_series_is_sorted_and_deduplicated(offline_cache, monkeypatch):
+    """Out-of-order and duplicated API points must not reach the typed frame."""
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "k")
+    payload = {
+        "status": "success",
+        "data": [
+            {"timestamp": "2024-01-02T00:00:00.000Z", "apy": 0.12},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 0.10},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 0.11},
+        ],
+    }
+    loader = DefiLlamaYieldsLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1": payload})
+    history = loader.read(with_run=True)
+    assert history.index.is_monotonic_increasing
+    assert history.index.is_unique
+    assert history["rate"].tolist() == pytest.approx([0.11, 0.12])
