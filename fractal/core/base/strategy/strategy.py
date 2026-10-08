@@ -1,10 +1,11 @@
 import functools
 import typing
 from abc import ABC, abstractmethod
+from collections.abc import Callable, Mapping
 from copy import deepcopy
 from datetime import datetime
 from types import MappingProxyType
-from typing import Callable, Dict, Generic, List, Mapping, NamedTuple, Optional, Type, TypeVar, Union
+from typing import Generic, NamedTuple, TypeVar
 
 from fractal.core.base.entity import Action, BaseEntity, GlobalState, InternalState
 from fractal.core.base.execution import ExecutionLedger
@@ -12,8 +13,15 @@ from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
 from fractal.core.base.strategy.result import StrategyResult
 
-NamedEntity = NamedTuple('NamedEntity', [('entity_name', str), ('entity', BaseEntity)])
-ActionToTake = NamedTuple('ActionToTake', [('entity_name', str), ('action', Action)])
+
+class NamedEntity(NamedTuple):
+    entity_name: str
+    entity: BaseEntity
+
+
+class ActionToTake(NamedTuple):
+    entity_name: str
+    action: Action
 
 
 class BaseStrategyParams:
@@ -28,7 +36,7 @@ class BaseStrategyParams:
     cleanly replaces the dict-form constructor below.
     """
 
-    def __init__(self, data: Optional[Dict] = None):
+    def __init__(self, data: dict | None = None):
         if data is not None:
             for key, value in data.items():
                 setattr(self, key, value)
@@ -70,7 +78,7 @@ class BaseStrategy(ABC, Generic[PT]):
     #: Used by :meth:`set_params` to construct a default instance when
     #: ``params=None`` (only succeeds when every field on the params class
     #: has a default value). An explicit class attribute override wins.
-    PARAMS_CLS: Optional[Type[BaseStrategyParams]] = None
+    PARAMS_CLS: type[BaseStrategyParams] | None = None
 
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
@@ -87,9 +95,9 @@ class BaseStrategy(ABC, Generic[PT]):
     def __init__(  # pylint: disable=unused-argument
         self,
         *args,
-        params: Optional[Union[BaseStrategyParams, Dict]] = None,
+        params: BaseStrategyParams | dict | None = None,
         debug: bool = False,
-        observations_storage: Optional[ObservationsStorage] = None,
+        observations_storage: ObservationsStorage | None = None,
         **kwargs,
     ):
         """Initialize the strategy.
@@ -105,12 +113,12 @@ class BaseStrategy(ABC, Generic[PT]):
         self.set_params(params)
         # Logger is initialized BEFORE ``set_up`` so subclasses may use
         # ``self._debug`` from inside their ``set_up`` hook.
-        self._logger: Optional[BaseLogger] = self._create_logger() if debug else None
-        self._entities: Dict[str, BaseEntity] = {}
+        self._logger: BaseLogger | None = self._create_logger() if debug else None
+        self._entities: dict[str, BaseEntity] = {}
         # Execution telemetry (issue #68): one cumulative ledger per run.
         self._execution_ledger: ExecutionLedger = ExecutionLedger()
         self.set_up()
-        self.observations_storage: Optional[ObservationsStorage] = observations_storage
+        self.observations_storage: ObservationsStorage | None = observations_storage
 
     def _create_logger(self) -> BaseLogger:
         return DefaultLogger(class_name=self.__class__.__name__)
@@ -132,7 +140,7 @@ class BaseStrategy(ABC, Generic[PT]):
     _params: PT
 
     @property
-    def params(self) -> Dict:
+    def params(self) -> dict:
         """Read-only snapshot of strategy hyperparameters.
 
         Returns a **copy** of the underlying namespace so callers cannot
@@ -140,7 +148,7 @@ class BaseStrategy(ABC, Generic[PT]):
         """
         return dict(self._params.__dict__)
 
-    def set_params(self, params: Optional[Union[BaseStrategyParams, Dict]]) -> None:
+    def set_params(self, params: BaseStrategyParams | dict | None) -> None:
         """Set parameters for the strategy.
 
         Args:
@@ -183,7 +191,7 @@ class BaseStrategy(ABC, Generic[PT]):
         raise NotImplementedError
 
     @abstractmethod
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         """Predict the next actions to take from the current entity states."""
         raise NotImplementedError
 
@@ -260,8 +268,8 @@ class BaseStrategy(ABC, Generic[PT]):
         self,
         from_entity: str,
         to_entity: str,
-        amount_in_notional: Union[float, Callable[["BaseStrategy"], float]],
-    ) -> List["ActionToTake"]:
+        amount_in_notional: float | Callable[["BaseStrategy"], float],
+    ) -> list["ActionToTake"]:
         """Move notional cash from one registered entity to another.
 
         Returns a 2-action list ordered **deposit-first, withdraw-second**.
@@ -345,7 +353,7 @@ class BaseStrategy(ABC, Generic[PT]):
             entity.update_state(state)
 
         # predict the next action to take
-        actions: List[ActionToTake] = self.predict()
+        actions: list[ActionToTake] = self.predict()
         self._debug(f"Actions to take: {actions}")
 
         # Stamp the observation timestamp onto any executions this step records.
@@ -367,7 +375,7 @@ class BaseStrategy(ABC, Generic[PT]):
             entity.execute(resolved_action)
             self._debug(f"After action: {entity.internal_state}")
 
-    def run(self, observations: List[Observation]) -> StrategyResult:
+    def run(self, observations: list[Observation]) -> StrategyResult:
         """
         Run the strategy on a sequence of observations.
         Execute self.step for each observation.
@@ -383,10 +391,10 @@ class BaseStrategy(ABC, Generic[PT]):
         self._execution_ledger.reset()
 
         # collect all the states of the entities to build the StrategyResult
-        timestamps: List[datetime] = []
-        internal_states: List[Dict[str, InternalState]] = []
-        balances: List[Dict[str, float]] = []
-        global_states: List[Dict[str, GlobalState]] = []
+        timestamps: list[datetime] = []
+        internal_states: list[dict[str, InternalState]] = []
+        balances: list[dict[str, float]] = []
+        global_states: list[dict[str, GlobalState]] = []
 
         for observation in observations:
             self.step(observation)

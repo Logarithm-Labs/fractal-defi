@@ -1,6 +1,5 @@
 import json
 from datetime import datetime
-from typing import Dict
 
 from fractal.core.base.entity import GlobalState
 
@@ -14,7 +13,7 @@ class Observation:
     (e.g. positive prices, valid funding rates) belongs to each
     entity's :meth:`update_state`.
     """
-    def __init__(self, timestamp: datetime, states: Dict[str, GlobalState]):
+    def __init__(self, timestamp: datetime, states: dict[str, GlobalState]):
         """
         Args:
             timestamp: Timestamp of the observation.
@@ -22,7 +21,7 @@ class Observation:
                 entity that has a state at this step.
         """
         self.timestamp: datetime = timestamp
-        self.states: Dict[str, GlobalState] = states
+        self.states: dict[str, GlobalState] = states
         self.__validate()
 
     def __validate(self) -> None:

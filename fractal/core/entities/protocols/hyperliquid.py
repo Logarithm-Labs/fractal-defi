@@ -1,6 +1,5 @@
 import warnings
 from dataclasses import dataclass, field
-from typing import List
 
 from fractal.core.base.entity import EntityException, GlobalState
 from fractal.core.entities.base.perp import BasePerpEntity, BasePerpInternalState
@@ -49,7 +48,7 @@ class HyperliquidInternalState(BasePerpInternalState):
 
     Inherits ``collateral`` and adds an aggregated ``positions`` list.
     """
-    positions: List[HyperliquidPosition] = field(default_factory=list)
+    positions: list[HyperliquidPosition] = field(default_factory=list)
 
 
 class HyperliquidEntity(BasePerpEntity):
@@ -76,7 +75,7 @@ class HyperliquidEntity(BasePerpEntity):
         super().__init__(*args, **kwargs)
 
     @property
-    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def TRADING_FEE(self) -> float:
         """Deprecated alias for :attr:`trading_fee` (PEP 8 wants lowercase
         for instance attrs; UPPERCASE is reserved for module/class constants)."""
         warnings.warn(
@@ -87,7 +86,7 @@ class HyperliquidEntity(BasePerpEntity):
         return self.trading_fee
 
     @property
-    def MAX_LEVERAGE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def MAX_LEVERAGE(self) -> float:
         """Deprecated alias for :attr:`max_leverage`."""
         warnings.warn(
             "HyperliquidEntity.MAX_LEVERAGE is deprecated; use max_leverage (lowercase).",
@@ -345,16 +344,15 @@ class HyperliquidEntity(BasePerpEntity):
                 base.amount -= sign * closed_qty
                 # Calculate the remaining quantity in the incoming position.
                 remaining = abs(pos.amount) - closed_qty
-                if remaining > 0:
-                    # If the base position is fully closed, adopt the remainder as the new base position.
-                    # Carry over the **incoming position's** ``max_leverage`` —
-                    # the remainder belongs to that position, not to the entity default.
-                    if abs(base.amount) < 1e-9:
-                        base = HyperliquidPosition(
-                            amount=remaining if pos.amount > 0 else -remaining,
-                            entry_price=pos.entry_price,
-                            max_leverage=pos.max_leverage,
-                        )
+                # If the base position is fully closed, adopt the remainder as the new base position.
+                # Carry over the **incoming position's** ``max_leverage`` —
+                # the remainder belongs to that position, not to the entity default.
+                if remaining > 0 and abs(base.amount) < 1e-9:
+                    base = HyperliquidPosition(
+                        amount=remaining if pos.amount > 0 else -remaining,
+                        entry_price=pos.entry_price,
+                        max_leverage=pos.max_leverage,
+                    )
                     # ``remaining > 0 AND abs(base.amount) > 0`` is unreachable
                     # because ``closed_qty = min(|base|, |pos|)`` so at least one
                     # side fully closes per iteration.

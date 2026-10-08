@@ -42,8 +42,8 @@ SingleSpotExchangeGlobalState = SimpleSpotExchangeGlobalState
 SingleSpotExchangeInternalState = SimpleSpotExchangeInternalState
 
 __all__ = [
+    "SimpleSpotExchangeException",
     "SingleSpotExchange",
     "SingleSpotExchangeGlobalState",
     "SingleSpotExchangeInternalState",
-    "SimpleSpotExchangeException",
 ]

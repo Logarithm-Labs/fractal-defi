@@ -1,7 +1,6 @@
 """Hourly spot-price loaders derived from Uniswap V3 tick snapshots."""
 from datetime import datetime
 from string import Template
-from typing import List, Optional
 
 import pandas as pd
 
@@ -34,7 +33,7 @@ class _UniswapV3PricesBase:
     def extract(self) -> None:
         cursor = to_seconds(self.end_time) if self.end_time is not None else int(utcnow().timestamp())
         floor = to_seconds(self.start_time) if self.start_time is not None else None
-        rows: List[dict] = []
+        rows: list[dict] = []
         while True:
             query = self._QUERY.substitute(
                 limit=self._BATCH_LIMIT,
@@ -116,15 +115,15 @@ class UniswapV3ArbitrumPricesLoader(_UniswapV3PricesBase, ArbitrumUniswapV3Loade
         api_key: str,
         pool: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         **kwargs,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
-        decimals = kwargs.get("decimals", None)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
+        decimals = kwargs.get("decimals")
         if decimals is None:
             decimals0, decimals1 = self.get_pool_decimals(self.pool)
             decimals = decimals0 - decimals1
@@ -155,15 +154,15 @@ class UniswapV3EthereumPricesLoader(_UniswapV3PricesBase, EthereumUniswapV3Loade
         api_key: str,
         pool: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         **kwargs,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
-        decimals = kwargs.get("decimals", None)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
+        decimals = kwargs.get("decimals")
         if decimals is None:
             decimals0, decimals1 = self.get_pool_decimals(self.pool)
             decimals = decimals0 - decimals1

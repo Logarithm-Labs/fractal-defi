@@ -117,10 +117,7 @@ def _public_members(cls):
     Instantiates with default config so instance-level attributes (config-derived)
     show up alongside class-level methods/properties.
     """
-    if cls is UniswapV2LPEntity:
-        instance = cls(UniswapV2LPConfig())
-    else:
-        instance = cls(UniswapV3LPConfig())
+    instance = cls(UniswapV2LPConfig()) if cls is UniswapV2LPEntity else cls(UniswapV3LPConfig())
     return {m for m in dir(instance) if not m.startswith("_") and not m.isupper()}
 
 

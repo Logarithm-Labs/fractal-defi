@@ -29,8 +29,8 @@ Mechanics worth knowing:
 """
 import math
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, List, Optional, Tuple
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams
 from fractal.core.base.time import SECONDS_PER_DAY
@@ -51,7 +51,7 @@ class _Once:
 
     def __init__(self, fn: Callable[[BaseStrategy], float]) -> None:
         self._fn = fn
-        self._value: Optional[float] = None
+        self._value: float | None = None
 
     def __call__(self, strategy: BaseStrategy) -> float:
         if self._value is None:
@@ -110,10 +110,10 @@ class LeveragedPTParams(BaseStrategyParams):
     BAR_HOURS: bar length, used to annualise the lending entity's per-bar rate.
     """
     INITIAL_BALANCE: float
-    TARGET_LTV: Optional[float] = None
-    TARGET_LEVERAGE: Optional[float] = None
+    TARGET_LTV: float | None = None
+    TARGET_LEVERAGE: float | None = None
     MAX_LOOPS: int = 6
-    REBALANCE_LTV_BAND: Tuple[float, float] = (0.70, 0.88)
+    REBALANCE_LTV_BAND: tuple[float, float] = (0.70, 0.88)
     MIN_HEALTH_FACTOR: float = 1.03
     MIN_CARRY_SPREAD: float = 0.0
     MAX_BORROW_APY: float = 0.25
@@ -220,7 +220,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         return pt.internal_state.cash + pt_units * pt.current_price - lending.debt_value
 
     # ----------------------------------------------------------- predict
-    def predict(self) -> List[ActionToTake]:  # pylint: disable=too-many-return-statements
+    def predict(self) -> list[ActionToTake]:  # pylint: disable=too-many-return-statements
         pt, lending, params = self.pt, self.lending, self._params
         self._borrow_apy_window.append(self.borrow_apy())
         empty = lending.internal_state.collateral == 0 and lending.internal_state.borrowed == 0
@@ -267,7 +267,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         return []
 
     # ----------------------------------------------------------- blocks
-    def _loop_block(self) -> List[ActionToTake]:
+    def _loop_block(self) -> list[ActionToTake]:
         """One loop: buy PT with all cash → deposit it → borrow to target → cash it into PT."""
         dust = self._params.MIN_LOOP_INCREMENT
         target = self._target_ltv
@@ -296,7 +296,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             ActionToTake("PT", Action("deposit", {"amount_in_notional": d_bor_notional})),
         ]
 
-    def _close_block(self) -> List[ActionToTake]:
+    def _close_block(self) -> list[ActionToTake]:
         """Half loop: deploy whatever cash is left into PT collateral without borrowing."""
         return self._loop_block()[:3]
 
@@ -304,7 +304,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         """Notional the loop itself deploys on entry (subclasses may park part of it elsewhere)."""
         return self._params.INITIAL_BALANCE
 
-    def _enter(self) -> List[ActionToTake]:
+    def _enter(self) -> list[ActionToTake]:
         initial = self._investable()
         if self._params.MULTIPLY_MODE == "flash":
             return self._flash_enter(initial)
@@ -314,7 +314,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
         actions.extend(self._close_block())
         return actions
 
-    def _flash_enter(self, initial: float) -> List[ActionToTake]:
+    def _flash_enter(self, initial: float) -> list[ActionToTake]:
         """One-shot multiply: flash ``F = I·ℓ/(1−ℓ)``, buy PT with ``I + F``, borrow ``F(1+fee)``, repay the flash."""
         ltv = self._target_ltv
         flash = initial * ltv / (1.0 - ltv)
@@ -333,14 +333,14 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             ActionToTake("PT", Action("withdraw", {"amount_in_notional": repay_flash})),
         ]
 
-    def _boost(self) -> List[ActionToTake]:
-        actions: List[ActionToTake] = []
+    def _boost(self) -> list[ActionToTake]:
+        actions: list[ActionToTake] = []
         for _ in range(self._params.MAX_LOOPS):
             actions.extend(self._loop_block())
         actions.extend(self._close_block())
         return actions
 
-    def _repay_to(self, target_ltv: float) -> List[ActionToTake]:
+    def _repay_to(self, target_ltv: float) -> list[ActionToTake]:
         """Flash device: repay → withdraw PT → sell it → return the flash principal."""
 
         def _repay(strategy: BaseStrategy) -> float:
@@ -401,7 +401,7 @@ class LeveragedPTStrategy(BaseStrategy[LeveragedPTParams]):
             ActionToTake("PT", Action("withdraw", {"amount_in_notional": d_repay_notional})),
         ]
 
-    def _unwind(self, redeem: bool) -> List[ActionToTake]:
+    def _unwind(self, redeem: bool) -> list[ActionToTake]:
         """Repay all debt, free the collateral, turn every PT into cash."""
         d_debt = _Once(lambda s: s.get_entity("LENDING").internal_state.borrowed)
         d_coll = _Once(lambda s: s.get_entity("LENDING").internal_state.collateral)

@@ -52,7 +52,7 @@ def test_monte_carlo_loader_is_reproducible_for_same_seed():
     history = _toy_price_history(n=120)
     a = MonteCarloHourPriceLoader(history, trajectories_number=3, seed=7).read(with_run=True)
     b = MonteCarloHourPriceLoader(history, trajectories_number=3, seed=7).read(with_run=True)
-    for ta, tb in zip(a, b):
+    for ta, tb in zip(a, b, strict=False):
         assert np.allclose(ta["price"].values, tb["price"].values)
 
 
@@ -82,7 +82,7 @@ def test_monte_carlo_loader_round_trip_via_disk():
     # No `_file_id` hack: cache is deterministic in (history, params).
     fresh = MonteCarloHourPriceLoader(history, trajectories_number=2, seed=99)
     cached = fresh.read(with_run=False)
-    for w, c in zip(written, cached):
+    for w, c in zip(written, cached, strict=False):
         assert np.allclose(w["price"].values, c["price"].values)
     src.delete_dump_file()
 
@@ -277,7 +277,7 @@ def test_cache_shared_across_instances():
     src = MonteCarloPriceLoader(history, trajectories_number=2, seed=11)
     a = src.read(with_run=True)
     b = MonteCarloPriceLoader(history, trajectories_number=2, seed=11).read(with_run=False)
-    for ta, tb in zip(a, b):
+    for ta, tb in zip(a, b, strict=False):
         assert np.allclose(ta["price"].values, tb["price"].values)
     src.delete_dump_file()
 

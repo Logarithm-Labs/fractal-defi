@@ -14,10 +14,16 @@ import pytest
 
 from fractal.core.entities.protocols.hyperliquid import (
     HyperliquidEntity,
+    HyperliquidEntityException,
     HyperliquidGlobalState,
     HyperliquidInternalState,
 )
-from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState, SimplePerpInternalState
+from fractal.core.entities.simple.perp import (
+    SimplePerpEntity,
+    SimplePerpEntityException,
+    SimplePerpGlobalState,
+    SimplePerpInternalState,
+)
 
 # Methods/properties that BOTH perp entities must expose with the same name.
 SHARED_PUBLIC_API = {
@@ -57,10 +63,7 @@ SP_ONLY_PUBLIC: set[str] = set()
 
 
 def _public_members(cls) -> set[str]:
-    if cls is HyperliquidEntity:
-        instance = cls()
-    else:
-        instance = cls()
+    instance = cls()
     return {m for m in dir(instance) if not m.startswith("_") and not m.isupper()}
 
 
@@ -157,22 +160,22 @@ def test_both_perps_liquidation_price_nan_when_flat():
 @pytest.mark.core
 def test_both_perps_init_validate_trading_fee():
     """Both reject negative ``trading_fee``."""
-    with pytest.raises(Exception):
+    with pytest.raises(HyperliquidEntityException):
         HyperliquidEntity(trading_fee=-0.01)
-    with pytest.raises(Exception):
+    with pytest.raises(SimplePerpEntityException):
         SimplePerpEntity(trading_fee=-0.01)
 
 
 @pytest.mark.core
 def test_both_perps_init_validate_max_leverage():
     """Both reject non-positive ``max_leverage``."""
-    with pytest.raises(Exception):
+    with pytest.raises(HyperliquidEntityException):
         HyperliquidEntity(max_leverage=0)
-    with pytest.raises(Exception):
+    with pytest.raises(SimplePerpEntityException):
         SimplePerpEntity(max_leverage=0)
-    with pytest.raises(Exception):
+    with pytest.raises(HyperliquidEntityException):
         HyperliquidEntity(max_leverage=-5)
-    with pytest.raises(Exception):
+    with pytest.raises(SimplePerpEntityException):
         SimplePerpEntity(max_leverage=-5)
 
 

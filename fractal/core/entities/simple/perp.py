@@ -92,7 +92,7 @@ class SimplePerpEntity(BasePerpEntity):
         super().__init__(*args, **kwargs)
 
     @property
-    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def TRADING_FEE(self) -> float:
         """Deprecated alias for :attr:`trading_fee`."""
         warnings.warn(
             "SimplePerpEntity.TRADING_FEE is deprecated; use trading_fee (lowercase).",
@@ -102,7 +102,7 @@ class SimplePerpEntity(BasePerpEntity):
         return self.trading_fee
 
     @property
-    def MAX_LEVERAGE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def MAX_LEVERAGE(self) -> float:
         """Deprecated alias for :attr:`max_leverage`."""
         warnings.warn(
             "SimplePerpEntity.MAX_LEVERAGE is deprecated; use max_leverage (lowercase).",

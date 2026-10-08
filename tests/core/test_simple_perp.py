@@ -305,7 +305,7 @@ def test_open_position_rejects_above_max_leverage():
     e.update_state(SimplePerpGlobalState(mark_price=1000.0))
     e.action_deposit(100)
     with pytest.raises(SimplePerpEntityException,
-                       match="leverage|maintenance_margin"):
+                       match=r"leverage|maintenance_margin"):
         e.action_open_position(2.0)  # notional 2000 → MM 200 > balance 100
     assert e.size == 0
     assert e.internal_state.collateral == 100

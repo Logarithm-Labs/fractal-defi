@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import Optional, Tuple
 
 import numpy as np
 
@@ -25,8 +24,8 @@ class UniswapV3LPGlobalState(BasePoolGlobalState):
     data for the bar (``auto`` falls back to the aggregate estimate);
     ``0.0`` = data present, zero accrual (stays on the feeGrowth path).
     """
-    fee_growth0: Optional[float] = None
-    fee_growth1: Optional[float] = None
+    fee_growth0: float | None = None
+    fee_growth1: float | None = None
 
 
 @dataclass
@@ -316,7 +315,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         token1_amount: float,
         price_lower: float,
         price_upper: float,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """Mint V3 position from on-chain ``(token0, token1)`` over ``[pl, pu]``.
 
         No swap, no fee. Internal/advanced — use ``action_open_position`` for
@@ -387,7 +386,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             return stable_leftover, volatile_leftover
         return volatile_leftover, stable_leftover
 
-    def _close_to_pair(self) -> Tuple[float, float]:
+    def _close_to_pair(self) -> tuple[float, float]:
         """Burn V3 LP, return current on-chain ``(token0, token1)`` amounts. No swap."""
         if not self.is_position:
             raise EntityException("No position to close.")
@@ -655,7 +654,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             return 0.0
         return self.hodl_value - self.balance
 
-    def calculate_fees_from_growth(self) -> Tuple[float, float]:
+    def calculate_fees_from_growth(self) -> tuple[float, float]:
         """Per-leg fees for the current bar from feeGrowth deltas.
 
         Pure (no mutation), the ``fee_growth`` twin of

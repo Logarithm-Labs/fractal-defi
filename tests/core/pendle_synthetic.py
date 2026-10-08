@@ -5,8 +5,8 @@ user-supplied implied-APY series, the Morpho oracle on a linear
 discount, the PT market price on Pendle's compounded convention and a
 constant borrow APY — the minimum a ``LeveragedPTStrategy`` needs.
 """
+from collections.abc import Callable, Sequence
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Optional, Sequence, Union
 
 from fractal.core.base import Observation
 from fractal.core.base.time import SECONDS_PER_DAY, SECONDS_PER_YEAR
@@ -21,20 +21,20 @@ def synthetic_observations(
     days: int = 90,
     *,
     bar_hours: float = 24.0,
-    implied_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.10,
-    borrow_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.0,
+    implied_apy: float | Sequence[float] | Callable[[int], float] = 0.10,
+    borrow_apy: float | Sequence[float] | Callable[[int], float] = 0.0,
     base_discount: float = 0.06,
     expiry: datetime = EXPIRY,
     past_expiry_bars: int = 1,
     asset_price: float = 1.0,
     sy_exchange_rate: float = 1.0,
-    pool_reserves: Optional[float] = 1e9,
-) -> List[Observation]:
+    pool_reserves: float | None = 1e9,
+) -> list[Observation]:
     """``days`` of bars ending ``past_expiry_bars`` bars after ``expiry``."""
     bars = int(days * 24 / bar_hours) + past_expiry_bars
     start = expiry - timedelta(days=days)
     step = timedelta(hours=bar_hours)
-    observations: List[Observation] = []
+    observations: list[Observation] = []
     for i in range(bars + 1):
         ts = start + i * step
         seconds = (expiry - ts).total_seconds()
@@ -73,14 +73,14 @@ def synthetic_hedged_observations(
     days: int = 90,
     *,
     bar_hours: float = 8.0,
-    implied_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.05,
-    price: Union[float, Sequence[float], Callable[[int], float]] = 2_000.0,
-    funding_rate: Union[float, Sequence[float], Callable[[int], float]] = 0.0001,
-    boros_mark_apr: Optional[Union[float, Sequence[float], Callable[[int], float]]] = None,
-    boros_maturity: Optional[datetime] = None,
+    implied_apy: float | Sequence[float] | Callable[[int], float] = 0.05,
+    price: float | Sequence[float] | Callable[[int], float] = 2_000.0,
+    funding_rate: float | Sequence[float] | Callable[[int], float] = 0.0001,
+    boros_mark_apr: float | Sequence[float] | Callable[[int], float] | None = None,
+    boros_maturity: datetime | None = None,
     expiry: datetime = EXPIRY,
     past_expiry_bars: int = 1,
-) -> List[Observation]:
+) -> list[Observation]:
     """Volatile-underlying PT + perp hedge (+ Boros when ``boros_mark_apr`` is given).
 
     Bars are ``bar_hours`` apart (8h = one Binance funding period, so every
@@ -91,7 +91,7 @@ def synthetic_hedged_observations(
     start = expiry - timedelta(days=days)
     step = timedelta(hours=bar_hours)
     boros_maturity = boros_maturity or expiry
-    observations: List[Observation] = []
+    observations: list[Observation] = []
     for i in range(bars + 1):
         ts = start + i * step
         seconds = (expiry - ts).total_seconds()
@@ -117,18 +117,18 @@ def synthetic_rate_hedged_observations(
     days: int = 90,
     *,
     bar_hours: float = 8.0,
-    implied_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.10,
-    borrow_apy: Union[float, Sequence[float], Callable[[int], float]] = 0.05,
-    funding_rate: Union[float, Sequence[float], Callable[[int], float]] = 0.0,
-    coin_price: Union[float, Sequence[float], Callable[[int], float]] = 2_000.0,
-    boros_mark_apr: Optional[Union[float, Sequence[float], Callable[[int], float]]] = None,
-    boros_maturity: Optional[datetime] = None,
+    implied_apy: float | Sequence[float] | Callable[[int], float] = 0.10,
+    borrow_apy: float | Sequence[float] | Callable[[int], float] = 0.05,
+    funding_rate: float | Sequence[float] | Callable[[int], float] = 0.0,
+    coin_price: float | Sequence[float] | Callable[[int], float] = 2_000.0,
+    boros_mark_apr: float | Sequence[float] | Callable[[int], float] | None = None,
+    boros_maturity: datetime | None = None,
     boros_from_bar: int = 0,
     base_discount: float = 0.06,
     expiry: datetime = EXPIRY,
     past_expiry_bars: int = 1,
-    pool_reserves: Optional[float] = 1e9,
-) -> List[Observation]:
+    pool_reserves: float | None = 1e9,
+) -> list[Observation]:
     """Stable PT loop (``PT`` + ``LENDING``) plus a ``BOROS`` state when
     ``boros_mark_apr`` is given (from ``boros_from_bar`` on). ``funding_rate``
     is the raw per-bar funding paid on every bar (8h bars = one Binance period)."""

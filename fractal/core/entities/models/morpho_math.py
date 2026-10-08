@@ -16,16 +16,16 @@ TARGET_UTILIZATION = 0.9                 # AdaptiveCurveIrm
 CURVE_STEEPNESS = 4.0                    # AdaptiveCurveIrm
 
 __all__ = [
+    "CURVE_STEEPNESS",
     "LIQUIDATION_CURSOR",
     "MAX_LIQUIDATION_INCENTIVE_FACTOR",
     "TARGET_UTILIZATION",
-    "CURVE_STEEPNESS",
-    "taylor_compounded",
-    "per_bar_borrow_rate",
+    "adaptive_curve_borrow_apr",
     "borrow_apy_from_per_second_rate",
     "liquidation_incentive_factor",
     "max_borrow",
-    "adaptive_curve_borrow_apr",
+    "per_bar_borrow_rate",
+    "taylor_compounded",
 ]
 
 

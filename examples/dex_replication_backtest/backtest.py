@@ -18,7 +18,6 @@ environment (optional ``BASE_RPC_URL``, default mainnet.base.org).
 """
 import os
 import time
-from typing import Optional
 
 import pandas as pd
 from helpers import (
@@ -53,7 +52,7 @@ SUMMARY_COLUMNS = [
 ]
 
 
-def load_replication_data(position: dict, api_key: str, w3) -> Optional[dict]:
+def load_replication_data(position: dict, api_key: str, w3) -> dict | None:
     """Pull everything one backtest needs: hourly history with the
     mint-block first-bar correction, observations, the legs' USD prices
     (from the loaded data, no extra RPC) and the on-chain ground truth.
@@ -128,7 +127,7 @@ def run_replication(
     data: dict,
     position: dict,
     fee_model: str = "fee_growth",
-    trajectories_dir: Optional[str] = None,
+    trajectories_dir: str | None = None,
 ) -> dict:
     """Replicate one position on pre-loaded data; returns fees (backtest
     + on-chain, USD and per leg), their ratios and the pure compute
@@ -215,8 +214,8 @@ def replicate_position(
     api_key: str,
     w3,
     fee_model: str = "fee_growth",
-    trajectories_dir: Optional[str] = None,
-) -> Optional[dict]:
+    trajectories_dir: str | None = None,
+) -> dict | None:
     """Single-position pipeline: load data, run one replication."""
     data = load_replication_data(position, api_key, w3)
     if data is None:

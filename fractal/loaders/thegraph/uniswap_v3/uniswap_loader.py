@@ -1,4 +1,3 @@
-from typing import Tuple
 
 from fractal.loaders.base_loader import LoaderType
 from fractal.loaders.thegraph.base_graph_loader import ArbitrumGraphLoader, GraphLoaderException, validate_evm_address
@@ -16,7 +15,7 @@ class UniswapV3Loader(ArbitrumGraphLoader):
         """
         super().__init__(api_key=api_key, subgraph_id=subgraph_id, loader_type=loader_type)
 
-    def get_pool_decimals(self, address: str) -> Tuple[int, int]:
+    def get_pool_decimals(self, address: str) -> tuple[int, int]:
         """
         Get pool input tokens decimals.
 

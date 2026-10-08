@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List
 
 from binance_entity import BinanceGlobalState, BinanceSpot
 
@@ -19,7 +18,7 @@ class HolderStrategyParams(BaseStrategyParams):
 class HodlerStrategy(BaseStrategy[HolderStrategyParams]):
 
     def __init__(self, debug: bool = False, params: HolderStrategyParams | None = None, *args, **kwargs):
-        super().__init__(params=params, debug=debug, *args, **kwargs)
+        super().__init__(*args, params=params, debug=debug, **kwargs)
 
     def set_up(self):
         # check that the entity 'exchange' is registered
@@ -28,7 +27,7 @@ class HodlerStrategy(BaseStrategy[HolderStrategyParams]):
         if self._params is not None:
             self.__deposit_into_exchange()
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         exchange: BaseSpotEntity = self.get_entity('exchange')
         if exchange.global_state.price < self._params.BUY_PRICE:
             # Spend a fraction of available cash on the buy.
@@ -69,9 +68,9 @@ if __name__ == '__main__':
     binance_prices = BinanceDayPriceLoader('BTCUSDT', loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
-    observations: List[Observation] = [
+    observations: list[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': BinanceGlobalState(price=price)})
-        for timestamp, price in zip(binance_prices.index, binance_prices['price'])
+        for timestamp, price in zip(binance_prices.index, binance_prices['price'], strict=False)
     ]
 
     # Run the strategy

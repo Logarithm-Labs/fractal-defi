@@ -27,8 +27,19 @@ extend-exclude = [
 ]
 
 [lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E731"]
+# Strictness pass (issue #63 PR2): adds UP/B/SIM/RUF on top of the parity
+# baseline. Rule-by-rule evaluation outcomes (documented, deliberate):
+#   * RUF002/RUF003 — ambiguous-unicode flags the math/≈ characters used in
+#     docstrings and comments (400+ findings); pure style, no value.
+#   * UP031 — %-formatting retained deliberately: the flagged sites build
+#     GraphQL/URI templates; rewriting to .format()/f-strings would require
+#     brace-escaping of query braces ({} → {×2/{}), high-risk low-value churn.
+# Everything else (UP006/UP035/UP045/UP007 modernization, B/SIM/RUF fixes) is
+# applied in code — strict=False zips, explicit Optional, stacklevel=2,
+# contextlib.suppress, ClassVar constants, narrowed test exceptions,
+# raise-from, ternaries, pairwise.
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]
+ignore = ["E731", "RUF002", "RUF003", "UP031"]
 preview = true
 explicit-preview-rules = true
 extend-select = [

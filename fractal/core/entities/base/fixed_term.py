@@ -12,7 +12,6 @@ of silently accruing on a phantom term.
 """
 import math
 from dataclasses import dataclass
-from typing import Optional, Type
 
 from fractal.core.base.entity import BaseEntity, EntityException, GlobalState
 from fractal.core.base.time import SECONDS_PER_YEAR
@@ -44,10 +43,10 @@ class BaseFixedTermEntity(BaseEntity):
     :class:`EntityException` subclass so guard failures carry the
     protocol's exception type.
     """
-    _exception_cls: Type[EntityException] = EntityException
+    _exception_cls: type[EntityException] = EntityException
 
     def __init__(self, *args, **kwargs) -> None:
-        self._last_seconds_to_expiry: Optional[float] = None
+        self._last_seconds_to_expiry: float | None = None
         super().__init__(*args, **kwargs)
 
     # ------------------------------------------------------------- readouts

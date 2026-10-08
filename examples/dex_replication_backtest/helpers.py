@@ -10,7 +10,6 @@ degrades to time-proration. Requires ``pip install web3``.
 import json
 import os
 from pathlib import Path
-from typing import List, Optional
 
 import pandas as pd
 from web3 import Web3
@@ -60,7 +59,7 @@ def get_w3() -> Web3:
     return Web3(provider)
 
 
-def load_positions(path: Optional[str] = None) -> List[dict]:
+def load_positions(path: str | None = None) -> list[dict]:
     """Read the positions registry shipped next to this module."""
     path = path or Path(__file__).with_name("positions.json")
     return json.loads(Path(path).read_text())
@@ -86,7 +85,7 @@ def _fee_growth_inside(pool, tick_lower: int, tick_upper: int) -> tuple:
     return (fg0 - below0 - above0) % U256, (fg1 - below1 - above1) % U256
 
 
-def position_ground_truth(position: dict, w3: Optional[Web3] = None) -> dict:
+def position_ground_truth(position: dict, w3: Web3 | None = None) -> dict:
     """Un-floored on-chain fees since mint, per token leg:
     ``(feeGrowthInside_now − feeGrowthInsideLast_mint) × L / 2^128``.
     Head-state reads only — the mint-side checkpoint is stored in the
@@ -113,7 +112,7 @@ def position_ground_truth(position: dict, w3: Optional[Web3] = None) -> dict:
 def to_notional_frame(
     pool_history: pd.DataFrame,
     notional_side: str,
-    notional_usd: Optional[pd.Series] = None,
+    notional_usd: pd.Series | None = None,
 ) -> pd.DataFrame:
     """Convert a raw pool-history frame to the entity's price convention:
     invert ``price`` when the notional token is slot0, convert USD
@@ -130,7 +129,7 @@ def to_notional_frame(
 
 
 def anchor_first_bar(loader, frame: pd.DataFrame, position: dict,
-                     w3: Optional[Web3] = None) -> pd.DataFrame:
+                     w3: Web3 | None = None) -> pd.DataFrame:
     """Correct the first post-mint bar's feeGrowth delta: the loader's
     delta spans back to the previous pool row, crediting pre-mint fees.
     Exact mode reads the counters at the mint block (archive
@@ -147,13 +146,13 @@ def anchor_first_bar(loader, frame: pd.DataFrame, position: dict,
         block = position["mint_block"]
         anchor0 = pool.functions.feeGrowthGlobal0X128().call(block_identifier=block)
         anchor1 = pool.functions.feeGrowthGlobal1X128().call(block_identifier=block)
-    except Exception:  # noqa: BLE001 - non-archive node: prorate instead
+    except Exception:
         anchor0 = anchor1 = None
     if anchor0 is not None:
         query = ('{ poolHourDatas(first: 1, where: {pool: "%s", periodStartUnix: %d}) '
                  '{ feeGrowthGlobal0X128 feeGrowthGlobal1X128 } }'
                  ) % (position["pool_address"], first_ts)
-        rows = loader._make_request(query)["poolHourDatas"]  # noqa: SLF001 - example-level reuse
+        rows = loader._make_request(query)["poolHourDatas"]
         if rows:
             cum0, cum1 = int(rows[0]["feeGrowthGlobal0X128"]), int(rows[0]["feeGrowthGlobal1X128"])
             frame.iloc[0, frame.columns.get_loc("fee_growth0")] = max(cum0 - anchor0, 0) / 2 ** 128
@@ -164,7 +163,7 @@ def anchor_first_bar(loader, frame: pd.DataFrame, position: dict,
     query = ('{ poolHourDatas(first: 1, orderBy: periodStartUnix, orderDirection: desc, '
              'where: {pool: "%s", periodStartUnix_lt: %d}) { periodStartUnix } }'
              ) % (position["pool_address"], first_ts)
-    rows = loader._make_request(query)["poolHourDatas"]  # noqa: SLF001
+    rows = loader._make_request(query)["poolHourDatas"]
     span_start = int(rows[0]["periodStartUnix"]) + 3600 if rows else first_ts
     span_end = first_ts + 3600
     weight = min(max((span_end - position["mint_ts"]) / max(span_end - span_start, 1), 0.0), 1.0)
@@ -174,7 +173,7 @@ def anchor_first_bar(loader, frame: pd.DataFrame, position: dict,
 
 
 def append_head_bar(loader, frame: pd.DataFrame, position: dict,
-                    w3: Optional[Web3] = None) -> pd.DataFrame:
+                    w3: Web3 | None = None) -> pd.DataFrame:
     """Append a synthetic bar carrying the counter growth the subgraph
     has not snapshotted yet. Hourly rows copy ``feeGrowthGlobal`` BEFORE
     the triggering swap's fee is applied, so the newest row lags the
@@ -188,7 +187,7 @@ def append_head_bar(loader, frame: pd.DataFrame, position: dict,
     query = ('{ poolHourDatas(first: 1, orderBy: periodStartUnix, orderDirection: desc, '
              'where: {pool: "%s"}) { feeGrowthGlobal0X128 feeGrowthGlobal1X128 } }'
              ) % position["pool_address"]
-    rows = loader._make_request(query)["poolHourDatas"]  # noqa: SLF001 - example-level reuse
+    rows = loader._make_request(query)["poolHourDatas"]
     if not rows:
         return frame
     pool = w3.eth.contract(Web3.to_checksum_address(position["pool_address"]), abi=POOL_ABI)
@@ -205,7 +204,7 @@ def append_head_bar(loader, frame: pd.DataFrame, position: dict,
     return pd.concat([frame, head])
 
 
-def build_observations(df: pd.DataFrame) -> List[Observation]:
+def build_observations(df: pd.DataFrame) -> list[Observation]:
     """Assemble LP-entity observations. Bars are not filtered on ``tvl``
     (per-bar feeGrowth deltas are non-recoverable); ``None`` marks bars
     without feeGrowth data so the ``auto`` fee model falls back

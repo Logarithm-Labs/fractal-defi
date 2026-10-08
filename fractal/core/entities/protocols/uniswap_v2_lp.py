@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Literal, Tuple
+from typing import Literal
 
 from fractal.core.base.entity import EntityException, InternalState
 from fractal.core.entities.base.pool import BasePoolEntity, BasePoolGlobalState
@@ -243,7 +243,7 @@ class UniswapV2LPEntity(BasePoolEntity):
         self._internal_state.cash -= amount_in_notional
 
     # --- pair-level helpers (no swap, no fee) — internal/advanced API
-    def _open_from_pair(self, token0_amount: float, token1_amount: float) -> Tuple[float, float]:
+    def _open_from_pair(self, token0_amount: float, token1_amount: float) -> tuple[float, float]:
         """Mint LP from on-chain (token0, token1) amounts. No swap, no fee.
 
         The pool ratio (50/50 by value) is the limit: only the proportional
@@ -303,7 +303,7 @@ class UniswapV2LPEntity(BasePoolEntity):
             return stable_leftover, volatile_leftover
         return volatile_leftover, stable_leftover
 
-    def _close_to_pair(self) -> Tuple[float, float]:
+    def _close_to_pair(self) -> tuple[float, float]:
         """Burn LP, return current on-chain ``(token0, token1)`` amounts. No swap, no fee.
 
         Resets all position fields. Caller is responsible for what to do

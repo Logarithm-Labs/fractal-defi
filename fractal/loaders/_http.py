@@ -5,7 +5,7 @@ support. Loaders MUST go through this module so transport behavior
 (timeouts, retries, error messages) stays consistent.
 """
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import requests
 from requests.adapters import HTTPAdapter
@@ -31,7 +31,7 @@ class HttpClient:
     base URL or override timeout per call.
     """
 
-    def __init__(self, cfg: Optional[HttpConfig] = None) -> None:
+    def __init__(self, cfg: HttpConfig | None = None) -> None:
         self.cfg = cfg or HttpConfig()
         self.session = requests.Session()
 
@@ -67,8 +67,8 @@ class HttpClient:
     def get(
         self,
         url: str,
-        params: Optional[Dict[str, Any]] = None,
-        timeout: Optional[float] = None,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
     ) -> Any:
         resp = self.session.get(
             url,
@@ -80,9 +80,9 @@ class HttpClient:
     def post(
         self,
         url: str,
-        json: Optional[Dict[str, Any]] = None,
-        timeout: Optional[float] = None,
-        headers: Optional[Dict[str, str]] = None,
+        json: dict[str, Any] | None = None,
+        timeout: float | None = None,
+        headers: dict[str, str] | None = None,
     ) -> Any:
         resp = self.session.post(
             url,

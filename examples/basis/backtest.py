@@ -1,5 +1,4 @@
 from datetime import UTC, datetime
-from typing import List
 
 import pandas as pd
 
@@ -14,8 +13,8 @@ from fractal.strategies.hyperliquid_basis import HyperliquidBasis, HyperliquidBa
 
 def get_observations(
         rate_data: RateHistory, price_data: PriceHistory,
-        start_time: datetime = None, end_time: datetime = None
-    ) -> List[Observation]:
+        start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[Observation]:
     """
     Get observations from the pool and price data for the ManagedBasisStrategy.
 
@@ -42,9 +41,9 @@ def get_observations(
 
 
 def build_observations(
-        ticker: str, start_time: datetime = None, end_time: datetime = None,
+        ticker: str, start_time: datetime | None = None, end_time: datetime | None = None,
         fidelity: str = '1h', use_binance_data: bool = True,
-    ) -> List[Observation]:
+    ) -> list[Observation]:
     """Build observations for the basis strategy from the given window.
 
     Two data sources:
@@ -102,7 +101,7 @@ if __name__ == '__main__':
 
     # Build observations
     entities = strategy.get_all_available_entities().keys()
-    observations: List[Observation] = build_observations(
+    observations: list[Observation] = build_observations(
         ticker=ticker,
         start_time=start_time,
         end_time=end_time,

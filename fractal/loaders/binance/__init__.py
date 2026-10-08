@@ -9,11 +9,11 @@ from fractal.loaders.binance.binance_prices import (
 )
 
 __all__ = [
-    "BinanceFundingLoader",
-    "BinancePriceLoader",
-    "BinanceKlinesLoader",
     "BinanceDayPriceLoader",
+    "BinanceFundingLoader",
     "BinanceHourPriceLoader",
+    "BinanceKlinesLoader",
     "BinanceMinutePriceLoader",
+    "BinancePriceLoader",
     "BinanceSpotPriceLoader",
 ]

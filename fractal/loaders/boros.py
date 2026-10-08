@@ -23,7 +23,7 @@ import time as _time
 import warnings
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -41,11 +41,11 @@ _TICK_BASE = 1.00005
 
 __all__ = [
     "BOROS_API",
-    "bar_seconds",
     "BorosLoaderException",
     "BorosMarketInfo",
-    "get_market_info",
     "BorosMarketLoader",
+    "bar_seconds",
+    "get_market_info",
 ]
 
 
@@ -53,7 +53,7 @@ class BorosLoaderException(RuntimeError):
     """Malformed or missing Boros API data."""
 
 
-def _rows(payload: Any) -> List[Dict[str, Any]]:
+def _rows(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, list):
         return payload
     if isinstance(payload, dict):
@@ -93,8 +93,8 @@ class BorosMarketInfo:
     settle_fee_rate: float
     rate_floor: float
     max_leverage: float
-    funding_rate_symbol: Optional[str] = None
-    collateral_symbol: Optional[str] = None
+    funding_rate_symbol: str | None = None
+    collateral_symbol: str | None = None
     is_matured: bool = False
 
     @property
@@ -102,7 +102,7 @@ class BorosMarketInfo:
         return self.k_mm / self.k_im if self.k_im else 1.0
 
 
-def _parse_market(raw: Dict[str, Any]) -> BorosMarketInfo:
+def _parse_market(raw: dict[str, Any]) -> BorosMarketInfo:
     im_data, config = raw.get("imData") or {}, raw.get("config") or {}
     ext, meta = raw.get("extConfig") or {}, raw.get("metadata") or {}
     tick_step = int(im_data.get("tickStep") or 1)
@@ -128,7 +128,7 @@ def _parse_market(raw: Dict[str, Any]) -> BorosMarketInfo:
     )
 
 
-def get_market_info(market_id: int, http: Optional[HttpClient] = None) -> BorosMarketInfo:
+def get_market_info(market_id: int, http: HttpClient | None = None) -> BorosMarketInfo:
     """Find one market in the live list, then in the matured list."""
     client = http or HttpClient()
     for matured in ("false", "true"):
@@ -160,14 +160,14 @@ class BorosMarketLoader(Loader):
         self,
         market_id: int,
         start_time: datetime,
-        end_time: Optional[datetime] = None,
+        end_time: datetime | None = None,
         *,
         time_frame: str = "1h",
-        maturity: Optional[datetime] = None,
+        maturity: datetime | None = None,
         include_settlements: bool = True,
-        underlying: Optional[tuple] = None,
+        underlying: tuple | None = None,
         loader_type: LoaderType = LoaderType.CSV,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         if time_frame not in _TIME_FRAMES:
@@ -180,11 +180,11 @@ class BorosMarketLoader(Loader):
         self.time_frame = time_frame
         self.include_settlements = include_settlements
         self.underlying = underlying
-        self._maturity: Optional[datetime] = to_utc(maturity) if maturity is not None else None
+        self._maturity: datetime | None = to_utc(maturity) if maturity is not None else None
         self._http = http or HttpClient()
-        self._candles: List[Dict[str, Any]] = []
-        self._settlements: List[Dict[str, Any]] = []
-        self._underlying: List[Dict[str, Any]] = []
+        self._candles: list[dict[str, Any]] = []
+        self._settlements: list[dict[str, Any]] = []
+        self._underlying: list[dict[str, Any]] = []
 
     @property
     def maturity(self) -> datetime:
@@ -202,9 +202,9 @@ class BorosMarketLoader(Loader):
         )
 
     # ----------------------------------------------------------- fetch
-    def _fetch_candles(self) -> List[Dict[str, Any]]:
+    def _fetch_candles(self) -> list[dict[str, Any]]:
         window = _OHLCV_CAP * _TIME_FRAMES[self.time_frame]
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         cursor = to_seconds(self.start_time)
         end = to_seconds(self.end_time)
         while cursor <= end:
@@ -217,8 +217,8 @@ class BorosMarketLoader(Loader):
             _time.sleep(_REQUEST_SLEEP_SECONDS)
         return rows
 
-    def _fetch_settlements(self) -> List[Dict[str, Any]]:
-        rows: List[Dict[str, Any]] = []
+    def _fetch_settlements(self) -> list[dict[str, Any]]:
+        rows: list[dict[str, Any]] = []
         end = to_seconds(self.end_time)
         start = to_seconds(self.start_time)
         while end >= start:
@@ -238,7 +238,7 @@ class BorosMarketLoader(Loader):
             _time.sleep(_REQUEST_SLEEP_SECONDS)
         return rows
 
-    def _fetch_underlying(self) -> List[Dict[str, Any]]:
+    def _fetch_underlying(self) -> list[dict[str, Any]]:
         asset, exchange = self.underlying
         payload = self._http.get(f"{BOROS_API}/markets/historical-underlying-apr", params={
             "assetSymbol": asset, "exchange": exchange, "timeFrame": _TIME_FRAMES[self.time_frame],
@@ -273,7 +273,7 @@ class BorosMarketLoader(Loader):
             first = int(quoted.idxmax())
             warnings.warn(
                 f"BorosMarketLoader: market {self.market_id} has no quotes for the first {first} bar(s) of the "
-                f"window (pre-listing zeros dropped)"
+                f"window (pre-listing zeros dropped)", stacklevel=2,
             )
             df = df.iloc[first:].reset_index(drop=True)
         elif not quoted.any():

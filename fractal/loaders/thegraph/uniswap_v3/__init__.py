@@ -15,15 +15,15 @@ from fractal.loaders.thegraph.uniswap_v3.uniswap_v3_spot_prices import (
 )
 
 __all__ = [
-    "EthereumUniswapV3Loader",
     "ArbitrumUniswapV3Loader",
     "BaseUniswapV3Loader",
-    "UniswapV3BasePoolHourDataLoader",
-    "UniswapV3EthereumPoolDayDataLoader",
+    "EthereumUniswapV3Loader",
     "UniswapV3ArbitrumPoolDayDataLoader",
-    "UniswapV3EthereumPoolHourDataLoader",
     "UniswapV3ArbitrumPoolHourDataLoader",
     "UniswapV3ArbitrumPricesLoader",
-    "UniswapV3EthereumPricesLoader",
-    "UniswapV3EthereumPoolMinuteDataLoader"
+    "UniswapV3BasePoolHourDataLoader",
+    "UniswapV3EthereumPoolDayDataLoader",
+    "UniswapV3EthereumPoolHourDataLoader",
+    "UniswapV3EthereumPoolMinuteDataLoader",
+    "UniswapV3EthereumPricesLoader"
 ]

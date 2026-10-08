@@ -8,7 +8,6 @@ import json
 import math
 import os
 from datetime import datetime
-from typing import Dict, List
 
 import pandas as pd
 
@@ -27,7 +26,7 @@ VARIANTS = ("none", "boros")
 __all__ = ["RESULTS_DIR", "VARIANTS", "build_frame", "load_registry", "observations", "summarise", "window"]
 
 
-def load_registry() -> Dict[str, dict]:
+def load_registry() -> dict[str, dict]:
     with open(os.path.join(HERE, "markets.json"), encoding="utf-8") as fh:
         return json.load(fh)
 
@@ -61,7 +60,7 @@ def build_frame(cfg: dict, start: datetime, end: datetime) -> tuple:
     return frame.dropna(subset=["spot"]), expiry, binfo
 
 
-def observations(frame: pd.DataFrame, cfg: dict, variant: str) -> List[Observation]:
+def observations(frame: pd.DataFrame, cfg: dict, variant: str) -> list[Observation]:
     bar_seconds = _BAR_HOURS[cfg["bar"]] * 3600
     out = []
     for ts, row in frame.iterrows():

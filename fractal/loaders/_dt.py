@@ -5,20 +5,25 @@ UTC-aware ``datetime`` objects on construction. Conversions to API
 representations (ms epoch, s epoch) live here so we don't duplicate
 ``int(dt.timestamp() * 1000)`` boilerplate.
 """
+from collections.abc import Iterable
 from datetime import datetime, timezone
-from typing import Iterable, Optional
 
 import pandas as pd
 
 from fractal.core.base.time import SECONDS_PER_YEAR
 
 __all__ = [
-    "SECONDS_PER_YEAR", "to_utc", "to_ms", "to_seconds", "utcnow",
-    "annualise_funding", "require_no_nan",
+    "SECONDS_PER_YEAR",
+    "annualise_funding",
+    "require_no_nan",
+    "to_ms",
+    "to_seconds",
+    "to_utc",
+    "utcnow",
 ]
 
 
-def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
+def to_utc(dt: datetime | None) -> datetime | None:
     """Return ``dt`` as a UTC-aware datetime. Naive datetimes are assumed UTC.
 
     Returns ``None`` unchanged so call sites can keep optional semantics.
@@ -30,7 +35,7 @@ def to_utc(dt: Optional[datetime]) -> Optional[datetime]:
     return dt.astimezone(timezone.utc)
 
 
-def to_ms(dt: Optional[datetime]) -> Optional[int]:
+def to_ms(dt: datetime | None) -> int | None:
     """UTC-aware datetime → millisecond epoch (or ``None`` if input is None)."""
     dt = to_utc(dt)
     if dt is None:
@@ -38,7 +43,7 @@ def to_ms(dt: Optional[datetime]) -> Optional[int]:
     return int(dt.timestamp() * 1000)
 
 
-def to_seconds(dt: Optional[datetime]) -> Optional[int]:
+def to_seconds(dt: datetime | None) -> int | None:
     """UTC-aware datetime → second epoch (or ``None`` if input is None)."""
     dt = to_utc(dt)
     if dt is None:

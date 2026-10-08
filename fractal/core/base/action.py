@@ -1,5 +1,4 @@
 from dataclasses import dataclass, field
-from typing import Dict
 
 
 @dataclass
@@ -20,7 +19,7 @@ class Action:
     ```
     """
     action: str
-    args: Dict = field(default_factory=dict)
+    args: dict = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return f"Action({self.action}, {self.args})"

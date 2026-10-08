@@ -11,7 +11,7 @@ def get_futures_trading_tickers() -> list[dict]:
     try:
         response = requests.get(url, timeout=10).json()
     except requests.exceptions.RequestException as e:
-        raise SystemExit(e)
+        raise SystemExit(e) from e
     return response
 
 
@@ -21,7 +21,7 @@ def get_spot_volumes() -> list[dict]:
     try:
         response = requests.get(url, timeout=10).json()
     except requests.exceptions.RequestException as e:
-        raise SystemExit(e)
+        raise SystemExit(e) from e
     return response
 
 

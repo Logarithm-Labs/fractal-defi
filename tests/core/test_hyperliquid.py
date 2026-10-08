@@ -36,7 +36,7 @@ def test_action_withdraw(hyperliquid_entity):
 @pytest.mark.core
 def test_action_withdraw_insufficient_balance(hyperliquid_entity):
     hyperliquid_entity.action_deposit(1000)
-    with pytest.raises(Exception):
+    with pytest.raises(HyperliquidEntityException):
         hyperliquid_entity.action_withdraw(1500)
     assert hyperliquid_entity.balance == 1000  # balance should not change
 
@@ -197,7 +197,7 @@ def test_open_position_rejects_above_max_leverage():
         e.action_open_position(2.0)  # notional 2000 → leverage 20x > 10
     assert e.size == 0
     assert e._internal_state.collateral == 100
-    assert e._internal_state.positions == []
+    assert e._internal_state.positions == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 @pytest.mark.core
@@ -208,7 +208,7 @@ def test_open_position_rejects_without_deposit():
     with pytest.raises(HyperliquidEntityException):
         e.action_open_position(0.1)
     assert e.size == 0
-    assert e._internal_state.positions == []
+    assert e._internal_state.positions == []  # pylint: disable=use-implicit-booleaness-not-comparison
 
 
 @pytest.mark.core

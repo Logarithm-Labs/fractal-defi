@@ -179,7 +179,7 @@ def test_liquidity_delta_below_range_uses_only_amount0():
         amount0=1.0, amount1=0.0,
         token0_decimal=18, token1_decimal=18,
     )
-    assert L == L_just_amount0
+    assert L_just_amount0 == L
 
 
 @pytest.mark.core
@@ -195,7 +195,7 @@ def test_liquidity_delta_above_range_uses_only_amount1():
         amount0=0.0, amount1=1.0,
         token0_decimal=18, token1_decimal=18,
     )
-    assert L == L_just_amount1
+    assert L_just_amount1 == L
 
 
 @pytest.mark.core

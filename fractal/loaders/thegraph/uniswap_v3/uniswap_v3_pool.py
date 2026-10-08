@@ -1,7 +1,6 @@
 """Uniswap V3 pool-snapshot loaders (TheGraph)."""
 import warnings
 from datetime import datetime
-from typing import List, Optional
 
 import pandas as pd
 
@@ -51,7 +50,7 @@ class _UniswapV3PoolBase:
             warnings.warn(
                 f"{type(self).__name__}: negative tvlUSD for pool {self.pool} "
                 f"at {first_bad} ({int(negative_tvl.sum())} bar(s)); clamped "
-                f"to 0 — tvl around these bars is unreliable."
+                f"to 0 — tvl around these bars is unreliable.", stacklevel=2,
             )
             df.loc[negative_tvl, "tvl"] = 0.0
         return df
@@ -93,13 +92,13 @@ class UniswapV3EthereumPoolDayDataLoader(_UniswapV3PoolBase, EthereumUniswapV3Lo
         api_key: str,
         pool: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
 
     def _cache_key(self) -> str:
         s = to_seconds(self.start_time) if self.start_time is not None else "open"
@@ -109,7 +108,7 @@ class UniswapV3EthereumPoolDayDataLoader(_UniswapV3PoolBase, EthereumUniswapV3Lo
     def extract(self) -> None:
         cursor = to_seconds(self.end_time) if self.end_time is not None else int(utcnow().timestamp())
         floor = to_seconds(self.start_time) if self.start_time is not None else None
-        rows: List[dict] = []
+        rows: list[dict] = []
         while True:
             query = (
                 "{ poolDayDatas(first: %d, orderBy: date, orderDirection: desc, "
@@ -149,13 +148,13 @@ class UniswapV3ArbitrumPoolDayDataLoader(_UniswapV3PoolBase, ArbitrumUniswapV3Lo
         api_key: str,
         pool: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
 
     def _cache_key(self) -> str:
         s = to_seconds(self.start_time) if self.start_time is not None else "open"
@@ -165,7 +164,7 @@ class UniswapV3ArbitrumPoolDayDataLoader(_UniswapV3PoolBase, ArbitrumUniswapV3Lo
     def extract(self) -> None:
         cursor = to_seconds(self.end_time) if self.end_time is not None else int(utcnow().timestamp())
         floor = to_seconds(self.start_time) if self.start_time is not None else None
-        rows: List[dict] = []
+        rows: list[dict] = []
         while True:
             query = (
                 "{ liquidityPoolDailySnapshots(first: %d, orderBy: timestamp, "
@@ -256,9 +255,9 @@ class _UniswapV3PoolHourBase(_UniswapV3PoolBase):
         api_key: str,
         pool: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
-        decimals: Optional[float] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+        decimals: float | None = None,
     ) -> None:
         """
         Args:
@@ -272,8 +271,8 @@ class _UniswapV3PoolHourBase(_UniswapV3PoolBase):
         """
         super().__init__(api_key=api_key, loader_type=loader_type)
         self.pool: str = validate_evm_address(pool, field="pool")
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
         if decimals is None:
             decimals0, decimals1 = self.get_pool_decimals(self.pool)
             decimals = decimals0 - decimals1
@@ -289,7 +288,7 @@ class _UniswapV3PoolHourBase(_UniswapV3PoolBase):
         # bar starting exactly at end_time (documented inclusive).
         cursor = to_seconds(self.end_time) + 1 if self.end_time is not None else int(utcnow().timestamp())
         floor = to_seconds(self.start_time) if self.start_time is not None else None
-        rows: List[dict] = []
+        rows: list[dict] = []
         while True:
             query = (
                 "{ poolHourDatas(first: %d, orderBy: periodStartUnix, orderDirection: desc, "
@@ -346,7 +345,7 @@ class _UniswapV3PoolHourBase(_UniswapV3PoolBase):
                     f"{type(self).__name__}: non-monotonic {field} for pool "
                     f"{self.pool} at periodStartUnix={first_bad} "
                     f"({int(negatives.sum())} bar(s)); deltas clamped to 0 — "
-                    f"fees around these bars are unreliable."
+                    f"fees around these bars are unreliable.", stacklevel=2,
                 )
             df[f"fee_growth{i}"] = [d / 2 ** 128 if d > 0 else 0.0 for d in delta]
         self._data = self._post_transform(df, time_col="periodStartUnix")

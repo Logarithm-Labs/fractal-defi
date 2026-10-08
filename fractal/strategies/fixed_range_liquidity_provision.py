@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from typing import List, Optional
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity
 from fractal.core.entities import UniswapV3LPConfig, UniswapV3LPEntity
@@ -29,8 +28,8 @@ class FixedRangeLiquidityProvisionParams(BaseStrategyParams):
     PRICE_LOWER: float
     PRICE_UPPER: float
     INITIAL_BALANCE: float = 0.0
-    TOKEN0_AMOUNT: Optional[float] = None
-    TOKEN1_AMOUNT: Optional[float] = None
+    TOKEN0_AMOUNT: float | None = None
+    TOKEN1_AMOUNT: float | None = None
 
 
 class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionParams]):
@@ -53,8 +52,8 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
         params: FixedRangeLiquidityProvisionParams,
         *args,
         debug: bool = False,
-        token0_decimals: Optional[int] = None,
-        token1_decimals: Optional[int] = None,
+        token0_decimals: int | None = None,
+        token1_decimals: int | None = None,
         pool_fee_rate: float = 0.0,
         slippage_pct: float = 0.0,
         protocol_fee: float = 0.0,
@@ -74,7 +73,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
         self._protocol_fee = protocol_fee
         self._fee_model = fee_model
         self._notional_side = notional_side
-        super().__init__(params=params, debug=debug, *args, **kwargs)
+        super().__init__(*args, params=params, debug=debug, **kwargs)
         # Instance attribute (NOT class-level) so independent strategy
         # instances run side-by-side without sharing the entry flag.
         self.entered = False
@@ -103,7 +102,7 @@ class FixedRangeLiquidityProvision(BaseStrategy[FixedRangeLiquidityProvisionPara
             and self._params.TOKEN1_AMOUNT is not None
         )
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         """Open the position once; afterwards do nothing."""
         entity: UniswapV3LPEntity = self.get_entity('UNISWAP_V3')
         if entity.is_position or self.entered:
