@@ -5,7 +5,6 @@ name and observation timestamp exactly as production code stamps them.
 """
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import List, Optional
 
 import pytest
 
@@ -15,7 +14,7 @@ from fractal.core.base.strategy.result import StrategyResult
 from fractal.core.entities.protocols.boros import BorosEntity, BorosGlobalState
 from fractal.core.entities.protocols.pendle_pt import PendlePTConfig, PendlePTEntity, PendlePTGlobalState
 from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity, UniswapV2LPGlobalState
-from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpGlobalState
+from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpEntityException, SimplePerpGlobalState
 from fractal.core.entities.simple.pool import SimplePoolEntity, SimplePoolGlobalState
 from fractal.core.entities.simple.spot import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
@@ -30,19 +29,19 @@ class _P(BaseStrategyParams):
 class ScriptedStrategy(BaseStrategy[_P]):
     """Registers one entity and replays a scripted action list per step."""
 
-    def __init__(self, entity: NamedEntity, script: Optional[List[ActionToTake]] = None,
+    def __init__(self, entity: NamedEntity, script: list[ActionToTake] | None = None,
                  **kwargs):
-        self._script: List[List[ActionToTake]] = script or []
+        self._script: list[list[ActionToTake]] = script or []
         super().__init__(**kwargs)
         self.register_entity(entity)
 
     def set_up(self) -> None:
         pass
 
-    def queue(self, actions: List[ActionToTake]) -> None:
+    def queue(self, actions: list[ActionToTake]) -> None:
         self._script.append(actions)
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         return self._script.pop(0) if self._script else []
 
 
@@ -133,7 +132,7 @@ def test_perp_open_records_fee_and_rejected_trade_records_nothing():
     # Risk-increasing trade rejected at margin → rolled back, no record.
     strategy.queue([ActionToTake("PERP", Action("open_position",
                                                 {"amount_in_product": 500.0}))])
-    with pytest.raises(Exception):
+    with pytest.raises(SimplePerpEntityException):
         _step(strategy, {"PERP": SimplePerpGlobalState(mark_price=100.0)})
     assert len(strategy.execution_ledger.records) == 1
 

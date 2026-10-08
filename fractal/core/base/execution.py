@@ -16,16 +16,16 @@ Conventions:
 * deposits, withdrawals, borrowing, repayment, and internal transfers
   are **not** recorded (they are capital movements, not trades).
 """
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Callable, List, Optional
 
 
 @dataclass
 class ExecutionRecord:
     """One recorded trade execution."""
 
-    timestamp: Optional[datetime]  # observation timestamp; None outside a run
+    timestamp: datetime | None  # observation timestamp; None outside a run
     entity: str                    # registry name of the entity
     action: str                    # action name, e.g. ``buy`` / ``open_position``
     traded_notional: float         # notional value traded (accounting unit)
@@ -36,12 +36,12 @@ class ExecutionLedger:
     """Cumulative ledger of :class:`ExecutionRecord` rows for one run."""
 
     def __init__(self) -> None:
-        self.records: List[ExecutionRecord] = []
+        self.records: list[ExecutionRecord] = []
         self.total_traded_notional: float = 0.0
         self.total_fees_paid: float = 0.0
         # Context set by the strategy before dispatching actions.
-        self._current_timestamp: Optional[datetime] = None
-        self._current_entity: Optional[str] = None
+        self._current_timestamp: datetime | None = None
+        self._current_entity: str | None = None
 
     def reset(self) -> None:
         """Start a fresh run: drop all records and totals.
@@ -55,8 +55,8 @@ class ExecutionLedger:
         self._current_timestamp = None
         self._current_entity = None
 
-    def set_context(self, timestamp: Optional[datetime] = None,
-                    entity_name: Optional[str] = None) -> None:
+    def set_context(self, timestamp: datetime | None = None,
+                    entity_name: str | None = None) -> None:
         """Set default timestamp/entity applied to subsequent ``record`` calls."""
         if timestamp is not None:
             self._current_timestamp = timestamp
@@ -64,7 +64,7 @@ class ExecutionLedger:
             self._current_entity = entity_name
 
     def record(self, action: str, traded_notional: float, fee_paid: float,
-               entity: Optional[str] = None) -> None:
+               entity: str | None = None) -> None:
         """Append one record and update cumulative totals.
 
         ``entity`` overrides ``_current_entity`` when given (strategies
