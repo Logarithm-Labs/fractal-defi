@@ -524,6 +524,7 @@ def test_pro_transport_error_has_no_key_bearing_context(monkeypatch, offline_cac
 def test_pro_transport_retry_warnings_do_not_log_the_key(monkeypatch, offline_cache, caplog):
     """urllib3 logs each retry with the request path, which embeds the key."""
     loader = _closed_port_loader(monkeypatch)
+    filters_before = list(logging.getLogger("urllib3.connectionpool").filters)
     with (caplog.at_level(logging.WARNING, logger="urllib3.connectionpool"),
           pytest.raises(LoaderHttpError)):
         loader.read(with_run=True)
@@ -532,5 +533,6 @@ def test_pro_transport_retry_warnings_do_not_log_the_key(monkeypatch, offline_ca
     for record in records:
         assert FAKE_KEY not in record.getMessage()
     assert FAKE_KEY not in caplog.text
-    # the redaction filter is removed once the request finishes
-    assert not logging.getLogger("urllib3.connectionpool").filters
+    # the redaction filter is removed once the request finishes (other
+    # libraries, e.g. MLflow, may install their own filters on this logger)
+    assert logging.getLogger("urllib3.connectionpool").filters == filters_before
