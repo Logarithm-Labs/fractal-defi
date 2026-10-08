@@ -109,6 +109,36 @@ class LendingHistory(pd.DataFrame):
         super().__init__(data=data, index=_to_utc_index(time))
 
 
+class TVLHistory(pd.DataFrame):
+    """Total-value-locked series indexed by UTC timestamps. Column: ``tvl``.
+
+    Values in USD (the accounting unit every DefiLlama endpoint reports).
+    """
+
+    def __init__(self, tvls: ArrayLike, time: TimeLike):
+        super().__init__(
+            data={"tvl": np.asarray(tvls, dtype=float)},
+            index=_to_utc_index(time),
+        )
+
+
+class DEXHistory(pd.DataFrame):
+    """DEX daily volume and fees indexed by UTC timestamps.
+
+    Columns: ``volume`` (daily swap volume, USD), ``fees`` (daily fees, USD).
+    Both non-NaN: the loader drops days missing from either source chart.
+    """
+
+    def __init__(self, volumes: ArrayLike, fees: ArrayLike, time: TimeLike):
+        super().__init__(
+            data={
+                "volume": np.asarray(volumes, dtype=float),
+                "fees": np.asarray(fees, dtype=float),
+            },
+            index=_to_utc_index(time),
+        )
+
+
 class PoolHistory(pd.DataFrame):
     """
     AMM pool snapshots. Columns: ``tvl``, ``volume``, ``fees``, ``liquidity``.
