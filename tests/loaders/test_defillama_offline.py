@@ -174,11 +174,17 @@ def _yields_payload():
     return {
         "status": "success",
         "data": [
-            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 0.10, "apyBase": 0.08, "tvlUsd": 1000.0},
-            {"timestamp": "2024-01-02T00:00:00.000Z", "apy": None, "apyBase": 0.12, "tvlUsd": 1100.0},
-            {"timestamp": "2024-01-03T00:00:00.000Z", "apy": 0.15, "tvlUsd": 1200.0},
+            # DefiLlama APY fields are annual percent: 3.5 means 3.5 %
+            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 3.5, "apyBase": 3.0, "tvlUsd": 1000.0},
+            {"timestamp": "2024-01-02T00:00:00.000Z", "apy": None, "apyBase": 4.0, "tvlUsd": 1100.0},
+            {"timestamp": "2024-01-03T00:00:00.000Z", "apy": 5.0, "tvlUsd": 1200.0},
         ],
     }
+
+
+def _hourly(apy_percent):
+    """Per-hour geometric fraction equivalent to an annual percent APY."""
+    return (1 + apy_percent / 100) ** (1 / (365 * 24)) - 1
 
 
 def test_yields_loader_parses_apy_and_prefers_total(offline_cache, monkeypatch):
@@ -187,8 +193,14 @@ def test_yields_loader_parses_apy_and_prefers_total(offline_cache, monkeypatch):
     loader._http = _http_with({"/yields/chart/pool-1": _yields_payload()})
     history = loader.read(with_run=True)
     assert isinstance(history, RateHistory)
-    assert history["rate"].tolist() == pytest.approx([0.10, 0.12, 0.15])
     assert history.index.name == "time"
+    # daily percent APY → hourly grid, per-step geometric fraction
+    assert len(history) == 49
+    assert history.index[0] == pd.Timestamp("2024-01-01 00:00", tz="UTC")
+    assert history.index[-1] == pd.Timestamp("2024-01-03 00:00", tz="UTC")
+    assert (history.index.to_series().diff().dropna() == pd.Timedelta(hours=1)).all()
+    expected = [_hourly(3.5)] * 24 + [_hourly(4.0)] * 24 + [_hourly(5.0)]
+    assert history["rate"].tolist() == pytest.approx(expected, rel=1e-12)
 
 
 def test_pool_loader_parses_tvl(offline_cache, monkeypatch):
@@ -335,9 +347,9 @@ def test_pro_series_is_sorted_and_deduplicated(offline_cache, monkeypatch):
     payload = {
         "status": "success",
         "data": [
-            {"timestamp": "2024-01-02T00:00:00.000Z", "apy": 0.12},
-            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 0.10},
-            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 0.11},
+            {"timestamp": "2024-01-02T00:00:00.000Z", "apy": 12.0},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 10.0},
+            {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 11.0},
         ],
     }
     loader = DefiLlamaYieldsLoader("pool-1")
@@ -345,7 +357,7 @@ def test_pro_series_is_sorted_and_deduplicated(offline_cache, monkeypatch):
     history = loader.read(with_run=True)
     assert history.index.is_monotonic_increasing
     assert history.index.is_unique
-    assert history["rate"].tolist() == pytest.approx([0.11, 0.12])
+    assert history["rate"].tolist() == pytest.approx([_hourly(11.0)] * 24 + [_hourly(12.0)], rel=1e-12)
 
 
 # ---------------------------------------------- per-chain intraday collapse
@@ -426,3 +438,53 @@ def test_tvl_loader_earlier_null_is_superseded_by_later_point(offline_cache):
     loader._http = _http_with({"/protocol/proto": payload})
     history = loader.read(with_run=True)
     assert history["tvl"].tolist() == pytest.approx([50.0])
+
+
+# ------------------------------------------------ yields unit / hourly grid
+@pytest.mark.core
+def test_yields_hourly_rate_compounds_back_to_the_annual_apy(offline_cache, monkeypatch):
+    """A year of per-step ``amount *= 1 + rate`` must reproduce the quoted APY."""
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    payload = {"data": [
+        {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 3.5},
+        {"timestamp": "2024-01-02T00:00:00.000Z", "apy": 3.5},
+    ]}
+    loader = DefiLlamaYieldsLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1": payload})
+    rate = loader.read(with_run=True)["rate"].iloc[0]
+    assert (1 + rate) ** (365 * 24) == pytest.approx(1.035, rel=1e-12)
+    assert rate < 0.035 / (365 * 24)  # geometric, not the linear APR split
+
+
+@pytest.mark.core
+def test_yields_window_applies_inclusively_after_hourly_grid(offline_cache, monkeypatch):
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    loader = DefiLlamaYieldsLoader("pool-1",
+                                   start_time=datetime(2024, 1, 1, 12, tzinfo=UTC),
+                                   end_time=datetime(2024, 1, 2, 6, tzinfo=UTC))
+    loader._http = _http_with({"/yields/chart/pool-1": _yields_payload()})
+    history = loader.read(with_run=True)
+    assert history.index[0] == pd.Timestamp("2024-01-01 12:00", tz="UTC")
+    assert history.index[-1] == pd.Timestamp("2024-01-02 06:00", tz="UTC")
+    assert len(history) == 19
+    assert history["rate"].tolist() == pytest.approx([_hourly(3.5)] * 12 + [_hourly(4.0)] * 7, rel=1e-12)
+
+
+@pytest.mark.core
+def test_yields_cache_key_is_versioned_for_the_rate_unit(monkeypatch):
+    """Caches written with percent-unit daily rates must not be reused."""
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    key = DefiLlamaYieldsLoader("pool-1")._cache_key()
+    assert key.startswith("yields-v2-pool-1-")
+    assert "fake-test-key" not in key
+
+
+@pytest.mark.core
+def test_yields_cache_round_trip_keeps_hourly_rates(offline_cache, monkeypatch):
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    loader = DefiLlamaYieldsLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1": _yields_payload()})
+    first = loader.read(with_run=True)
+    again = DefiLlamaYieldsLoader("pool-1").read()
+    assert again.index.equals(first.index)
+    assert again["rate"].tolist() == pytest.approx(first["rate"].tolist(), rel=1e-12)

@@ -354,10 +354,16 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
 
 
 class DefiLlamaYieldsLoader(DefiLlamaProLoader):
-    """Daily APY history for one DefiLlama yield pool (Pro API).
+    """Hourly per-step yield rate for one DefiLlama yield pool (Pro API).
 
-    Reads ``/yields/chart/{pool_id}``; ``rate`` is the pool's total APY
-    (``apy`` when present, otherwise ``apyBase``).
+    Reads ``/yields/chart/{pool_id}``, whose daily ``apy`` (or ``apyBase``
+    when ``apy`` is null) is an **annual percentage** (``3.5`` = 3.5 %).
+    The daily series is forward-filled onto a 1h UTC grid and converted
+    to the library's :class:`RateHistory` convention: ``rate`` is the
+    per-hour fraction applied as ``amount *= 1 + rate`` each step, i.e.
+    ``(1 + apy / 100) ** (1 / (365 * 24)) - 1`` (geometric, because APY
+    already includes compounding). The requested window is applied to
+    the hourly grid with inclusive bounds.
     """
 
     def __init__(
@@ -373,7 +379,8 @@ class DefiLlamaYieldsLoader(DefiLlamaProLoader):
         self.pool_id: str = pool_id
 
     def _cache_subject(self) -> str:
-        return f"yields-{self.pool_id}"
+        # v2: rates are hourly per-step fractions; v1 caches held daily percent.
+        return f"yields-v2-{self.pool_id}"
 
     def extract(self) -> None:
         payload = self._get_json(f"/yields/chart/{self.pool_id}")
@@ -398,14 +405,24 @@ class DefiLlamaYieldsLoader(DefiLlamaProLoader):
             self._data = pd.DataFrame(columns=["time", "rate"])
             return
         df = self._data.astype({"time": np.int64, "rate": float})
-        times = pd.to_datetime(df["time"], unit="s", utc=True)
-        mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
         # The Pro API does not guarantee ordering or uniqueness; a duplicated or
         # non-monotonic index breaks downstream time alignment.
-        self._data = (df[mask]
-                      .sort_values("time", kind="stable")
-                      .drop_duplicates("time", keep="last")
-                      .reset_index(drop=True))
+        df = (df.sort_values("time", kind="stable")
+              .drop_duplicates("time", keep="last"))
+        apy = pd.Series(df["rate"].to_numpy(),
+                        index=pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s", utc=True)))
+        # Daily annual-percent APY → 1h UTC grid (forward fill, like the Lido
+        # loader) → per-hour geometric fraction.
+        hourly = apy.resample("1h").last().ffill()
+        rate = (1.0 + hourly / 100.0) ** (1.0 / (365 * 24)) - 1.0
+        grid = pd.DatetimeIndex(rate.index).tz_convert("UTC")
+        mask = self._window_mask(grid)
+        # Resolution-agnostic epoch seconds (pandas 3 may not use ns units).
+        epochs = (grid[mask] - pd.Timestamp(0, tz="UTC")) // pd.Timedelta(seconds=1)
+        self._data = pd.DataFrame({
+            "time": np.asarray(epochs, dtype=np.int64),
+            "rate": rate.to_numpy()[mask],
+        })
 
     def read(self, with_run: bool = False) -> RateHistory:
         if with_run:
