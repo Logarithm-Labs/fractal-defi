@@ -4,12 +4,16 @@ The shared ``HttpClient`` is replaced with canned payloads so the full
 ``read(with_run=True)`` lifecycle (extract → transform → CSV cache →
 typed struct) runs entirely offline.
 """
+import logging
+import time
+import traceback
 import warnings
 from datetime import datetime, timezone
 
 import pandas as pd
 import pytest
 
+from fractal.loaders._http import HttpClient, HttpConfig, LoaderHttpError
 from fractal.loaders.defillama import DefiLlamaDEXLoader, DefiLlamaPoolLoader, DefiLlamaTVLLoader, DefiLlamaYieldsLoader
 from fractal.loaders.defillama.defillama import _parse_chart
 from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
@@ -326,8 +330,6 @@ def test_dex_loader_joins_a_day_reported_at_different_times(offline_cache):
 @pytest.mark.core
 def test_pro_loader_redaction_covers_cause_and_traceback(monkeypatch, offline_cache):
     """``from exc`` kept the key-bearing original reachable via ``__cause__``."""
-    import traceback
-
     monkeypatch.setenv("DEFILLAMA_API_KEY", "sekrit-key")
     loader = DefiLlamaPoolLoader("pool-1")
     loader._http = _http_with({"/yields/chart/pool-1":
@@ -488,3 +490,47 @@ def test_yields_cache_round_trip_keeps_hourly_rates(offline_cache, monkeypatch):
     again = DefiLlamaYieldsLoader("pool-1").read()
     assert again.index.equals(first.index)
     assert again["rate"].tolist() == pytest.approx(first["rate"].tolist(), rel=1e-12)
+
+
+# ---------------------------------------- Pro key leak via transport/logging
+FAKE_KEY = "fake-pro-key-0000"
+
+
+def _closed_port_loader(monkeypatch):
+    """Pool loader aimed at a closed local port with a fast, small retry budget."""
+    monkeypatch.setattr("fractal.loaders.defillama.defillama.PRO_BASE_URL", "http://127.0.0.1:9")
+    loader = DefiLlamaPoolLoader("pool-1", api_key=FAKE_KEY)
+    loader._http = HttpClient(HttpConfig(timeout=0.5, max_retries=2, backoff_factor=0.0))
+    return loader
+
+
+@pytest.mark.core
+def test_pro_transport_error_has_no_key_bearing_context(monkeypatch, offline_cache):
+    """``raise ... from None`` inside ``except`` still sets ``__context__``."""
+    loader = _closed_port_loader(monkeypatch)
+    started = time.monotonic()
+    with pytest.raises(LoaderHttpError) as caught:
+        loader.read(with_run=True)
+    assert time.monotonic() - started < 2.0
+    err = caught.value
+    assert "<redacted>" in str(err)
+    assert FAKE_KEY not in str(err)
+    assert err.__cause__ is None
+    assert err.__context__ is None
+    assert FAKE_KEY not in "".join(traceback.format_exception(err))
+
+
+@pytest.mark.core
+def test_pro_transport_retry_warnings_do_not_log_the_key(monkeypatch, offline_cache, caplog):
+    """urllib3 logs each retry with the request path, which embeds the key."""
+    loader = _closed_port_loader(monkeypatch)
+    with (caplog.at_level(logging.WARNING, logger="urllib3.connectionpool"),
+          pytest.raises(LoaderHttpError)):
+        loader.read(with_run=True)
+    records = [r for r in caplog.records if r.name == "urllib3.connectionpool"]
+    assert records, "expected urllib3 retry warnings to be captured"
+    for record in records:
+        assert FAKE_KEY not in record.getMessage()
+    assert FAKE_KEY not in caplog.text
+    # the redaction filter is removed once the request finishes
+    assert not logging.getLogger("urllib3.connectionpool").filters

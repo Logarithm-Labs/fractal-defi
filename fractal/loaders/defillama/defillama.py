@@ -15,10 +15,16 @@ Pro v2 endpoints (``pro-api.llama.fi/<KEY>/...``, optional):
 The yield-pool endpoints are **not** available on the unauthenticated free
 API (verified 2026-10-08), so they require a DefiLlama Pro key passed as a
 constructor argument or the ``DEFILLAMA_API_KEY`` environment variable.
-The key never appears in cache paths, reprs, logs, error messages, or
-formatted tracebacks — a Pro request failure re-raises a redacted error
-detached from the key-bearing original.
+The key is embedded in the Pro request path only. It is kept out of cache
+keys, and on a Pro request failure the loader raises a redacted copy of the
+error with no ``__cause__``/``__context__`` link to the key-bearing original.
+While a Pro request runs, ``urllib3.connectionpool`` log records (retry
+warnings include the request path) are redacted too. Other sinks are not
+covered — e.g. third-party HTTP debugging hooks or loggers other than
+``urllib3.connectionpool`` — so do not enable verbose HTTP tracing with a
+real key.
 """
+import logging
 import os
 import warnings
 from typing import Any
@@ -317,13 +323,32 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
         )
 
 
+class _KeyRedactingFilter(logging.Filter):
+    """Scrub an API key from log records (urllib3 logs retries with the URL)."""
+
+    def __init__(self, secret: str) -> None:
+        super().__init__()
+        self._secret = secret
+
+    def scrub(self, text: str) -> str:
+        return text.replace(self._secret, "<redacted>")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        message = record.getMessage()
+        if self._secret in message:
+            record.msg = self.scrub(message)
+            record.args = ()
+        return True
+
+
 class DefiLlamaProLoader(DefiLlamaBaseLoader):
     """Base for the Pro v2 yield endpoints.
 
     The API key is resolved from the ``api_key`` argument or the
     ``DEFILLAMA_API_KEY`` environment variable. It is embedded in the
-    request path only, never in cache keys, and is scrubbed from any
-    error message.
+    request path only, never in cache keys; request errors are re-raised
+    as redacted copies detached from the original, and
+    ``urllib3.connectionpool`` log records are redacted during requests.
     """
 
     def __init__(
@@ -344,13 +369,20 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
         self._api_key: str = resolved
 
     def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
+        redact = _KeyRedactingFilter(self._api_key)
+        failure: Exception | None = None
+        urllib3_log = logging.getLogger("urllib3.connectionpool")
+        urllib3_log.addFilter(redact)
         try:
             return super()._get_json(path, params=params)
-        except Exception as exc:
-            # ``from None`` detaches the original exception, whose URL and
-            # response body carry the key; otherwise the credential is still
-            # reachable through ``__cause__`` and any formatted traceback.
-            raise type(exc)(str(exc).replace(self._api_key, "<redacted>")) from None
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            failure = type(exc)(redact.scrub(str(exc)))
+        finally:
+            urllib3_log.removeFilter(redact)
+        # Raised outside the ``except`` block so neither ``__cause__`` nor
+        # ``__context__`` points at the original, whose URL and response body
+        # carry the key (``from None`` alone still leaves ``__context__`` set).
+        raise failure
 
 
 class DefiLlamaYieldsLoader(DefiLlamaProLoader):
