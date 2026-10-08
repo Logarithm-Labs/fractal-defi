@@ -121,3 +121,14 @@ repos:
         types: [python]
         files: ^(fractal|tests)/.*\.py$
         stages: [manual]
+
+      # Uses pytest-benchmark from the project ``[dev]`` extra. Kept on
+      # the manual stage because timing work is intentionally outside the
+      # correctness gate and must run in a controlled environment.
+      - id: pytest-benchmarks
+        name: pytest -m benchmark
+        entry: pytest -m benchmark --benchmark-only tests/benchmarks
+        language: system
+        pass_filenames: false
+        files: ^(fractal|tests/benchmarks)/.*\.py$
+        stages: [manual]
