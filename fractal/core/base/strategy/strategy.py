@@ -1,3 +1,4 @@
+import functools
 import typing
 from abc import ABC, abstractmethod
 from copy import deepcopy
@@ -6,6 +7,7 @@ from types import MappingProxyType
 from typing import Callable, Dict, Generic, List, Mapping, NamedTuple, Optional, Type, TypeVar, Union
 
 from fractal.core.base.entity import Action, BaseEntity, GlobalState, InternalState
+from fractal.core.base.execution import ExecutionLedger
 from fractal.core.base.observations import Observation, ObservationsStorage
 from fractal.core.base.strategy.logger import BaseLogger, DefaultLogger
 from fractal.core.base.strategy.result import StrategyResult
@@ -105,6 +107,8 @@ class BaseStrategy(ABC, Generic[PT]):
         # ``self._debug`` from inside their ``set_up`` hook.
         self._logger: Optional[BaseLogger] = self._create_logger() if debug else None
         self._entities: Dict[str, BaseEntity] = {}
+        # Execution telemetry (issue #68): one cumulative ledger per run.
+        self._execution_ledger: ExecutionLedger = ExecutionLedger()
         self.set_up()
         self.observations_storage: Optional[ObservationsStorage] = observations_storage
 
@@ -114,6 +118,11 @@ class BaseStrategy(ABC, Generic[PT]):
     @property
     def logger(self) -> BaseLogger:
         return self._logger
+
+    @property
+    def execution_ledger(self) -> ExecutionLedger:
+        """Cumulative execution ledger for the current/last run (issue #68)."""
+        return self._execution_ledger
 
     def _debug(self, message: str):
         """Log a debug message when debug mode is on (no-op otherwise)."""
@@ -201,6 +210,15 @@ class BaseStrategy(ABC, Generic[PT]):
             )
         if entity.entity_name in self._entities:
             raise ValueError(f"Entity {entity.entity_name} already exists.")
+        # Attach execution telemetry: the recorder stamps the registry name
+        # onto each recorded trade; the ledger adds the observation timestamp.
+        # A ``functools.partial`` over the bound ``record`` method (not a
+        # lambda) keeps entities and strategies picklable, and lets
+        # ``copy.deepcopy`` give a copied entity its own copied ledger
+        # instead of writing into this strategy's ledger.
+        entity.entity.attach_execution_recorder(
+            functools.partial(self._execution_ledger.record, entity=entity.entity_name)
+        )
         self._entities[entity.entity_name] = entity.entity
 
     def get_entity(self, entity_name: str) -> BaseEntity:
@@ -330,6 +348,9 @@ class BaseStrategy(ABC, Generic[PT]):
         actions: List[ActionToTake] = self.predict()
         self._debug(f"Actions to take: {actions}")
 
+        # Stamp the observation timestamp onto any executions this step records.
+        self._execution_ledger.set_context(timestamp=observation.timestamp)
+
         # execute the actions
         for action in actions:
             self._debug(f"Action: {action}")
@@ -357,6 +378,10 @@ class BaseStrategy(ABC, Generic[PT]):
         self._debug(f"Entities: {self.get_all_available_entities()}")
         self._debug(f"Entities states: {[entity.internal_state for entity in self._entities.values()]}")
 
+        # Fresh telemetry for this run; the previous result (if any) keeps
+        # its own record snapshot because ``reset`` replaces, not mutates.
+        self._execution_ledger.reset()
+
         # collect all the states of the entities to build the StrategyResult
         timestamps: List[datetime] = []
         internal_states: List[Dict[str, InternalState]] = []
@@ -379,5 +404,6 @@ class BaseStrategy(ABC, Generic[PT]):
             timestamps=timestamps,
             internal_states=internal_states,
             global_states=global_states,
-            balances=balances
+            balances=balances,
+            execution_records=list(self._execution_ledger.records),
         )

@@ -209,6 +209,11 @@ class PendlePTEntity(BaseFixedTermEntity, BaseSpotEntity):
         pt_out = self._quote_buy(asset_in)
         self._internal_state.cash -= amount_in_notional
         self._internal_state.amount += pt_out
+        # Telemetry: the market model blends fee and impact, so the implicit
+        # execution cost (notional spent minus the received PT valued at the
+        # entity's current mark) is recorded as the paid fee.
+        implicit_cost = amount_in_notional - pt_out * self.current_price
+        self.record_execution("buy", amount_in_notional, max(0.0, implicit_cost))
 
     def action_sell(self, amount_in_product: float) -> None:
         """Sell ``amount_in_product`` PT through the market for notional cash."""
@@ -224,6 +229,11 @@ class PendlePTEntity(BaseFixedTermEntity, BaseSpotEntity):
         asset_out = self._quote_sell(amount_in_product)
         self._internal_state.amount -= amount_in_product
         self._internal_state.cash += asset_out * self._global_state.asset_price
+        # Telemetry: blended fee + impact (see ``action_buy``).
+        implicit_cost = amount_in_product * self.current_price - asset_out * self._global_state.asset_price
+        self.record_execution(
+            "sell", amount_in_product * self.current_price, max(0.0, implicit_cost),
+        )
 
     def action_redeem(self, amount_in_product: float) -> None:
         """Redeem matured PT: ``amount * redeem_haircut * asset_price`` of cash, no fee."""

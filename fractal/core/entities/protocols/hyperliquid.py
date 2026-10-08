@@ -206,6 +206,12 @@ class HyperliquidEntity(BasePerpEntity):
                     f"max_leverage {self.max_leverage}"
                 )
 
+        # Telemetry: fee already charged on the traded notional above.
+        self.record_execution(
+            self._trade_action_label(), abs(self._global_state.mark_price * amount_in_product),
+            abs(self._global_state.mark_price * amount_in_product * self.trading_fee),
+        )
+
     @property
     def pnl(self) -> float:
         """
