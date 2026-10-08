@@ -237,6 +237,13 @@ class BorosEntity(BaseFixedTermEntity, BasePerpEntity):
                 f"open_position would leave balance {balance} below initial margin {im}"
             )
 
+        # Telemetry: taker fee charged above on the traded yield units.
+        traded_notional = abs(amount_in_product) * self._global_state.underlying_price
+        self.record_execution(
+            "open_position", traded_notional,
+            open_fee_coin(amount_in_product, self.taker_fee_rate, years) * self._global_state.underlying_price,
+        )
+
     # --------------------------------------------------------- readouts
     @property
     def size(self) -> float:

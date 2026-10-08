@@ -36,6 +36,9 @@ SHARED_PUBLIC_API = {
     # base entity machinery (inherited from BaseEntity)
     "execute",
     "get_available_actions",
+    # execution telemetry (#68)
+    "attach_execution_recorder",
+    "record_execution",
     # readouts
     "balance",
     "is_position",
