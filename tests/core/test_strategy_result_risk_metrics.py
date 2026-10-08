@@ -63,9 +63,10 @@ def _expected_sortino(returns: List[float], step_hours: int = 1) -> float:
 
 
 def _expected_var_cvar(returns: List[float]):
-    q05 = float(np.quantile(np.array(returns), 0.05))
-    tail = [r for r in returns if r <= q05]
-    return max(0.0, -q05), max(0.0, -sum(tail) / len(tail))
+    values = np.sort(np.array([r for r in returns if math.isfinite(r)]))
+    q05 = float(np.quantile(values, 0.05))
+    tail_size = max(1, math.ceil(0.05 * values.size))
+    return max(0.0, -q05), max(0.0, -float(values[:tail_size].mean()))
 
 
 def _expected_omega(returns: List[float]) -> float:
@@ -197,6 +198,25 @@ def test_metrics_dict_exposes_new_fields_for_mlflow_logging():
         assert key in m.__dict__  # mlflow.log_metrics(metrics.__dict__) picks these up
     assert all(isinstance(m.__dict__[key], float) and math.isfinite(m.__dict__[key]) for key in
                ("sortino", "calmar", "var_95", "cvar_95", "omega_ratio", "time_in_drawdown"))
+
+
+@pytest.mark.core
+def test_expected_shortfall_averages_only_the_bounded_five_percent_tail():
+    """One large loss plus 22 tiny gains (ties at the quantile).
+
+    Selecting every bar ``<= q05`` would average nearly the whole sample
+    (~0.02) instead of the worst-5% tail; the expected shortfall must stay
+    bounded to ``ceil(0.05 * n)`` observations.
+    """
+    returns = [-0.50] + [0.0001] * 22
+    m = _metrics_for(returns)
+    var_95, cvar_95 = _expected_var_cvar(returns)
+    assert m.var_95 == pytest.approx(var_95)  # 5% quantile is a (tiny) gain -> 0.0
+    assert m.cvar_95 == pytest.approx(cvar_95)
+    assert m.cvar_95 == pytest.approx((0.50 - 0.0001) / 2)
+    # Sanity: the tail must not be diluted by the flat majority of the sample.
+    assert m.cvar_95 > 10 * abs(np.mean(returns))
+    assert m.cvar_95 >= m.var_95
 
 
 @pytest.mark.core

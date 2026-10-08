@@ -23,9 +23,11 @@ class StrategyMetrics:
     * ``calmar`` — the linear ``apy / abs(max_drawdown)``. ``0.0`` when
       there is no drawdown (avoiding a division by zero).
     * ``var_95`` / ``cvar_95`` — **positive loss magnitudes** taken from
-      the worst 5% of per-bar returns: ``var_95 = -quantile(r, 0.05)``
-      and ``cvar_95 = -mean(r <= quantile(r, 0.05))``. Both are clamped
-      to ``0.0`` when the 5% tail contains no losses.
+      the worst 5% of per-bar returns: ``var_95 = -quantile(r, 0.05)`` and
+      ``cvar_95`` is the mean loss over the ``ceil(0.05 * n)`` worst
+      observations. Both are clamped to ``0.0`` when that tail contains no
+      losses, and non-finite returns (from a ``0 -> positive`` balance
+      transition) are dropped before either is computed.
     * ``omega_ratio`` — ``sum(max(r, 0)) / sum(max(-r, 0))`` at a zero
       per-bar threshold. ``0.0`` when there are no losing bars
       (denominator zero; finite-value policy).
@@ -147,12 +149,15 @@ class StrategyResult:
             else:
                 sortino = float(returns_values.mean()) / downside_std * np.sqrt(data_frequency)
 
-            # Positive loss magnitudes from the worst 5% of returns.
-            # ``<=`` (unlike a strict ``<``) guarantees a non-empty tail.
+            # Positive loss magnitudes from the worst 5% of returns. ``var_95``
+            # is the empirical 5% quantile loss; ``cvar_95`` averages a fixed
+            # ``ceil(5% * n)`` worst-observation tail, so the expected shortfall
+            # always covers the intended 5% of the sample — selecting every bar
+            # ``<= q05`` would sweep in the whole tied block on flat series.
             q05 = float(np.quantile(returns_values, 0.05))
             var_95 = max(0.0, -q05)
-            tail_mean = float(returns_values[returns_values <= q05].mean())
-            cvar_95 = max(0.0, -tail_mean)
+            tail_size = max(1, int(np.ceil(0.05 * returns_values.size)))
+            cvar_95 = max(0.0, -float(np.sort(returns_values)[:tail_size].mean()))
 
             gains = float(np.maximum(returns_values, 0.0).sum())
             losses = float(np.maximum(-returns_values, 0.0).sum())
