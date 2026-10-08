@@ -133,6 +133,10 @@ class StrategyResult:
         calmar = apy / abs(max_drawdown) if max_drawdown < 0 else 0.0
 
         returns_values = returns.values if not returns.empty else np.array([])
+        # A bar that divides by a zero balance (e.g. ``0 -> positive``) yields a
+        # non-finite ``pct_change``; it is not an observed return, so the
+        # tail/ratio metrics are computed on the finite observations only.
+        returns_values = returns_values[np.isfinite(returns_values)]
         if returns_values.size == 0:
             sortino = var_95 = cvar_95 = omega_ratio = 0.0
         else:

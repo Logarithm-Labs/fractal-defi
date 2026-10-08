@@ -197,3 +197,14 @@ def test_metrics_dict_exposes_new_fields_for_mlflow_logging():
         assert key in m.__dict__  # mlflow.log_metrics(metrics.__dict__) picks these up
     assert all(isinstance(m.__dict__[key], float) and math.isfinite(m.__dict__[key]) for key in
                ("sortino", "calmar", "var_95", "cvar_95", "omega_ratio", "time_in_drawdown"))
+
+
+@pytest.mark.core
+def test_zero_balance_transition_keeps_ratio_metrics_finite():
+    """A balance wiped to exactly 0 and recapitalised makes ``pct_change`` emit
+    ``inf``; sortino/omega_ratio must stay finite like the pre-existing sharpe."""
+    result = _result_from_balances([100.0, 0.0, 50.0])
+    m = result.get_metrics(result.to_dataframe())
+    for key in ("sortino", "calmar", "var_95", "cvar_95", "omega_ratio", "time_in_drawdown"):
+        assert math.isfinite(m.__dict__[key]), f"{key} is not finite: {m.__dict__[key]}"
+    assert m.sharpe == 0.0  # unchanged pre-existing behaviour
