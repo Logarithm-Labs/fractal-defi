@@ -13,24 +13,6 @@ from fractal.core.base.entity import GlobalState, InternalState
 class StrategyMetrics:
     """
     Default metrics of the strategy.
-
-    Conventions for the risk metrics added with #68:
-
-    * ``sortino`` — annualized downside-only Sharpe with a zero target
-      return: ``mean(r) / downside_std * sqrt(frequency)``, where
-      ``downside_std`` is the root-mean-square of the negative part of
-      the per-bar returns. ``0.0`` when there is no downside deviation.
-    * ``calmar`` — the linear ``apy / abs(max_drawdown)``. ``0.0`` when
-      there is no drawdown (avoiding a division by zero).
-    * ``var_95`` / ``cvar_95`` — **positive loss magnitudes** taken from
-      the worst 5% of per-bar returns: ``var_95 = -quantile(r, 0.05)``
-      and ``cvar_95 = -mean(r <= quantile(r, 0.05))``. Both are clamped
-      to ``0.0`` when the 5% tail contains no losses.
-    * ``omega_ratio`` — ``sum(max(r, 0)) / sum(max(-r, 0))`` at a zero
-      per-bar threshold. ``0.0`` when there are no losing bars
-      (denominator zero; finite-value policy).
-    * ``time_in_drawdown`` — fraction of observations **strictly below**
-      the running peak of the balance, in ``[0, 1]``.
     """
     accumulated_return: float  # total return of the strategy
     apy: float                 # annualized return, linear: ``accumulated_return / years``
@@ -40,12 +22,6 @@ class StrategyMetrics:
     # ``-1.0`` when the balance is wiped out. Kept separate from ``apy`` so
     # existing grid results and dashboards stay comparable.
     cagr: float = 0.0
-    sortino: float = 0.0
-    calmar: float = 0.0
-    var_95: float = 0.0
-    cvar_95: float = 0.0
-    omega_ratio: float = 0.0
-    time_in_drawdown: float = 0.0
 
 
 @dataclass
@@ -128,31 +104,6 @@ class StrategyResult:
         # cumulative_max can hit 0 if first_balance is 0 — already guarded above.
         drawdowns = net_balance / cumulative_max - 1
         max_drawdown = float(np.min(drawdowns)) if drawdowns.size else 0.0
-        time_in_drawdown = float(np.mean(net_balance < cumulative_max)) if net_balance.size else 0.0
-
-        calmar = apy / abs(max_drawdown) if max_drawdown < 0 else 0.0
-
-        returns_values = returns.values if not returns.empty else np.array([])
-        if returns_values.size == 0:
-            sortino = var_95 = cvar_95 = omega_ratio = 0.0
-        else:
-            # Downside-only Sharpe with a zero target, annualized like ``sharpe``.
-            downside_std = float(np.sqrt(np.mean(np.minimum(returns_values, 0.0) ** 2)))
-            if downside_std == 0 or not np.isfinite(downside_std):
-                sortino = 0.0
-            else:
-                sortino = float(returns_values.mean()) / downside_std * np.sqrt(data_frequency)
-
-            # Positive loss magnitudes from the worst 5% of returns.
-            # ``<=`` (unlike a strict ``<``) guarantees a non-empty tail.
-            q05 = float(np.quantile(returns_values, 0.05))
-            var_95 = max(0.0, -q05)
-            tail_mean = float(returns_values[returns_values <= q05].mean())
-            cvar_95 = max(0.0, -tail_mean)
-
-            gains = float(np.maximum(returns_values, 0.0).sum())
-            losses = float(np.maximum(-returns_values, 0.0).sum())
-            omega_ratio = gains / losses if losses > 0 else 0.0
 
         return StrategyMetrics(
             accumulated_return=accumulated_return,
@@ -160,12 +111,6 @@ class StrategyResult:
             sharpe=sharpe,
             max_drawdown=max_drawdown,
             cagr=cagr,
-            sortino=sortino,
-            calmar=calmar,
-            var_95=var_95,
-            cvar_95=cvar_95,
-            omega_ratio=omega_ratio,
-            time_in_drawdown=time_in_drawdown,
         )
 
     @staticmethod
@@ -189,8 +134,6 @@ class StrategyResult:
     def _zero_metrics() -> "StrategyMetrics":
         return StrategyMetrics(
             accumulated_return=0.0, apy=0.0, sharpe=0.0, max_drawdown=0.0, cagr=0.0,
-            sortino=0.0, calmar=0.0, var_95=0.0, cvar_95=0.0,
-            omega_ratio=0.0, time_in_drawdown=0.0,
         )
 
     def get_default_metrics(self) -> StrategyMetrics:
