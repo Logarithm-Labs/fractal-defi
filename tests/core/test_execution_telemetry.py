@@ -20,6 +20,8 @@ from fractal.core.entities.simple.perp import SimplePerpEntity, SimplePerpEntity
 from fractal.core.entities.simple.pool import SimplePoolEntity, SimplePoolGlobalState
 from fractal.core.entities.simple.spot import SimpleSpotExchange, SimpleSpotExchangeGlobalState
 
+pytestmark = pytest.mark.core
+
 UTC = timezone.utc
 
 
