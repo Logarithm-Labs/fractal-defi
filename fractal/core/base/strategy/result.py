@@ -1,5 +1,5 @@
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from typing import Dict, List, Optional
 
@@ -58,6 +58,19 @@ class StrategyMetrics:
     cvar_95: float = 0.0
     omega_ratio: float = 0.0
     time_in_drawdown: float = 0.0
+    # Execution-telemetry derived metrics (#68, confirmed definitions):
+    # * ``fees_paid`` — cumulative fees in the portfolio accounting unit;
+    # * ``turnover`` — total traded notional / average positive NAV;
+    # * ``fee_drag`` — fees_paid / initial portfolio NAV (stable, non-negative).
+    # All ``0.0`` when telemetry is absent; ``turnover``/``fee_drag`` are also
+    # ``0.0`` when their denominator is degenerate, while ``fees_paid`` (no
+    # denominator) always reports the recorded fee total.
+    # The NAV used by ``turnover``/``fee_drag`` stays in the accounting unit the
+    # telemetry was recorded in, so both ratios are independent of the
+    # ``notional_price`` rescaling applied to the return/drawdown series.
+    fees_paid: float = 0.0
+    turnover: float = 0.0
+    fee_drag: float = 0.0
 
 
 @dataclass
@@ -95,13 +108,24 @@ class StrategyResult:
             StrategyMetrics: Metrics of the strategy. For degenerate inputs
             (empty df, single timestamp, zero/non-finite initial balance,
             zero notional_price column) returns ``StrategyMetrics`` filled
-            with ``0.0`` rather than raising or returning ``inf``/``nan``.
-            On valid inputs ``sortino`` / ``calmar`` / ``omega_ratio`` are
-            ``+inf`` when there is no observed downside and the return is
-            positive (see ``StrategyMetrics``).
+            with ``0.0`` rather than raising or returning ``inf``/``nan`` —
+            except ``fees_paid``, which has no denominator and is always the
+            recorded fee total. On valid inputs ``sortino`` / ``calmar`` /
+            ``omega_ratio`` are ``+inf`` when there is no observed downside
+            and the return is positive (see ``StrategyMetrics``).
+
+        Note:
+            ``fees_paid`` / ``turnover`` / ``fee_drag`` are computed from all
+            of ``self.execution_records`` (the whole run); passing a slice of
+            ``to_dataframe()`` as ``data`` does not filter the records.
         """
+        # Execution-telemetry derived metrics (0.0 when absent/degenerate).
+        records = self.execution_records or []
+        fees_paid = float(sum(record.fee_paid for record in records))
+        degenerate = replace(self._zero_metrics(), fees_paid=fees_paid)
+
         if data is None or data.empty:
-            return self._zero_metrics()
+            return degenerate
 
         data = data.sort_values('timestamp').copy()
         if notional_price is None:
@@ -116,17 +140,21 @@ class StrategyResult:
         # Guards against divide-by-zero / inf / nan from degenerate inputs.
         if isinstance(notional_price, np.ndarray):
             if (notional_price == 0).any() or (~np.isfinite(notional_price)).any():
-                return self._zero_metrics()
+                return degenerate
 
+        # ``notional_price`` only re-expresses the return/drawdown series; the
+        # telemetry-derived ratios divide two accounting-unit quantities, so
+        # they use the unscaled balance and stay invariant to the rescaling.
+        raw_net_balance = data['net_balance'].values.astype(float)
         data['net_balance'] = data['net_balance'] / notional_price
 
         first_balance = data['net_balance'].iloc[0]
         if first_balance == 0 or not np.isfinite(first_balance):
-            return self._zero_metrics()
+            return degenerate
 
         total_seconds: float = (data['timestamp'].iloc[-1] - data['timestamp'].iloc[0]).total_seconds()
         if total_seconds <= 0:
-            return self._zero_metrics()
+            return degenerate
         total_years: float = total_seconds / (60 * 60 * 24 * 365)
 
         accumulated_return: float = data['net_balance'].iloc[-1] / first_balance - 1
@@ -188,6 +216,13 @@ class StrategyResult:
             else:
                 omega_ratio = math.inf if gains > 0 else 0.0
 
+        traded_notional = float(sum(record.traded_notional for record in records))
+        positive_nav = raw_net_balance[raw_net_balance > 0]
+        mean_positive_nav = float(positive_nav.mean()) if positive_nav.size else 0.0
+        turnover = traded_notional / mean_positive_nav if mean_positive_nav > 0 else 0.0
+        initial_nav = float(raw_net_balance[0])
+        fee_drag = fees_paid / initial_nav if initial_nav > 0 else 0.0
+
         return StrategyMetrics(
             accumulated_return=accumulated_return,
             apy=apy,
@@ -200,6 +235,9 @@ class StrategyResult:
             cvar_95=cvar_95,
             omega_ratio=omega_ratio,
             time_in_drawdown=time_in_drawdown,
+            fees_paid=fees_paid,
+            turnover=turnover,
+            fee_drag=fee_drag,
         )
 
     @staticmethod
@@ -225,6 +263,7 @@ class StrategyResult:
             accumulated_return=0.0, apy=0.0, sharpe=0.0, max_drawdown=0.0, cagr=0.0,
             sortino=0.0, calmar=0.0, var_95=0.0, cvar_95=0.0,
             omega_ratio=0.0, time_in_drawdown=0.0,
+            fees_paid=0.0, turnover=0.0, fee_drag=0.0,
         )
 
     def get_default_metrics(self) -> StrategyMetrics:
