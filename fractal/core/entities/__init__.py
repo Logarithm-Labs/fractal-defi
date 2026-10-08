@@ -13,10 +13,10 @@ Three logical levels:
   ``StakedETHEntity``).
 """
 # Bases
-from fractal.core.entities.base import BaseHedgeEntity  # deprecated alias
 from fractal.core.entities.base import (
     BaseFixedTermEntity,
     BaseFixedTermGlobalState,
+    BaseHedgeEntity,  # deprecated alias
     BaseLendingEntity,
     BaseLiquidStakingToken,
     BasePerpEntity,
@@ -35,12 +35,12 @@ from fractal.core.entities.protocols import (  # Pre-1.3.0 aliases.
     BorosGlobalState,
     BorosInternalState,
     HyperliquidEntity,
-    HyperliquidGlobalState,
     HyperLiquidGlobalState,
-    HyperliquidInternalState,
+    HyperliquidGlobalState,
     HyperLiquidInternalState,
-    HyperliquidPosition,
+    HyperliquidInternalState,
     HyperLiquidPosition,
+    HyperliquidPosition,
     MorphoEntity,
     MorphoException,
     MorphoGlobalState,

@@ -13,8 +13,8 @@ from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
     HyperliquidPerpsKlinesLoader,
-    HyperliquidPerpsPricesLoader,
     HyperLiquidPerpsPricesLoader,
+    HyperliquidPerpsPricesLoader,
 )
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader

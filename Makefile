@@ -45,8 +45,8 @@ help:
 	@echo ""
 	@echo "  Lint / format:"
 	@echo "    pre-commit       run every pre-commit hook (matches CI lint job)"
-	@echo "    format           auto-fix import order (isort)"
-	@echo "    lint             flake8 + pylint(fractal) + pylint(tests) + isort --check"
+	@echo "    format           auto-fix lint findings (ruff --fix, incl. import order)"
+	@echo "    lint             ruff + pylint(fractal) + pylint(tests)"
 	@echo ""
 	@echo "  Tests (layered):"
 	@echo "    test             offline core suite (~1100 tests, ~10s) — default for CI on every PR"
@@ -93,11 +93,10 @@ pre-commit:
 	pre-commit run --all-files
 
 format:
-	isort $(PROJECT) $(TESTS) $(EXAMPLES)
+	ruff check $(PROJECT) $(TESTS) $(EXAMPLES) --fix
 
 lint:
-	isort --check-only --diff $(PROJECT) $(TESTS) $(EXAMPLES)
-	flake8 $(PROJECT) $(TESTS)
+	ruff check $(PROJECT) $(TESTS) $(EXAMPLES)
 	pylint $(PROJECT) --disable=R --score=no
 	pylint --rcfile=$(TESTS)/.pylintrc $(TESTS) --disable=R --score=no
 

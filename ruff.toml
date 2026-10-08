@@ -1,0 +1,35 @@
+# Ruff (issue #63): replaces flake8 + isort for mechanical linting and
+# import sorting. Pylint stays for semantic checks (cyclic imports,
+# duplicate code, design smells) — ruff and pylint are complementary.
+#
+# Rule set is the **parity baseline** with the old toolchain:
+#   * E4/E7/E9 + F + W — the pycodestyle/pyflakes surface flake8 enforced;
+#   * I — import sorting, replacing PyCQA isort;
+#   * E731 ignored (lambda assignments are load-bearing for delegate calls,
+#     mirroring the old .flake8 ignore);
+#   * E501 deliberately out of scope: the codebase predates ruff and
+#     enforcing line length here would be mass churn without semantic
+#     value (see .pre-commit-config.yaml end-of-file/whitespace hooks).
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+    "docs",
+    # These scripts inject sys.path before importing local helpers on
+    # purpose — the same files PyCQA isort skipped.
+    "tests/mlflow_tests/scripts",
+    "tests/**/*.ipynb",
+    "**/*.ipynb",
+]
+
+[lint]
+select = ["E4", "E7", "E9", "F", "W", "I"]
+ignore = ["E731"]
+
+[lint.per-file-ignores]
+# Reference examples are historically outside the flake8 hook; they keep
+# their terse style (sys.path preamble before imports, semicolon
+# separators, single-letter OHLCV unpacking, demo locals).
+"examples/**" = ["E402", "E702", "E741", "F841"]
+
+[lint.isort]
+known-first-party = ["fractal"]

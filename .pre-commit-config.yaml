@@ -13,10 +13,10 @@
 #
 # Hooks below cover four layers:
 #   1. Cheap file-shape checks (whitespace, EOF, large files, debug-stmt).
-#   2. isort — autoformat imports.
-#   3. flake8 — PEP 8 / lint.
-#   4. pylint — full lint at 10/10 (own venv with runtime deps).
-#   5. pytest -m core — core test suite (manual stage; opt-in).
+#   2. ruff — PEP 8 / pyflakes lint + import sorting (auto-fix),
+#      replacing flake8 + PyCQA isort (issue #63). Config in ``ruff.toml``.
+#   3. pylint — full lint at 10/10 (own venv with runtime deps).
+#   4. pytest -m core — core test suite (manual stage; opt-in).
 
 repos:
   # 1. File-level hygiene (built-in pre-commit hooks)
@@ -32,27 +32,21 @@ repos:
       - id: check-merge-conflict
       - id: debug-statements
 
-  # 2. isort — autoformats imports BEFORE flake8 sees them, so a
-  #    misordered import gets fixed instead of rejected. Project
-  #    config in ``.isort.cfg`` (matches the 120-char flake8 limit).
+  # 2. ruff — fast lint + import sorting (issue #63). Replaces flake8
+  #    and PyCQA isort; pylint keeps the semantic checks. Project
+  #    config in ``ruff.toml`` (parity rule set, 120-char lines).
   #    ``rev`` kept in lock-step with setup.py / requirements.txt so
   #    pre-commit and ``pip install -e ".[dev]"`` resolve to the
-  #    same major.
-  - repo: https://github.com/PyCQA/isort
-    rev: 9.0.1
+  #    same version. ``--fix`` mirrors the old isort behavior:
+  #    mechanical findings get fixed, not rejected.
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.16.10
     hooks:
-      - id: isort
-        files: ^(fractal|tests|examples)/.*\.py$
+      - id: ruff-check
+        args: [--fix]
+        files: ^(fractal|tests|examples)/
 
-  # 3. flake8 on touched files (fast, ~1s)
-  - repo: https://github.com/PyCQA/flake8
-    rev: 7.4.1
-    hooks:
-      - id: flake8
-        files: ^(fractal|tests)/
-        # Project config in ``.flake8``
-
-  # 4. pylint — heavyweight static analysis. Runs in pre-commit's
+  # 3. pylint — heavyweight static analysis. Runs in pre-commit's
   #    own virtualenv (``language: python``) and pulls fractal's
   #    runtime deps + pylint via ``additional_dependencies`` so it
   #    can resolve imports during analysis. The git-hook subprocess
@@ -98,7 +92,7 @@ repos:
           - requests>=2.34.2
           - scikit-learn>=1.7.2
 
-  # 5. pytest -m core — full offline test suite (~1100 tests, ~10s).
+  # 4. pytest -m core — full offline test suite (~1100 tests, ~10s).
   #    Lives on the ``manual`` stage so it does NOT fire on every
   #    ``git commit`` (would slow commits down and require all
   #    runtime + test deps in pre-commit's isolated venv). Run

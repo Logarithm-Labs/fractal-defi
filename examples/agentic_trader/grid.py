@@ -49,7 +49,7 @@ if __name__ == '__main__':
     # Define MLflow and Experiment configurations
     mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri='http://127.0.0.1:8080',
-        experiment_name=f'agent_trader_btc_v0.1-2024'
+        experiment_name='agent_trader_btc_v0.1-2024'
     )
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=AgentTradingStrategy,

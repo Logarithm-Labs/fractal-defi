@@ -11,14 +11,14 @@ Research library for DeFi strategy backtesting: typed protocol entities (lending
 
 - `make test` — offline core suite (~1100 tests, ~10s); plain `pytest` also works (`pytest.ini` deselects slow/integration by default)
 - `make test-slow` / `test-integration` / `test-all` / `test-e2e` — layered suites: CSV-replay, live APIs, Docker MLflow harness. Live tests need `.env` creds and never run without explicit intent.
-- `make lint` — isort check + flake8 + pylint at 10/10 for `fractal/` and `tests/`
+- `make lint` — ruff (lint + import order) + pylint at 10/10 for `fractal/` and `tests/`
 - `make pre-commit` — the full hook set; this is exactly the CI lint job
 - `make docs` / `make docs-strict` — Sphinx; `-W` (warnings-as-errors) is the CI mode
 - `make clean` / `make clean-runs` — regenerable build artifacts vs user data (loader caches, run logs, MLflow stores)
 
 ## Conventions
 
-- Python >=3.10, <3.14. Pylint must stay 10/10; imports are auto-sorted by isort (`make format`).
+- Python >=3.10, <3.14. Pylint must stay 10/10; imports are auto-sorted by ruff (`make format`), config in `ruff.toml`.
 - Dependency floors live in THREE places and must be updated together: `setup.py` (RUNTIME_REQUIRES / DEV_REQUIRES), `requirements.txt`, and `.pre-commit-config.yaml` (hook `rev:` values + `additional_dependencies`). Dependabot edits only `requirements.txt`, so manual sync is required on every dependency bump.
 - Data files (`*.csv`, `*.ipynb`, `*.pickle`) are blanket-gitignored; whitelisted fixtures are explicit exceptions in `.gitignore`. Never add data/notebooks without a deliberate `.gitignore` decision.
 - Tests: `tests/core/` (entities, strategies), `tests/loaders/`; pytest markers are `core` (default), `slow`, `integration`.

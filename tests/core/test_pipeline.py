@@ -286,5 +286,7 @@ def test_default_pipeline_subclasses_pipeline():
 @pytest.mark.core
 def test_pipeline_is_abstract():
     with pytest.raises(TypeError):
-        Pipeline(MLflowConfig(experiment_name='e', mlflow_uri='http://s'),
-                 ExperimentConfig(strategy_type=_DummyStrategy, params_grid=[]))
+        Pipeline(  # pylint: disable=abstract-class-instantiated — deliberate: asserts the ABC contract
+            MLflowConfig(experiment_name='e', mlflow_uri='http://s'),
+            ExperimentConfig(strategy_type=_DummyStrategy, params_grid=[]),
+        )
