@@ -9,12 +9,12 @@ from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
 from fractal.core.entities.protocols.boros import BorosEntity, BorosException, BorosGlobalState, BorosInternalState
 from fractal.core.entities.protocols.hyperliquid import (  # Pre-1.3.0 aliases — re-exported for back-compat.
     HyperliquidEntity,
-    HyperliquidGlobalState,
     HyperLiquidGlobalState,
-    HyperliquidInternalState,
+    HyperliquidGlobalState,
     HyperLiquidInternalState,
-    HyperliquidPosition,
+    HyperliquidInternalState,
     HyperLiquidPosition,
+    HyperliquidPosition,
 )
 from fractal.core.entities.protocols.morpho import MorphoEntity, MorphoException, MorphoGlobalState, MorphoInternalState
 from fractal.core.entities.protocols.pendle_pt import (

@@ -45,7 +45,7 @@ jobs:
           fi
           echo "PR head=$head → base=main ✓"
 
-  # 1. Pre-commit: trailing whitespace, isort, flake8, pylint, etc.
+  # 1. Pre-commit: trailing whitespace, ruff (lint + import sorting), pylint, etc.
   #    Same checks developers run locally — keeps CI in lockstep.
   lint:
     name: Lint (pre-commit)

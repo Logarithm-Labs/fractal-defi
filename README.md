@@ -82,7 +82,7 @@ pip install .
 Requires Python 3.10–3.13.
 
 Contributors and anyone running the test suite want the editable
-install with the dev extras (pulls in pytest, pylint, flake8, isort,
+install with the dev extras (pulls in pytest, pylint, ruff,
 pre-commit, sphinx). See [`CONTRIBUTING.md`](CONTRIBUTING.md):
 
 ```bash
