@@ -18,15 +18,18 @@ constructor argument or the ``DEFILLAMA_API_KEY`` environment variable.
 The key is embedded in the Pro request path only. It is kept out of cache
 keys, and on a Pro request failure the loader raises a redacted copy of the
 error with no ``__cause__``/``__context__`` link to the key-bearing original.
-While a Pro request runs, ``urllib3.connectionpool`` log records (retry
-warnings include the request path) are redacted too. Other sinks are not
-covered — e.g. third-party HTTP debugging hooks or loggers other than
-``urllib3.connectionpool`` — so do not enable verbose HTTP tracing with a
-real key.
+While a Pro request runs, log records from the urllib3 loggers that print
+request paths (``connectionpool``, ``util.retry``, ``poolmanager``) are
+redacted too. Other sinks are not covered — e.g. third-party HTTP debugging
+hooks — so do not enable verbose HTTP tracing with a real key.
 """
+import contextlib
 import logging
 import os
+import threading
 import warnings
+from collections import Counter
+from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
@@ -192,6 +195,13 @@ class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
                 complete[day] = complete.get(day, True) and not missing
                 if not missing:
                     frames[day] = frames.get(day, 0.0) + value
+            # A day with no point at all inside the chain's own history is as
+            # unknown as an explicit null. Days before its first point stay
+            # complete: the chain held no TVL before it launched.
+            if per_day:
+                for day in range(min(per_day), max(per_day), SECONDS_PER_DAY):
+                    if day not in per_day:
+                        complete[day] = False
         # Only whole days are published: summing a day where a selected chain
         # reported nothing would silently understate the protocol total, which
         # ``read`` cannot detect because the sum itself is a valid float.
@@ -323,22 +333,63 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
         )
 
 
+# urllib3 loggers whose records can carry the request path (and so the key).
+_REDACTED_LOGGERS = ("urllib3.connectionpool", "urllib3.util.retry", "urllib3.poolmanager")
+
+
 class _KeyRedactingFilter(logging.Filter):
-    """Scrub an API key from log records (urllib3 logs retries with the URL)."""
+    """Scrub the API keys of in-flight Pro requests from urllib3 log records.
 
-    def __init__(self, secret: str) -> None:
+    One shared instance is installed once on every logger in
+    ``_REDACTED_LOGGERS``; each request registers its key only while it
+    runs. Installing once, instead of adding and removing a filter per
+    request, avoids racing with a concurrent request whose record is being
+    filtered while the logger's filter list changes.
+    """
+
+    def __init__(self) -> None:
         super().__init__()
-        self._secret = secret
+        self._lock = threading.Lock()
+        self._secrets: Counter[str] = Counter()
+        self._installed = False
 
-    def scrub(self, text: str) -> str:
-        return text.replace(self._secret, "<redacted>")
+    @staticmethod
+    def scrub(text: str, secret: str) -> str:
+        return text.replace(secret, "<redacted>")
+
+    @contextlib.contextmanager
+    def redacting(self, secret: str) -> Iterator[None]:
+        """Redact ``secret`` from urllib3 log records inside the block."""
+        with self._lock:
+            if not self._installed:
+                for name in _REDACTED_LOGGERS:
+                    logging.getLogger(name).addFilter(self)
+                self._installed = True
+            self._secrets[secret] += 1
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._secrets[secret] -= 1
+                if self._secrets[secret] <= 0:
+                    del self._secrets[secret]
 
     def filter(self, record: logging.LogRecord) -> bool:
+        with self._lock:
+            secrets = list(self._secrets)
+        if not secrets:
+            return True
         message = record.getMessage()
-        if self._secret in message:
-            record.msg = self.scrub(message)
+        redacted = message
+        for secret in secrets:
+            redacted = self.scrub(redacted, secret)
+        if redacted != message:
+            record.msg = redacted
             record.args = ()
         return True
+
+
+_KEY_REDACTOR = _KeyRedactingFilter()
 
 
 class DefiLlamaProLoader(DefiLlamaBaseLoader):
@@ -347,8 +398,8 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
     The API key is resolved from the ``api_key`` argument or the
     ``DEFILLAMA_API_KEY`` environment variable. It is embedded in the
     request path only, never in cache keys; request errors are re-raised
-    as redacted copies detached from the original, and
-    ``urllib3.connectionpool`` log records are redacted during requests.
+    as redacted copies detached from the original, and urllib3 log records
+    that print request paths are redacted during requests.
     """
 
     def __init__(
@@ -369,16 +420,12 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
         self._api_key: str = resolved
 
     def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
-        redact = _KeyRedactingFilter(self._api_key)
         failure: Exception | None = None
-        urllib3_log = logging.getLogger("urllib3.connectionpool")
-        urllib3_log.addFilter(redact)
-        try:
-            return super()._get_json(path, params=params)
-        except Exception as exc:  # pylint: disable=broad-exception-caught
-            failure = type(exc)(redact.scrub(str(exc)))
-        finally:
-            urllib3_log.removeFilter(redact)
+        with _KEY_REDACTOR.redacting(self._api_key):
+            try:
+                return super()._get_json(path, params=params)
+            except Exception as exc:  # pylint: disable=broad-exception-caught
+                failure = type(exc)(_KeyRedactingFilter.scrub(str(exc), self._api_key))
         # Raised outside the ``except`` block so neither ``__cause__`` nor
         # ``__context__`` points at the original, whose URL and response body
         # carry the key (``from None`` alone still leaves ``__context__`` set).
@@ -441,6 +488,17 @@ class DefiLlamaYieldsLoader(DefiLlamaProLoader):
         # non-monotonic index breaks downstream time alignment.
         df = (df.sort_values("time", kind="stable")
               .drop_duplicates("time", keep="last"))
+        # The series is daily; forward fill below silently bridges any hole,
+        # so make longer gaps visible like the TVL/DEX loaders' dropped days.
+        gaps = np.diff(df["time"].to_numpy()) > 1.5 * SECONDS_PER_DAY
+        if gaps.any():
+            largest_days = float(np.diff(df["time"].to_numpy()).max()) / SECONDS_PER_DAY
+            warnings.warn(
+                f"DefiLlama /yields/chart/{self.pool_id}: forward-filled "
+                f"{int(gaps.sum())} gap(s) longer than a day in the APY series "
+                f"(largest {largest_days:.1f} days).",
+                UserWarning, stacklevel=3,
+            )
         apy = pd.Series(df["rate"].to_numpy(),
                         index=pd.DatetimeIndex(pd.to_datetime(df["time"], unit="s", utc=True)))
         # Daily annual-percent APY → 1h UTC grid (forward fill, like the Lido

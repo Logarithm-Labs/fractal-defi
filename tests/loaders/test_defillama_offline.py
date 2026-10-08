@@ -15,6 +15,7 @@ import pytest
 
 from fractal.loaders._http import HttpClient, HttpConfig, LoaderHttpError
 from fractal.loaders.defillama import DefiLlamaDEXLoader, DefiLlamaPoolLoader, DefiLlamaTVLLoader, DefiLlamaYieldsLoader
+from fractal.loaders.defillama import defillama as defillama_module
 from fractal.loaders.defillama.defillama import _parse_chart
 from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
 
@@ -526,7 +527,6 @@ def test_pro_transport_error_has_no_key_bearing_context(monkeypatch, offline_cac
 def test_pro_transport_retry_warnings_do_not_log_the_key(monkeypatch, offline_cache, caplog):
     """urllib3 logs each retry with the request path, which embeds the key."""
     loader = _closed_port_loader(monkeypatch)
-    filters_before = list(logging.getLogger("urllib3.connectionpool").filters)
     with (caplog.at_level(logging.WARNING, logger="urllib3.connectionpool"),
           pytest.raises(LoaderHttpError)):
         loader.read(with_run=True)
@@ -535,6 +535,106 @@ def test_pro_transport_retry_warnings_do_not_log_the_key(monkeypatch, offline_ca
     for record in records:
         assert FAKE_KEY not in record.getMessage()
     assert FAKE_KEY not in caplog.text
-    # the redaction filter is removed once the request finishes (other
-    # libraries, e.g. MLflow, may install their own filters on this logger)
-    assert logging.getLogger("urllib3.connectionpool").filters == filters_before
+
+
+# ------------------------------------------- post-merge review follow-ups
+@pytest.mark.core
+def test_tvl_loader_day_incomplete_when_a_chain_skips_a_day(offline_cache):
+    """A chain with no point at all for a day inside its own history must make
+    that day incomplete — summing only the other chains understates TVL."""
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            "A": {"tvl": [{"date": T0, "totalLiquidityUSD": 100.0},
+                          {"date": T0 + 2 * DAY, "totalLiquidityUSD": 100.0}]},
+            "B": {"tvl": [{"date": T0 + i * DAY, "totalLiquidityUSD": 1.0} for i in range(3)]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    with pytest.warns(UserWarning, match="dropped 1 day"):
+        history = loader.read(with_run=True)
+    assert history["tvl"].tolist() == pytest.approx([101.0, 101.0])
+    assert list(history.index) == [pd.Timestamp(T0, unit="s", tz="UTC"),
+                                   pd.Timestamp(T0 + 2 * DAY, unit="s", tz="UTC")]
+
+
+@pytest.mark.core
+def test_tvl_loader_chain_launching_later_keeps_earlier_days(offline_cache):
+    """Before a chain's first point it held no TVL: earlier days stay complete."""
+    payload = {
+        "chains": ["A", "B"],
+        "chainTvls": {
+            "A": {"tvl": [{"date": T0 + i * DAY, "totalLiquidityUSD": 100.0} for i in (1, 2)]},
+            "B": {"tvl": [{"date": T0 + i * DAY, "totalLiquidityUSD": 1.0} for i in range(3)]},
+        },
+    }
+    loader = DefiLlamaTVLLoader("proto")
+    loader._http = _http_with({"/protocol/proto": payload})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        history = loader.read(with_run=True)
+    assert history["tvl"].tolist() == pytest.approx([1.0, 101.0, 101.0])
+
+
+@pytest.mark.core
+def test_pro_debug_logs_from_every_urllib3_logger_are_redacted(monkeypatch, offline_cache, caplog):
+    """``urllib3.util.retry`` logs the request path at DEBUG, not only
+    ``urllib3.connectionpool``."""
+    loader = _closed_port_loader(monkeypatch)
+    with caplog.at_level(logging.DEBUG, logger="urllib3"), pytest.raises(LoaderHttpError):
+        loader.read(with_run=True)
+    assert any(r.name == "urllib3.util.retry" for r in caplog.records)
+    assert FAKE_KEY not in caplog.text
+
+
+@pytest.mark.core
+def test_pro_requests_do_not_mutate_urllib3_logger_filters(monkeypatch, offline_cache):
+    """Adding/removing a per-request filter races with concurrent requests that
+    are iterating the same filter list; the redaction filter is installed once."""
+    names = ("urllib3.connectionpool", "urllib3.util.retry", "urllib3.poolmanager")
+    loader = _closed_port_loader(monkeypatch)
+    with pytest.raises(LoaderHttpError):
+        loader.read(with_run=True)
+    installed = {name: list(logging.getLogger(name).filters) for name in names}
+    with pytest.raises(LoaderHttpError):
+        loader.read(with_run=True)
+    assert {name: list(logging.getLogger(name).filters) for name in names} == installed
+
+
+@pytest.mark.core
+def test_overlapping_pro_requests_keep_each_key_redacted():
+    """A request finishing (key B) must not stop redaction of a request still
+    running (key A)."""
+    redactor = defillama_module._KEY_REDACTOR  # pylint: disable=protected-access
+    with redactor.redacting("key-aaaa"):
+        with redactor.redacting("key-bbbb"):
+            pass
+        record = logging.LogRecord("urllib3.connectionpool", logging.WARNING, __file__, 1,
+                                   "Retrying %s", ("/key-aaaa/yields/chart/p",), None)
+        redactor.filter(record)
+        assert "key-aaaa" not in record.getMessage()
+
+
+@pytest.mark.core
+def test_yields_loader_warns_when_the_daily_series_has_gaps(offline_cache, monkeypatch):
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    payload = {"data": [
+        {"timestamp": "2024-01-01T00:00:00.000Z", "apy": 3.5},
+        {"timestamp": "2024-01-11T00:00:00.000Z", "apy": 4.0},
+    ]}
+    loader = DefiLlamaYieldsLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1": payload})
+    with pytest.warns(UserWarning, match="gap"):
+        loader.read(with_run=True)
+
+
+@pytest.mark.core
+def test_yields_loader_contiguous_daily_series_does_not_warn(offline_cache, monkeypatch):
+    monkeypatch.setenv("DEFILLAMA_API_KEY", "fake-test-key")
+    payload = {"data": [{"timestamp": f"2024-01-0{d}T00:00:00.000Z", "apy": 3.5} for d in (1, 2, 3)]}
+    loader = DefiLlamaYieldsLoader("pool-1")
+    loader._http = _http_with({"/yields/chart/pool-1": payload})
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loader.read(with_run=True)

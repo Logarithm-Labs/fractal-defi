@@ -74,8 +74,35 @@ when the observations carry `fee_growth0/1`.
   peak). Ratio policy: `sortino` / `calmar` / `omega_ratio` are `+inf`
   when there is no observed downside with a positive return, so a
   loss-free path ranks above the same path with any loss; `0.0` means
-  undefined / degenerate input. Logged to MLflow via
+  undefined / degenerate input ("positive" means above a `1e-12`
+  float-noise tolerance). Logged to MLflow via
   `metrics.__dict__` (the SQL store clamps `inf` to the max float).
+- **Execution telemetry** — `fractal.core.base.execution`:
+  `ExecutionLedger` / `ExecutionRecord` record every executed trade
+  (entity, action, traded notional, fee paid, observation timestamp) in
+  the accounting unit. `BaseStrategy.register_entity` attaches the
+  recorder; `BaseEntity.record_execution` is a no-op by default and is
+  implemented by the simple, perp, LP, spot, liquid-staking, Pendle PT,
+  Boros and Hyperliquid entities. The run's records travel on
+  `StrategyResult.execution_records`. Strategies stay picklable.
+- **Execution-derived metrics** — `StrategyMetrics.fees_paid` (total fees
+  in the accounting unit, reported even on degenerate paths), `turnover`
+  (traded notional / mean positive NAV) and `fee_drag` (fees / initial
+  NAV); `0.0` when no telemetry was recorded.
+- **DefiLlama loaders** (`fractal.loaders.defillama`) —
+  `DefiLlamaTVLLoader` (protocol TVL per UTC day, summed across chains;
+  days where a chain is missing or null are dropped with a warning
+  rather than understated), `DefiLlamaDEXLoader` (daily volume + fees),
+  and the optional Pro-API `DefiLlamaYieldsLoader` / `DefiLlamaPoolLoader`
+  (key via `api_key=` or `DEFILLAMA_API_KEY`). Yields follow the
+  `RateHistory` convention of the Lido loader: an hourly grid of
+  per-step fractions, `(1 + apy/100) ** (1/8760) - 1`. The Pro key is
+  kept out of cache keys, error chains and urllib3 logs. New structs
+  `TVLHistory`, `DEXHistory`.
+- **Offline performance benchmarks** — `tests/benchmarks` (pytest-benchmark,
+  `benchmark` marker, excluded from the default run), `make benchmark`,
+  `make profile` / `make profile-view` (`scripts/profile_backtest.py`,
+  cProfile + SnakeViz) and a manual, non-gating CI job.
 - **Pendle PT + Morpho Blue + Boros** — a fixed-term paradigm and three
   protocol entities (supersedes #83):
   `BaseFixedTermEntity` / `BaseFixedTermGlobalState` (`seconds_to_expiry`
@@ -161,6 +188,14 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
+- **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
+  parity including E501 at 120 columns and the whitespace / blank-line
+  rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
+  documented per-rule policy. `make lint` / `make format` and the
+  pre-commit hooks use ruff; pylint still runs at 10/10.
+- **`StrategyResult.get_metrics` treats a non-positive initial balance
+  as degenerate** (all metrics `0.0`, `fees_paid` kept): returns against
+  a negative base flip sign, which reported losing runs as gains.
 - **Loader structs reject numeric time arrays** (`TypeError`): epoch
   seconds/milliseconds must be converted explicitly with
   `pd.to_datetime(..., unit=...)` (or `Loader._utc_index`) so a unit is

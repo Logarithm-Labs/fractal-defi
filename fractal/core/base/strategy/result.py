@@ -8,6 +8,10 @@ import pandas as pd
 from fractal.core.base.entity import GlobalState, InternalState
 from fractal.core.base.execution import ExecutionRecord
 
+# A "positive return" must clear float noise before a ratio with no observed
+# downside is reported as ``+inf``: a 1-ulp gain is not a loss-free strategy.
+_RATIO_EPS = 1e-12
+
 
 @dataclass
 class StrategyMetrics:
@@ -20,7 +24,9 @@ class StrategyMetrics:
     means no observed downside with a positive return (so a loss-free path
     always ranks above the same path with any loss); ``0.0`` means the
     ratio is undefined or the input is degenerate (flat or non-positive
-    return with no downside, empty/degenerate data).
+    return with no downside, empty/degenerate data). "Positive" means above
+    a ``1e-12`` float-noise tolerance, and a non-finite ``max_drawdown``
+    (NaN balances in a hand-built frame) gives ``calmar = 0.0``.
 
     * ``sortino`` — annualized downside-only Sharpe with a zero target
       return: ``mean(r) / downside_std * sqrt(frequency)``, where
@@ -105,7 +111,7 @@ class StrategyResult:
 
         Returns:
             StrategyMetrics: Metrics of the strategy. For degenerate inputs
-            (empty df, single timestamp, zero/non-finite initial balance,
+            (empty df, single timestamp, non-positive/non-finite initial balance,
             zero notional_price column) returns ``StrategyMetrics`` filled
             with ``0.0`` rather than raising or returning ``inf``/``nan`` —
             except ``fees_paid``, which has no denominator and is always the
@@ -149,7 +155,9 @@ class StrategyResult:
         data['net_balance'] = data['net_balance'] / notional_price
 
         first_balance = data['net_balance'].iloc[0]
-        if first_balance == 0 or not np.isfinite(first_balance):
+        # Returns are undefined against a non-positive base (a negative start
+        # would flip the sign of every return).
+        if first_balance <= 0 or not np.isfinite(first_balance):
             return degenerate
 
         total_seconds: float = (data['timestamp'].iloc[-1] - data['timestamp'].iloc[0]).total_seconds()
@@ -177,7 +185,12 @@ class StrategyResult:
         max_drawdown = float(np.min(drawdowns)) if drawdowns.size else 0.0
         time_in_drawdown = float(np.mean(net_balance < cumulative_max)) if net_balance.size else 0.0
 
-        calmar = apy / abs(max_drawdown) if max_drawdown < 0 else (math.inf if apy > 0 else 0.0)
+        if not np.isfinite(max_drawdown):
+            calmar = 0.0
+        elif max_drawdown < 0:
+            calmar = apy / abs(max_drawdown)
+        else:
+            calmar = math.inf if apy > _RATIO_EPS else 0.0
 
         returns_values = returns.values if not returns.empty else np.array([])
         # A bar that divides by a zero balance (e.g. ``0 -> positive``) yields a
@@ -190,7 +203,7 @@ class StrategyResult:
             # Downside-only Sharpe with a zero target, annualized like ``sharpe``.
             downside_std = float(np.sqrt(np.mean(np.minimum(returns_values, 0.0) ** 2)))
             if downside_std == 0:
-                sortino = math.inf if float(returns_values.mean()) > 0 else 0.0
+                sortino = math.inf if float(returns_values.mean()) > _RATIO_EPS else 0.0
             elif not np.isfinite(downside_std):
                 sortino = 0.0
             else:
@@ -208,7 +221,7 @@ class StrategyResult:
 
             gains = float(np.maximum(returns_values, 0.0).sum())
             losses = float(np.maximum(-returns_values, 0.0).sum())
-            omega_ratio = gains / losses if losses > 0 else (math.inf if gains > 0 else 0.0)
+            omega_ratio = gains / losses if losses > 0 else (math.inf if gains > _RATIO_EPS else 0.0)
 
         traded_notional = float(sum(record.traded_notional for record in records))
         positive_nav = raw_net_balance[raw_net_balance > 0]
