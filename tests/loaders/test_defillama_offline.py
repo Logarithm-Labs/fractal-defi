@@ -45,7 +45,7 @@ def offline_cache(monkeypatch, tmp_path):
 
 
 def _chart(epochs, values):
-    return [[e, v] for e, v in zip(epochs, values)]
+    return [[e, v] for e, v in zip(epochs, values, strict=False)]
 
 
 # ------------------------------------------------------------- chart parser

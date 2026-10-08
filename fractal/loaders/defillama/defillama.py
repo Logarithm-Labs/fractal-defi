@@ -21,7 +21,7 @@ detached from the key-bearing original.
 """
 import os
 import warnings
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -42,7 +42,7 @@ def _utc_day(epoch: int) -> int:
     return int(epoch) - int(epoch) % SECONDS_PER_DAY
 
 
-def _parse_chart(points: List[Any], keep_missing: bool = False) -> Tuple[np.ndarray, np.ndarray]:
+def _parse_chart(points: list[Any], keep_missing: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Normalize a DefiLlama history chart to ``(epoch_seconds, values)``.
 
     Two response shapes exist in the wild:
@@ -57,8 +57,8 @@ def _parse_chart(points: List[Any], keep_missing: bool = False) -> Tuple[np.ndar
     caller can tell "this source did not report that day" from "this source
     never covered that day".
     """
-    epochs: List[int] = []
-    values: List[float] = []
+    epochs: list[int] = []
+    values: list[float] = []
     for point in points:
         if isinstance(point, dict):
             if "date" not in point:
@@ -83,16 +83,16 @@ class DefiLlamaBaseLoader(Loader):
         self,
         loader_type: LoaderType = LoaderType.CSV,
         base_url: str = DEFAULT_BASE_URL,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         self._base_url: str = base_url.rstrip("/")
-        self.start_time: Optional[pd.Timestamp] = to_utc(start_time)
-        self.end_time: Optional[pd.Timestamp] = to_utc(end_time)
+        self.start_time: pd.Timestamp | None = to_utc(start_time)
+        self.end_time: pd.Timestamp | None = to_utc(end_time)
         self._http = HttpClient()
 
-    def _get_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         """GET ``{base}{path}``; loader errors carry no credentials."""
         url = f"{self._base_url}{path}"
         try:
@@ -131,16 +131,16 @@ class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
     def __init__(
         self,
         protocol: str,
-        chain: Optional[str] = None,
+        chain: str | None = None,
         loader_type: LoaderType = LoaderType.CSV,
         base_url: str = DEFAULT_BASE_URL,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type, base_url=base_url,
                          start_time=start_time, end_time=end_time)
         self.protocol: str = protocol
-        self.chain: Optional[str] = chain
+        self.chain: str | None = chain
 
     def _cache_subject(self) -> str:
         return f"tvl-{self.protocol}-{self.chain or 'all'}"
@@ -170,11 +170,11 @@ class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
                     f"DefiLlama /protocol/{self.protocol}: 'chains' is empty; "
                     "pass an explicit ``chain`` argument"
                 )
-        frames: Dict[int, float] = {}
-        complete: Dict[int, bool] = {}
+        frames: dict[int, float] = {}
+        complete: dict[int, bool] = {}
         for name in keys:
             epochs, values = _parse_chart(chain_tvls[name].get("tvl") or [], keep_missing=True)
-            for epoch, value in zip(epochs.tolist(), values.tolist()):
+            for epoch, value in zip(epochs.tolist(), values.tolist(), strict=False):
                 day = _utc_day(epoch)
                 missing = bool(np.isnan(value))
                 complete[day] = complete.get(day, True) and not missing
@@ -235,8 +235,8 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
         loader_type: LoaderType = LoaderType.CSV,
         base_url: str = DEFAULT_BASE_URL,
         fees_data_type: str = DEFAULT_FEES_DATA_TYPE,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type, base_url=base_url,
                          start_time=start_time, end_time=end_time)
@@ -322,10 +322,10 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
 
     def __init__(
         self,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         resolved = api_key or os.getenv("DEFILLAMA_API_KEY")
         if not resolved:
@@ -337,7 +337,7 @@ class DefiLlamaProLoader(DefiLlamaBaseLoader):
                          start_time=start_time, end_time=end_time)
         self._api_key: str = resolved
 
-    def _get_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _get_json(self, path: str, params: dict[str, Any] | None = None) -> Any:
         try:
             return super()._get_json(path, params=params)
         except Exception as exc:
@@ -357,10 +357,10 @@ class DefiLlamaYieldsLoader(DefiLlamaProLoader):
     def __init__(
         self,
         pool_id: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type,
                          start_time=start_time, end_time=end_time)
@@ -428,10 +428,10 @@ class DefiLlamaPoolLoader(DefiLlamaProLoader):
     def __init__(
         self,
         pool_id: str,
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[pd.Timestamp] = None,
-        end_time: Optional[pd.Timestamp] = None,
+        start_time: pd.Timestamp | None = None,
+        end_time: pd.Timestamp | None = None,
     ) -> None:
         super().__init__(api_key=api_key, loader_type=loader_type,
                          start_time=start_time, end_time=end_time)
