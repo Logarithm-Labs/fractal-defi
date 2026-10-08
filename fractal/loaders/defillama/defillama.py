@@ -1,0 +1,441 @@
+"""DefiLlama loaders (issue #57).
+
+Free endpoints (no auth, ``api.llama.fi``):
+
+* :class:`DefiLlamaTVLLoader` — historical TVL for a protocol slug,
+  aggregated across its chains (or a single chain) into a daily series.
+* :class:`DefiLlamaDEXLoader` — daily DEX volume plus daily fees for a
+  protocol, joined by UTC day.
+
+Pro v2 endpoints (``pro-api.llama.fi/<KEY>/...``, optional):
+
+* :class:`DefiLlamaYieldsLoader` — daily APY history for a yield pool.
+* :class:`DefiLlamaPoolLoader` — daily TVL history for a yield pool.
+
+The yield-pool endpoints are **not** available on the unauthenticated free
+API (verified 2026-10-08), so they require a DefiLlama Pro key passed as a
+constructor argument or the ``DEFILLAMA_API_KEY`` environment variable.
+The key never appears in cache paths, reprs, logs, or error messages —
+failures re-raise with the key redacted.
+"""
+import os
+import warnings
+from typing import Any, Dict, List, Optional, Tuple
+
+import numpy as np
+import pandas as pd
+
+from fractal.loaders._dt import to_seconds, to_utc
+from fractal.loaders._http import HttpClient, LoaderHttpError
+from fractal.loaders.base_loader import Loader, LoaderType
+from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
+
+DEFAULT_BASE_URL = "https://api.llama.fi"
+PRO_BASE_URL = "https://pro-api.llama.fi"
+DEFAULT_FEES_DATA_TYPE = "dailyFees"
+
+
+def _parse_chart(points: List[Any]) -> Tuple[np.ndarray, np.ndarray]:
+    """Normalize a DefiLlama history chart to ``(epoch_seconds, values)``.
+
+    Two response shapes exist in the wild:
+
+    * pairs: ``[[unix_seconds, value], ...]`` (``/summary/*`` charts);
+    * dict points: ``[{"date": unix_seconds, "totalLiquidityUSD": value}, ...]``
+      (``/protocol/<slug>`` ``chainTvls``).
+
+    Points with missing values are skipped; timestamps must be integer
+    epoch seconds (DefiLlama contract), anything else raises ``ValueError``.
+    """
+    epochs: List[int] = []
+    values: List[float] = []
+    for point in points:
+        if isinstance(point, dict):
+            if "date" not in point:
+                raise ValueError(f"DefiLlama chart point has an unexpected shape: {point!r}")
+            epoch = point["date"]
+            value = point.get("totalLiquidityUSD", point.get("value"))
+        elif isinstance(point, (list, tuple)) and len(point) == 2:
+            epoch, value = point[0], point[1]
+        else:
+            raise ValueError(f"DefiLlama chart point has an unexpected shape: {point!r}")
+        if epoch is None or value is None:
+            continue
+        epochs.append(int(epoch))
+        values.append(float(value))
+    return np.asarray(epochs, dtype=np.int64), np.asarray(values, dtype=float)
+
+
+class DefiLlamaBaseLoader(Loader):
+    """Shared plumbing: HTTP client, time window, cache key."""
+
+    def __init__(
+        self,
+        loader_type: LoaderType = LoaderType.CSV,
+        base_url: str = DEFAULT_BASE_URL,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        super().__init__(loader_type=loader_type)
+        self._base_url: str = base_url.rstrip("/")
+        self.start_time: Optional[pd.Timestamp] = to_utc(start_time)
+        self.end_time: Optional[pd.Timestamp] = to_utc(end_time)
+        self._http = HttpClient()
+
+    def _get_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        """GET ``{base}{path}``; loader errors carry no credentials."""
+        url = f"{self._base_url}{path}"
+        try:
+            return self._http.get(url, params=params)
+        except LoaderHttpError:
+            raise
+        except Exception as exc:  # transport errors may embed the URL/key
+            raise LoaderHttpError(f"DefiLlama request failed: {exc}") from exc
+
+    def _cache_key(self) -> str:
+        s = to_seconds(self.start_time) if self.start_time is not None else "open"
+        e = to_seconds(self.end_time) if self.end_time is not None else "now"
+        return f"{self._cache_subject()}-{s}-{e}"
+
+    def _cache_subject(self) -> str:
+        raise NotImplementedError
+
+    def _window_mask(self, times: pd.DatetimeIndex) -> np.ndarray:
+        """Boolean mask of ``times`` inside the optional requested window."""
+        mask = np.ones(len(times), dtype=bool)
+        if self.start_time is not None:
+            mask &= times >= self.start_time
+        if self.end_time is not None:
+            mask &= times <= self.end_time
+        return mask
+
+
+class DefiLlamaTVLLoader(DefiLlamaBaseLoader):
+    """Daily historical TVL for a protocol slug, in USD.
+
+    ``chain=None`` sums the TVL of every chain the protocol reports
+    (the response's ``chains`` list); pass an exact chain name (e.g.
+    ``"Ethereum"``) to restrict the series to one chain.
+    """
+
+    def __init__(
+        self,
+        protocol: str,
+        chain: Optional[str] = None,
+        loader_type: LoaderType = LoaderType.CSV,
+        base_url: str = DEFAULT_BASE_URL,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        super().__init__(loader_type=loader_type, base_url=base_url,
+                         start_time=start_time, end_time=end_time)
+        self.protocol: str = protocol
+        self.chain: Optional[str] = chain
+
+    def _cache_subject(self) -> str:
+        return f"tvl-{self.protocol}-{self.chain or 'all'}"
+
+    def extract(self) -> None:
+        payload = self._get_json(f"/protocol/{self.protocol}")
+        if not isinstance(payload, dict):
+            raise ValueError(f"DefiLlama /protocol/{self.protocol}: expected an object")
+        chain_tvls = payload.get("chainTvls")
+        if chain_tvls is None or not isinstance(chain_tvls, dict):
+            raise ValueError(f"DefiLlama /protocol/{self.protocol}: no chainTvls data")
+        if not chain_tvls:
+            # Empty periods are valid: return a well-shaped empty frame.
+            self._data = pd.DataFrame(columns=["time", "tvl"])
+            return
+        if self.chain is not None:
+            keys = [self.chain]
+            if self.chain not in chain_tvls:
+                raise ValueError(
+                    f"DefiLlama /protocol/{self.protocol}: chain {self.chain!r} not in "
+                    f"chainTvls {sorted(chain_tvls)!r}"
+                )
+        else:
+            keys = [name for name in payload.get("chains", []) if name in chain_tvls]
+            if not keys:
+                raise ValueError(
+                    f"DefiLlama /protocol/{self.protocol}: 'chains' is empty; "
+                    "pass an explicit ``chain`` argument"
+                )
+        frames: Dict[int, float] = {}
+        for name in keys:
+            epochs, values = _parse_chart(chain_tvls[name].get("tvl", []))
+            for epoch, value in zip(epochs.tolist(), values.tolist()):
+                frames[epoch] = frames.get(epoch, 0.0) + value
+        self._data = pd.DataFrame(
+            {"time": sorted(frames), "tvl": [frames[e] for e in sorted(frames)]},
+        )
+
+    def transform(self) -> None:
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=["time", "tvl"])
+            return
+        df = self._data.astype({"time": np.int64, "tvl": float})
+        times = pd.to_datetime(df["time"], unit="s", utc=True)
+        df = df[self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))]
+        self._data = df.reset_index(drop=True)
+
+    def read(self, with_run: bool = False) -> TVLHistory:
+        if with_run:
+            self.run()
+        else:
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return TVLHistory(tvls=[], time=[])
+        if self._data["tvl"].isna().any():
+            raise ValueError(
+                "DefiLlama TVL history has missing values; refusing to "
+                "substitute zeros which would silently understate TVL."
+            )
+        return TVLHistory(
+            tvls=self._data["tvl"].astype(float).values,
+            time=self._utc_index("time"),
+        )
+
+
+class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
+    """Daily DEX volume + fees for a protocol slug, joined by UTC day.
+
+    Volume comes from ``/summary/dexs/{protocol}`` and fees from
+    ``/summary/fees/{protocol}`` (``dataType=dailyFees``). Only days
+    present in **both** charts are returned; a warning is emitted when
+    the join drops days so silent history shortening is visible.
+    """
+
+    def __init__(
+        self,
+        protocol: str,
+        loader_type: LoaderType = LoaderType.CSV,
+        base_url: str = DEFAULT_BASE_URL,
+        fees_data_type: str = DEFAULT_FEES_DATA_TYPE,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        super().__init__(loader_type=loader_type, base_url=base_url,
+                         start_time=start_time, end_time=end_time)
+        self.protocol: str = protocol
+        self.fees_data_type: str = fees_data_type
+
+    def _cache_subject(self) -> str:
+        return f"dex-{self.protocol}"
+
+    def extract(self) -> None:
+        dex = self._get_json(f"/summary/dexs/{self.protocol}")
+        fees = self._get_json(f"/summary/fees/{self.protocol}",
+                              params={"dataType": self.fees_data_type})
+        for name, payload in (("dexs", dex), ("fees", fees)):
+            if not isinstance(payload, dict) or not isinstance(payload.get("totalDataChart"), list):
+                raise ValueError(f"DefiLlama /summary/{name}/{self.protocol}: no totalDataChart")
+        vol_epochs, vol_values = _parse_chart(dex["totalDataChart"])
+        fee_epochs, fee_values = _parse_chart(fees["totalDataChart"])
+        self._data = pd.DataFrame({
+            "time": np.concatenate([vol_epochs, fee_epochs]),
+            "value": np.concatenate([vol_values, fee_values]),
+            "kind": ["volume"] * len(vol_epochs) + ["fees"] * len(fee_epochs),
+        })
+
+    def transform(self) -> None:
+        cols = ["time", "volume", "fees"]
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=cols)
+            return
+        wide = self._data.pivot_table(index="time", columns="kind",
+                                      values="value", aggfunc="first")
+        wide = wide.reset_index().astype({"time": np.int64})
+        has_both = wide["volume"].notna() & wide["fees"].notna()
+        if int((~has_both).sum()) > 0:
+            warnings.warn(
+                f"DefiLlama DEX join dropped {int((~has_both).sum())} day(s) where "
+                f"volume or fees are missing for {self.protocol!r}.",
+                UserWarning, stacklevel=3,
+            )
+        wide = wide[has_both]
+        times = pd.to_datetime(wide["time"], unit="s", utc=True)
+        mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
+        df = wide[mask]
+        self._data = df[["time", "volume", "fees"]].reset_index(drop=True)
+
+    def read(self, with_run: bool = False) -> DEXHistory:
+        if with_run:
+            self.run()
+        else:
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return DEXHistory(volumes=[], fees=[], time=[])
+        if self._data[["volume", "fees"]].isna().any().any():
+            raise ValueError(
+                "DefiLlama DEX history has missing volume/fees after the day join; "
+                "refusing to substitute zeros."
+            )
+        return DEXHistory(
+            volumes=self._data["volume"].astype(float).values,
+            fees=self._data["fees"].astype(float).values,
+            time=self._utc_index("time"),
+        )
+
+
+class DefiLlamaProLoader(DefiLlamaBaseLoader):
+    """Base for the Pro v2 yield endpoints.
+
+    The API key is resolved from the ``api_key`` argument or the
+    ``DEFILLAMA_API_KEY`` environment variable. It is embedded in the
+    request path only, never in cache keys, and is scrubbed from any
+    error message.
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        loader_type: LoaderType = LoaderType.CSV,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        resolved = api_key or os.getenv("DEFILLAMA_API_KEY")
+        if not resolved:
+            raise ValueError(
+                "DefiLlama yield endpoints require a Pro API key: pass api_key= "
+                "or set the DEFILLAMA_API_KEY environment variable."
+            )
+        super().__init__(loader_type=loader_type, base_url=f"{PRO_BASE_URL}/{resolved}",
+                         start_time=start_time, end_time=end_time)
+        self._api_key: str = resolved
+
+    def _get_json(self, path: str, params: Optional[Dict[str, Any]] = None) -> Any:
+        try:
+            return super()._get_json(path, params=params)
+        except Exception as exc:
+            raise type(exc)(str(exc).replace(self._api_key, "<redacted>")) from exc
+
+
+class DefiLlamaYieldsLoader(DefiLlamaProLoader):
+    """Daily APY history for one DefiLlama yield pool (Pro API).
+
+    Reads ``/yields/chart/{pool_id}``; ``rate`` is the pool's total APY
+    (``apy`` when present, otherwise ``apyBase``).
+    """
+
+    def __init__(
+        self,
+        pool_id: str,
+        api_key: Optional[str] = None,
+        loader_type: LoaderType = LoaderType.CSV,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        super().__init__(api_key=api_key, loader_type=loader_type,
+                         start_time=start_time, end_time=end_time)
+        self.pool_id: str = pool_id
+
+    def _cache_subject(self) -> str:
+        return f"yields-{self.pool_id}"
+
+    def extract(self) -> None:
+        payload = self._get_json(f"/yields/chart/{self.pool_id}")
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list):
+            raise ValueError(f"DefiLlama /yields/chart/{self.pool_id}: no data array")
+        rows = []
+        for point in data:
+            if not isinstance(point, dict) or point.get("timestamp") is None:
+                continue
+            rate = point.get("apy")
+            if rate is None:
+                rate = point.get("apyBase")
+            if rate is None:
+                continue
+            epoch = int(pd.to_datetime(point["timestamp"], utc=True).timestamp())
+            rows.append({"time": epoch, "rate": float(rate)})
+        self._data = pd.DataFrame(rows, columns=["time", "rate"])
+
+    def transform(self) -> None:
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=["time", "rate"])
+            return
+        df = self._data.astype({"time": np.int64, "rate": float})
+        times = pd.to_datetime(df["time"], unit="s", utc=True)
+        mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
+        self._data = df[mask].reset_index(drop=True)
+
+    def read(self, with_run: bool = False) -> RateHistory:
+        if with_run:
+            self.run()
+        else:
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return RateHistory(rates=[], time=[])
+        if self._data["rate"].isna().any():
+            raise ValueError(
+                "DefiLlama yield history has missing APY values; refusing to "
+                "substitute zeros."
+            )
+        return RateHistory(
+            rates=self._data["rate"].astype(float).values,
+            time=self._utc_index("time"),
+        )
+
+
+class DefiLlamaPoolLoader(DefiLlamaProLoader):
+    """Daily TVL history for one DefiLlama yield pool (Pro API).
+
+    Reads ``/yields/chart/{pool_id}`` (``tvlUsd`` per day).
+    """
+
+    def __init__(
+        self,
+        pool_id: str,
+        api_key: Optional[str] = None,
+        loader_type: LoaderType = LoaderType.CSV,
+        start_time: Optional[pd.Timestamp] = None,
+        end_time: Optional[pd.Timestamp] = None,
+    ) -> None:
+        super().__init__(api_key=api_key, loader_type=loader_type,
+                         start_time=start_time, end_time=end_time)
+        self.pool_id: str = pool_id
+
+    def _cache_subject(self) -> str:
+        return f"pool-{self.pool_id}"
+
+    def extract(self) -> None:
+        payload = self._get_json(f"/yields/chart/{self.pool_id}")
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not isinstance(data, list):
+            raise ValueError(f"DefiLlama /yields/chart/{self.pool_id}: no data array")
+        rows = []
+        for point in data:
+            if not isinstance(point, dict) or point.get("timestamp") is None:
+                continue
+            tvl = point.get("tvlUsd")
+            if tvl is None:
+                continue
+            epoch = int(pd.to_datetime(point["timestamp"], utc=True).timestamp())
+            rows.append({"time": epoch, "tvl": float(tvl)})
+        self._data = pd.DataFrame(rows, columns=["time", "tvl"])
+
+    def transform(self) -> None:
+        if self._data is None or self._data.empty:
+            self._data = pd.DataFrame(columns=["time", "tvl"])
+            return
+        df = self._data.astype({"time": np.int64, "tvl": float})
+        times = pd.to_datetime(df["time"], unit="s", utc=True)
+        mask = self._window_mask(pd.DatetimeIndex(times).tz_convert("UTC"))
+        self._data = df[mask].reset_index(drop=True)
+
+    def read(self, with_run: bool = False) -> TVLHistory:
+        if with_run:
+            self.run()
+        else:
+            self._read(self._cache_key())
+        if self._data is None or self._data.empty:
+            return TVLHistory(tvls=[], time=[])
+        if self._data["tvl"].isna().any():
+            raise ValueError(
+                "DefiLlama pool TVL history has missing values; refusing to "
+                "substitute zeros."
+            )
+        return TVLHistory(
+            tvls=self._data["tvl"].astype(float).values,
+            time=self._utc_index("time"),
+        )

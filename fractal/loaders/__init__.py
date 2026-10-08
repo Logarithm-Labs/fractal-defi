@@ -9,6 +9,13 @@ from fractal.loaders.binance import (
     BinanceSpotPriceLoader,
 )
 from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
+from fractal.loaders.defillama import (
+    DefiLlamaDEXLoader,
+    DefiLlamaPoolLoader,
+    DefiLlamaProLoader,
+    DefiLlamaTVLLoader,
+    DefiLlamaYieldsLoader,
+)
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
@@ -23,6 +30,7 @@ from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
     BorosMarketHistory,
+    DEXHistory,
     FundingHistory,
     KlinesHistory,
     LendingHistory,
@@ -32,6 +40,7 @@ from fractal.loaders.structs import (
     RateHistory,
     SwapsHistory,
     TrajectoryBundle,
+    TVLHistory,
 )
 from fractal.loaders.thegraph import (
     AerodromeLoader,
@@ -57,6 +66,8 @@ __all__ = [
     "LoaderType",
     "FundingHistory",
     "PoolHistory",
+    "TVLHistory",
+    "DEXHistory",
     "PriceHistory",
     "RateHistory",
     "LendingHistory",
@@ -71,6 +82,11 @@ __all__ = [
     "BorosMarketHistory",
     "BorosMarketInfo",
     "BorosMarketLoader",
+    "DefiLlamaDEXLoader",
+    "DefiLlamaPoolLoader",
+    "DefiLlamaProLoader",
+    "DefiLlamaTVLLoader",
+    "DefiLlamaYieldsLoader",
     "TrajectoryBundle",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",
