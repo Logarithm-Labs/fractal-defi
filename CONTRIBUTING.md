@@ -47,7 +47,7 @@ pre-commit install
 ```
 
 `pre-commit install` registers hooks under `.git/hooks/pre-commit`.
-After that every `git commit` runs flake8, pylint and the offline
+After that every `git commit` runs ruff, pylint and the offline
 `pytest -m core` suite (~10 seconds total). Skip with
 `git commit --no-verify` only when you genuinely need to (CI will run
 the same hooks anyway).
@@ -80,9 +80,9 @@ cd docs && make html   # 0 warnings expected
 
 ## Code style
 
-- **Linters at 10/10.** `flake8` and `pylint` both run on every
-  commit. Repo configs: `.flake8` (line length 120) and `.pylintrc`
-  (test-friendly disables in `tests/.pylintrc`).
+- **Linters at 10/10.** `ruff` and `pylint` both run on every
+  commit. Repo configs: `ruff.toml` (line length 120, import sorting)
+  and `.pylintrc` (test-friendly disables in `tests/.pylintrc`).
 - **Type hints.** Required on public methods. Use PEP 604 unions
   (`int | None`) — Python 3.10+ minimum is enforced in `setup.py`.
 - **Docstrings.** RST-style (Sphinx renders them). For dataclasses,
@@ -213,7 +213,7 @@ Avoid:
 | `check-yaml`, `check-toml`, `check-merge-conflict` | Config + merge-conflict markers | no |
 | `check-added-large-files` | Files > 2 MB | no (warns) |
 | `debug-statements` | Stray `pdb.set_trace()` | no |
-| `flake8` | PEP 8 + complexity (`fractal/`, `tests/`) | no |
+| `ruff-check` | PEP 8 / pyflakes + import sorting (`fractal/`, `tests/`, `examples/`) | yes (`--fix`) |
 | `pylint (fractal/)` | Lint at 10/10 | no |
 | `pylint (tests/)` | Test-friendly subset (`tests/.pylintrc`) | no |
 | `pytest -m core` | 1100+ unit/invariant tests, ~10s | no |

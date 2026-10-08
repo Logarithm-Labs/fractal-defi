@@ -29,7 +29,7 @@ and feature_request.md, so reviewers can filter consistently.
 - [ ] `pytest -m core`
 - [ ] `pytest -m slow` (if real-data / CSV-replay touched)
 - [ ] `pytest -m integration` (if loaders / external APIs touched)
-- [ ] `flake8 fractal/ tests/` and `pylint fractal/`
+- [ ] `ruff check fractal/ tests/ examples/` and `pylint fractal/`
 - [ ] `cd docs && make html` (if docstrings / Sphinx config touched)
 - [ ] `bash tests/mlflow_tests/scripts/e2e.sh` (if pipeline / examples touched)
 

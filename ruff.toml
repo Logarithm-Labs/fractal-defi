@@ -3,13 +3,18 @@
 # duplicate code, design smells) — ruff and pylint are complementary.
 #
 # Rule set is the **parity baseline** with the old toolchain:
-#   * E4/E7/E9 + F + W — the pycodestyle/pyflakes surface flake8 enforced;
+#   * E + F + W — the pycodestyle/pyflakes surface flake8 enforced,
+#     including E501 at 120 columns (the old ``max-line-length``);
 #   * I — import sorting, replacing PyCQA isort;
 #   * E731 ignored (lambda assignments are load-bearing for delegate calls,
-#     mirroring the old .flake8 ignore);
-#   * E501 deliberately out of scope: the codebase predates ruff and
-#     enforcing line length here would be mass churn without semantic
-#     value (see .pre-commit-config.yaml end-of-file/whitespace hooks).
+#     mirroring the old .flake8 ignore).
+#
+# Ruff ships pycodestyle's whitespace / blank-line checks (E1/E2/E3,
+# E502, W391) as preview rules. ``explicit-preview-rules`` enables only
+# the codes listed in ``extend-select`` — no other preview behaviour leaks
+# in. Not implemented in ruff, so lost vs flake8: E126/E127/E128
+# continuation-line checks and W503/W504 (E126/W503/W504 were ignored by
+# the old config anyway).
 target-version = "py310"
 line-length = 120
 extend-exclude = [
@@ -22,14 +27,24 @@ extend-exclude = [
 ]
 
 [lint]
-select = ["E4", "E7", "E9", "F", "W", "I"]
+select = ["E", "F", "W", "I"]
 ignore = ["E731"]
+preview = true
+explicit-preview-rules = true
+extend-select = [
+    "E111", "E112", "E113", "E114", "E115", "E116", "E117",
+    "E201", "E202", "E203", "E204", "E211", "E221", "E222", "E223", "E224",
+    "E225", "E226", "E227", "E228", "E231", "E241", "E242", "E251", "E252",
+    "E261", "E262", "E265", "E266", "E271", "E272", "E273", "E274", "E275",
+    "E301", "E302", "E303", "E304", "E305", "E306", "E502", "W391",
+]
 
 [lint.per-file-ignores]
 # Reference examples are historically outside the flake8 hook; they keep
 # their terse style (sys.path preamble before imports, semicolon
-# separators, single-letter OHLCV unpacking, demo locals).
-"examples/**" = ["E402", "E702", "E741", "F841"]
+# separators, single-letter OHLCV unpacking, demo locals, long lines and
+# free-form whitespace).
+"examples/**" = ["E1", "E2", "E3", "E402", "E501", "E502", "E702", "E741", "F841", "W391"]
 
 [lint.isort]
 known-first-party = ["fractal"]
