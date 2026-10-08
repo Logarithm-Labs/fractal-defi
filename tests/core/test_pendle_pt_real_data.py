@@ -24,6 +24,8 @@ from fractal.strategies import (  # noqa: E402
 )
 
 _RESULTS = Path(__file__).resolve().parents[2] / "examples" / "pendle_pt_backtests" / "results"
+# Ratio metrics that are ``+inf`` by policy when a path has no observed downside.
+UNBOUNDED_RATIO_METRICS = {"sortino", "calmar", "omega_ratio"}
 
 
 def _load(name: str) -> pd.DataFrame:
@@ -93,8 +95,11 @@ def test_leveraged_pt_replays_the_reference_run(market, bar_hours, impact):
     assert out["net_balance"].iloc[-1] == pytest.approx(df["net_balance"].iloc[-1], rel=1e-9)
     assert (out["net_balance"] > 0.5 * 100_000).all()
     assert out["LENDING_liquidation_count"].max() == 0
-    for value in result.get_default_metrics().__dict__.values():
-        assert math.isfinite(value)
+    for key, value in result.get_default_metrics().__dict__.items():
+        if key in UNBOUNDED_RATIO_METRICS:
+            assert not math.isnan(value) and value != -math.inf, key
+        else:
+            assert math.isfinite(value), key
     last = out.iloc[-1]  # held to redemption
     assert last["LENDING_borrowed"] == 0.0 and last["LENDING_collateral"] == 0.0 and last["PT_amount"] == 0.0
     assert last["net_balance"] > 100_000
@@ -135,5 +140,8 @@ def test_hedged_pt_replays_the_reference_run(tag, use_boros):
     equity_move = out["net_balance"].iloc[-1] / out["net_balance"].iloc[0] - 1
     assert abs(equity_move) < 0.25 * abs(spot_move)  # the hedge removes the price leg
     assert (out["net_balance"] > 0.9 * 100_000).all()
-    for value in result.get_default_metrics().__dict__.values():
-        assert math.isfinite(value)
+    for key, value in result.get_default_metrics().__dict__.items():
+        if key in UNBOUNDED_RATIO_METRICS:
+            assert not math.isnan(value) and value != -math.inf, key
+        else:
+            assert math.isfinite(value), key

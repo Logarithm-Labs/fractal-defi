@@ -12,6 +12,8 @@ from fractal.core.entities import BorosGlobalState, MorphoGlobalState, PendlePTG
 from fractal.strategies import MorphoRateHedgedLeveragedPT, MorphoRateHedgedLeveragedPTParams  # noqa: E402
 
 _RESULTS = Path(__file__).resolve().parents[2] / "examples" / "susde_pt_carry" / "results"
+# Ratio metrics that are ``+inf`` by policy when a path has no observed downside.
+UNBOUNDED_RATIO_METRICS = {"sortino", "calmar", "omega_ratio"}
 
 
 def _load(name: str) -> pd.DataFrame:
@@ -66,8 +68,11 @@ def test_susde_carry_replays_the_reference_run(market, bar_hours, impact, varian
     assert len(out) == len(df)
     assert out["net_balance"].iloc[-1] == pytest.approx(df["net_balance"].iloc[-1], rel=1e-9)
     assert out["LENDING_liquidation_count"].max() == 0
-    for value in result.get_default_metrics().__dict__.values():
-        assert math.isfinite(value)
+    for key, value in result.get_default_metrics().__dict__.items():
+        if key in UNBOUNDED_RATIO_METRICS:
+            assert not math.isnan(value) and value != -math.inf, key
+        else:
+            assert math.isfinite(value), key
     last = out.iloc[-1]  # held to redemption, the yield unit settled at its own maturity
     assert last["LENDING_borrowed"] == 0.0 and last["PT_amount"] == 0.0
     if variant == "boros":
