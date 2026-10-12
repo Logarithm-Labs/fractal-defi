@@ -15,6 +15,44 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`MorphoLpEntity`** (`fractal.core.entities.protocols.morpho_lp`)
+  — supply-side Morpho Blue position. The first lending entity whose exit
+  can fail: `action_withdraw` is gated by the market's withdrawable
+  liquidity and raises rather than modelling a withdrawal the market
+  cannot honour. `own_impact=True` recomputes the utilization, the gate
+  and the rate with the position included (`absorption` = the share of it
+  borrowers take up), so self-dilution is modelled instead of assumed;
+  `own_impact=False` replays the historical rate and liquidity. Costs are
+  charged per leg on the moved notional and reported through
+  `record_execution`.
+- **`MorphoLpRotationStrategy`** (`fractal.strategies.morpho_lp_rotation`)
+  — rotates one position across registered markets on a *lagged, smoothed*
+  rate signal, honours the exit gate before entering and sizes each
+  transfer to what the source can actually pay out, records blocked exits
+  with their notional and duration, and filters candidates by `MAX_LLTV` /
+  `ORACLE_TYPES` parameters.
+- **`MorphoMarketsLoader` + `discover_chains`**
+  (`fractal.loaders.morpho_markets`) — enumerate listed Morpho Blue
+  markets for exact loan assets across every chain the API serves, with
+  paging, client-side filters and a pickle cache of
+  `MorphoMarketListing` records.
+- **`MorphoMarketLoader` market sizes and supplier rate** — the hourly
+  history now carries `supply_assets_usd` / `borrow_assets_usd` /
+  `liquidity_assets_usd` and a per-bar `supply_rate`, so the withdrawable
+  amount (`liquidityAssets`) is expressible and a supplier-side yield can
+  be credited. `rateAtTarget` is converted from the API's per-second WAD
+  rate to the annual APY the column documents, and the cache key carries a
+  column-set tag so a pre-extension CSV cannot be read as if it had
+  today's columns.
+- **`LendingHistory` optional columns** — `supply_rate`,
+  `supply_assets_usd`, `borrow_assets_usd`, `liquidity_assets_usd`
+  (USD notional; appended only when passed, so existing callers are
+  unaffected).
+- **`examples/morpho_lp_rotation/`** — `discover.py` (universe sweep →
+  reviewed address-pinned registry CSVs), `validate_rq1.py` (live formula,
+  IRM-curve and liquidity-identity checks with median/p95 residuals) and
+  `backtest.py` (rotation backtest with the exit-gate and deferral
+  report).
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
   / `"fee_growth"`. `fee_growth` accrues `Δ feeGrowthGlobal × L` per
   bar per token leg (the chain's own liquidity weighting, protocol fee
