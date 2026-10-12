@@ -50,7 +50,17 @@ from fractal.loaders.morpho_markets import MorphoMarketListing
 __all__ = [
     "MorphoLpRotationParams",
     "MorphoLpRotationStrategy",
+    "market_entity_name",
 ]
+
+
+def market_entity_name(listing: MorphoMarketListing) -> str:
+    """Registry name of the entity backing ``listing``.
+
+    Public because observation builders must produce states under exactly these
+    names; deriving them separately in an example would be a silent mismatch.
+    """
+    return f"LP_{listing.chain_id}_{listing.market_id[:10]}"
 
 
 @dataclass
@@ -125,7 +135,7 @@ class MorphoLpRotationStrategy(BaseStrategy[MorphoLpRotationParams]):
     # ------------------------------------------------------------- registry
     @staticmethod
     def _name(listing: MorphoMarketListing) -> str:
-        return f"LP_{listing.chain_id}_{listing.market_id[:10]}"
+        return market_entity_name(listing)
 
     def set_up(self) -> None:
         """Register one entity per market plus the cash entity."""

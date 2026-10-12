@@ -15,16 +15,17 @@ Usage::
 Default is ``--all-chains``. Chain names come from the API's own chain list.
 """
 import argparse
+import dataclasses
 import os
 
 import pandas as pd
 
-from fractal.loaders.morpho_markets import MorphoMarketsLoader, discover_chains
+from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-COLUMNS = ["chain_id", "market_id", "loan_symbol", "loan_address", "collateral_symbol", "collateral_address",
-           "lltv", "oracle_type", "creation_timestamp", "liquidity_assets_usd", "supply_assets_usd",
-           "borrow_assets_usd"]
+# Derived from the dataclass so the registry can never drift from the record it
+# is meant to be a faithful dump of.
+COLUMNS = [field.name for field in dataclasses.fields(MorphoMarketListing)]
 
 
 def main() -> None:
@@ -41,7 +42,7 @@ def main() -> None:
     if not listings:
         raise SystemExit("discovery returned no markets - refusing to write an empty registry")
 
-    frame = pd.DataFrame([listing.__dict__ for listing in listings])[COLUMNS]
+    frame = pd.DataFrame([dataclasses.asdict(listing) for listing in listings])[COLUMNS]
     os.makedirs(args.registry_dir, exist_ok=True)
     print(f"{len(frame)} listed {{USDC, USDT}} markets across {frame['chain_id'].nunique()} chain(s)")
     for chain_id, group in frame.groupby("chain_id"):
