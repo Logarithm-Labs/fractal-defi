@@ -25,6 +25,7 @@ Submodules
    fractal.loaders.gmx_v1
    fractal.loaders.hyperliquid
    fractal.loaders.morpho
+   fractal.loaders.morpho_markets
    fractal.loaders.pendle
    fractal.loaders.rpc
    fractal.loaders.structs

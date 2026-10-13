@@ -13,6 +13,8 @@ Submodules
    fractal.strategies.hyperliquid_basis
    fractal.strategies.leveraged_pt
    fractal.strategies.morpho_leveraged_pt
+   fractal.strategies.morpho_supply_allocation
+   fractal.strategies.morpho_supply_rotation
    fractal.strategies.morpho_rate_hedged_leveraged_pt
    fractal.strategies.perp_hedged_pt
    fractal.strategies.rate_hedged_leveraged_pt

@@ -15,6 +15,14 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals, position impact, optional controller feedback and rewards, and per-leg gas/fee telemetry.
+- **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting.
+- **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold.
+- **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
+- **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset.
+- **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY; annualized rate-at-target conversion and versioned cache schema.
+- **`examples/morpho_supply_rotation/`** — discovery, formula checks and a provider-backed backtest example; local registries and results stay gitignored.
+- **Supply API naming** — the unreleased `MorphoLp*` modules and classes are now `MorphoSupply*`; update imports and example paths accordingly.
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
   / `"fee_growth"`. `fee_growth` accrues `Δ feeGrowthGlobal × L` per
   bar per token leg (the chain's own liquidity weighting, protocol fee

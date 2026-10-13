@@ -83,7 +83,17 @@ class LendingHistory(pd.DataFrame):
         ``utilization`` — borrowed / supplied, in ``[0, 1]``;
         ``borrow_apy`` / ``supply_apy`` — the source's annual effective
             rates, for reporting and strategy gates;
-        ``rate_at_target`` — Morpho IRM ``rateAtTarget`` (annual).
+        ``rate_at_target`` — Morpho IRM ``rateAtTarget`` (annual);
+        ``supply_rate`` — **per-bar** rate credited to a loan-token
+            supplier (``ln(1 + supply_apy) · Δt / YEAR`` under
+            ``compounding="continuous"``), the supplier-side sibling of
+            ``borrowing_rate``;
+        ``supply_assets_usd`` / ``borrow_assets_usd`` /
+            ``liquidity_assets_usd`` — market sizes in **USD notional**
+            (``liquidity = supply − borrow``, the withdrawable amount the
+            exit gate is measured against);
+        ``net_supply_apy`` — supplier APY *including* reward campaigns (the
+            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``.
     """
 
     def __init__(
@@ -95,6 +105,11 @@ class LendingHistory(pd.DataFrame):
         borrow_apy: ArrayLike | None = None,
         supply_apy: ArrayLike | None = None,
         rate_at_target: ArrayLike | None = None,
+        supply_rate: ArrayLike | None = None,
+        supply_assets_usd: ArrayLike | None = None,
+        borrow_assets_usd: ArrayLike | None = None,
+        liquidity_assets_usd: ArrayLike | None = None,
+        net_supply_apy: ArrayLike | None = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
@@ -103,6 +118,9 @@ class LendingHistory(pd.DataFrame):
         for name, values in (
             ("utilization", utilization), ("borrow_apy", borrow_apy),
             ("supply_apy", supply_apy), ("rate_at_target", rate_at_target),
+            ("supply_rate", supply_rate), ("supply_assets_usd", supply_assets_usd),
+            ("borrow_assets_usd", borrow_assets_usd),
+            ("liquidity_assets_usd", liquidity_assets_usd), ("net_supply_apy", net_supply_apy),
         ):
             if values is not None:
                 data[name] = np.asarray(values, dtype=float)
