@@ -17,11 +17,11 @@ from fractal.core.entities.protocols.hyperliquid import (  # Pre-1.3.0 aliases â
     HyperliquidPosition,
 )
 from fractal.core.entities.protocols.morpho import MorphoEntity, MorphoException, MorphoGlobalState, MorphoInternalState
-from fractal.core.entities.protocols.morpho_lp import (
-    MorphoLpEntity,
-    MorphoLpException,
-    MorphoLpGlobalState,
-    MorphoLpInternalState,
+from fractal.core.entities.protocols.morpho_supply import (
+    MorphoSupplyEntity,
+    MorphoSupplyException,
+    MorphoSupplyGlobalState,
+    MorphoSupplyInternalState,
 )
 from fractal.core.entities.protocols.pendle_pt import (
     PendlePTConfig,
@@ -54,10 +54,10 @@ __all__ = [
     "MorphoException",
     "MorphoGlobalState",
     "MorphoInternalState",
-    "MorphoLpEntity",
-    "MorphoLpException",
-    "MorphoLpGlobalState",
-    "MorphoLpInternalState",
+    "MorphoSupplyEntity",
+    "MorphoSupplyException",
+    "MorphoSupplyGlobalState",
+    "MorphoSupplyInternalState",
     "PendlePTConfig",
     "PendlePTEntity",
     "PendlePTException",

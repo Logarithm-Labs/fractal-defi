@@ -62,6 +62,7 @@ class _FakeMorphoHttp:
                 "supplyAssetsUsd": self._points(SUPPLY_USD, hours, self.gap_everywhere),
                 "borrowAssetsUsd": self._points(BORROW_USD, hours, self.gap_everywhere),
                 "liquidityAssetsUsd": self._points(SUPPLY_USD - BORROW_USD, hours, self.gap_everywhere),
+                "netSupplyApy": self._points(0.095, hours, self.gap_everywhere),
             })
         market = {
             "historicalState": hist,
@@ -93,7 +94,7 @@ def test_history_is_ascending_aligned_and_converted_to_per_bar_rates():
     assert history["supply_apy"].iloc[0] == pytest.approx(0.08)  # the supplier-side rate stays available
     assert list(history.columns) == ["lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
                                      "rate_at_target", "supply_rate", "supply_assets_usd", "borrow_assets_usd",
-                                     "liquidity_assets_usd"]
+                                     "liquidity_assets_usd", "net_supply_apy"]
     assert history["borrow_apy"].iloc[0] == 0.09 and history["utilization"].iloc[0] == 0.82
     # per-second WAD ``rateAtTarget`` is converted to the annual APY the column documents
     assert history["rate_at_target"].iloc[0] == pytest.approx(RATE_AT_TARGET_APY)
@@ -103,6 +104,8 @@ def test_history_is_ascending_aligned_and_converted_to_per_bar_rates():
     assert history["supply_assets_usd"].iloc[0] == pytest.approx(SUPPLY_USD)
     assert history["borrow_assets_usd"].iloc[0] == pytest.approx(BORROW_USD)
     assert history["liquidity_assets_usd"].iloc[0] == pytest.approx(SUPPLY_USD - BORROW_USD)
+    # reward-inclusive APY: rewards = net − base = 1.5 pp in the fixture
+    assert history["net_supply_apy"].iloc[0] - history["supply_apy"].iloc[0] == pytest.approx(0.015)
     variables = http.calls[-1]["variables"]
     assert variables["id"] == MARKET_ID and variables["cid"] == 1
     assert variables["o"] == {"startTimestamp": int(START.timestamp()), "endTimestamp": int(END.timestamp()),
@@ -119,7 +122,7 @@ def test_linear_compounding_and_resolution_scale_like_aave():
     continuous = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
     assert continuous._cache_key() != loader._cache_key()
     # the cache key carries the column-set tag, so a pre-extension CSV cannot be mis-read
-    assert continuous._cache_key().endswith("v2usd")
+    assert continuous._cache_key().endswith("v3rewards")
 
 
 @pytest.mark.core
@@ -130,6 +133,30 @@ def test_absent_usd_mirrors_do_not_disturb_the_rate_spine():
     assert len(history) == 6
     assert history["borrowing_rate"].notna().all() and history["utilization"].notna().all()
     assert history["liquidity_assets_usd"].isna().all()
+    assert history["net_supply_apy"].isna().all()
+
+
+@pytest.mark.core
+def test_sparse_reward_series_preserves_utc_rate_spine(monkeypatch):
+    """Missing rewards remain NaN; rewards never forward-fill or create new bars."""
+    http = _FakeMorphoHttp()
+    original = http.post
+
+    def post(url, **kwargs):
+        payload = original(url, **kwargs)
+        history = payload["data"]["marketById"]["historicalState"]
+        history["netSupplyApy"] = [
+            {"x": int((START + timedelta(hours=2)).timestamp()), "y": 0.12},
+            {"x": int((START + timedelta(minutes=30)).timestamp()), "y": 0.15},
+        ]
+        return payload
+
+    monkeypatch.setattr(http, "post", post)
+    history = MorphoMarketLoader(MARKET_ID, 1, START, END, http=http).read(with_run=True)
+    assert history.index.equals(pd.date_range(START, END, freq="h"))
+    assert history["net_supply_apy"].notna().sum() == 1
+    assert history["net_supply_apy"].iloc[2] == pytest.approx(0.12)
+    assert history["supply_rate"].notna().all()
 
 
 @pytest.mark.core

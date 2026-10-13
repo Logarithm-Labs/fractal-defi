@@ -21,9 +21,10 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from fractal.core.entities.models.morpho_math import from_wad
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException
+from fractal.loaders.morpho import MorphoLoaderException, graphql_query
 
 __all__ = [
     "MorphoMarketListing",
@@ -48,8 +49,6 @@ query Markets($first: Int!, $skip: Int!, $where: MarketFilters) {
   }
 }
 """
-
-_WAD = 1e18
 
 
 @dataclass(frozen=True)
@@ -80,21 +79,9 @@ class MorphoMarketListing:
     liquidity_assets_usd: float | None = None
 
 
-def _post(http: HttpClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
-    payload = http.post(MORPHO_GRAPHQL_URL, json={"query": query, "variables": variables})
-    if not isinstance(payload, dict):
-        raise MorphoLoaderException(f"Morpho GraphQL: expected a JSON object, got {type(payload).__name__}")
-    if payload.get("errors"):
-        raise MorphoLoaderException(f"Morpho GraphQL errors: {payload['errors']}")
-    data = payload.get("data")
-    if not isinstance(data, dict):
-        raise MorphoLoaderException("Morpho GraphQL: missing 'data'")
-    return data
-
-
 def discover_chains(http: HttpClient | None = None) -> list[tuple[int, str]]:
     """``[(chain_id, network_name), ...]`` for every chain the API serves."""
-    data = _post(http or HttpClient(), _CHAINS_QUERY, {})
+    data = graphql_query(http or HttpClient(), _CHAINS_QUERY, {})
     chains = data.get("chains")
     if not isinstance(chains, list):
         raise MorphoLoaderException("Morpho GraphQL: 'chains' missing from the response")
@@ -118,7 +105,7 @@ def _listing(chain_id: int, item: dict[str, Any]) -> MorphoMarketListing:
         collateral_address=str(collateral.get("address", "")).lower(),
         collateral_symbol=str(collateral.get("symbol", "")),
         collateral_decimals=int(collateral.get("decimals", 0)),
-        lltv=float(item["lltv"]) / _WAD,
+        lltv=from_wad(item["lltv"]),
         oracle_type=(item.get("oracle") or {}).get("type"),
         listed=bool(item.get("listed")),
         creation_timestamp=item.get("creationTimestamp"),
@@ -189,7 +176,7 @@ class MorphoMarketsLoader(Loader):
             skip = 0
             while True:
                 where = {"chainId_in": [chain_id], "listed": True} if self.listed else {"chainId_in": [chain_id]}
-                payload = _post(self._http, _MARKETS_QUERY, {
+                payload = graphql_query(self._http, _MARKETS_QUERY, {
                     "first": self.page_size, "skip": skip, "where": where,
                 })
                 markets = payload.get("markets")
@@ -211,7 +198,7 @@ class MorphoMarketsLoader(Loader):
             _listing(item["chain_id"], item)
             for item in (self._data or [])
             if str((item.get("loanAsset") or {}).get("symbol", "")) in self.loan_symbols
-            and (self.lltv_max is None or float(item["lltv"]) / _WAD <= self.lltv_max)
+            and (self.lltv_max is None or from_wad(item["lltv"]) <= self.lltv_max)
             and (not self.listed or bool(item.get("listed")))
         ]
         self._data = sorted(

@@ -222,3 +222,8 @@ tests/mlflow_tests/output/
 .codex/
 CLAUDE.local.md
 AGENTS.override.md
+
+# Morpho supply-rotation example: live-API artefacts (registry CSVs are the
+# reviewed universe, results/ holds equity curves and summary.json).
+examples/morpho_supply_rotation/results/
+examples/morpho_supply_rotation/registry/

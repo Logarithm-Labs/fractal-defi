@@ -14,19 +14,37 @@ LIQUIDATION_CURSOR = 0.3                 # ConstantsLib.LIQUIDATION_CURSOR
 MAX_LIQUIDATION_INCENTIVE_FACTOR = 1.15  # ConstantsLib.MAX_LIQUIDATION_INCENTIVE_FACTOR
 TARGET_UTILIZATION = 0.9                 # AdaptiveCurveIrm
 CURVE_STEEPNESS = 4.0                    # AdaptiveCurveIrm
+ADJUSTMENT_SPEED = 50.0                  # AdaptiveCurveIrm ConstantsLib.ADJUSTMENT_SPEED, per year
+MIN_RATE_AT_TARGET = 0.001               # ConstantsLib.MIN_RATE_AT_TARGET: 0.1% / year (continuous)
+MAX_RATE_AT_TARGET = 2.0                 # ConstantsLib.MAX_RATE_AT_TARGET: 200% / year (continuous)
+WAD = 1e18                               # MathLib.WAD — fixed-point scale of lltv, fee, rates
 
 __all__ = [
+    "ADJUSTMENT_SPEED",
     "CURVE_STEEPNESS",
     "LIQUIDATION_CURSOR",
     "MAX_LIQUIDATION_INCENTIVE_FACTOR",
+    "MAX_RATE_AT_TARGET",
+    "MIN_RATE_AT_TARGET",
     "TARGET_UTILIZATION",
+    "WAD",
     "adaptive_curve_borrow_apr",
+    "adaptive_curve_error",
     "borrow_apy_from_per_second_rate",
+    "from_wad",
     "liquidation_incentive_factor",
     "max_borrow",
     "per_bar_borrow_rate",
+    "rate_at_target_drift",
+    "supply_apy_from_curve",
     "taylor_compounded",
+    "utilization_for_supply_apy",
 ]
+
+
+def from_wad(value: float | int | str) -> float:
+    """A WAD-scaled on-chain integer (``lltv``, ``fee``, per-second rate) as a float fraction."""
+    return float(value) / WAD
 
 
 def taylor_compounded(x: float) -> float:
@@ -95,3 +113,61 @@ def adaptive_curve_borrow_apr(utilization: float, rate_at_target: float) -> floa
         err = (utilization - TARGET_UTILIZATION) / TARGET_UTILIZATION
         coeff = 1.0 - 1.0 / CURVE_STEEPNESS
     return rate_at_target * (1.0 + coeff * err)
+
+
+def adaptive_curve_error(utilization: float) -> float:
+    """Normalised utilisation error ``err ∈ [−1, 1]`` the AdaptiveCurve IRM steers on.
+
+    ``(u − target) / (1 − target)`` above target, ``(u − target) / target`` below.
+    """
+    if not 0.0 <= utilization <= 1.0:
+        raise ValueError(f"utilization must be in [0, 1], got {utilization}")
+    if utilization > TARGET_UTILIZATION:
+        return (utilization - TARGET_UTILIZATION) / (1.0 - TARGET_UTILIZATION)
+    return (utilization - TARGET_UTILIZATION) / TARGET_UTILIZATION
+
+
+def rate_at_target_drift(utilization: float, elapsed_years: float) -> float:
+    """Multiplicative drift of ``rateAtTarget`` over ``elapsed_years`` at a constant ``utilization``.
+
+    ``AdaptiveCurveIrm``: ``endRateAtTarget = startRateAtTarget · exp(ADJUSTMENT_SPEED · err · elapsed)``
+    (the on-chain code bounds the result to ``[MIN_RATE_AT_TARGET, MAX_RATE_AT_TARGET]``; callers
+    clamp after multiplying). At ``u = 1`` the rate doubles in ``ln 2 / 50`` years ≈ 5.06 days.
+    """
+    if elapsed_years < 0.0:
+        raise ValueError(f"elapsed_years must be >= 0, got {elapsed_years}")
+    return math.exp(ADJUSTMENT_SPEED * adaptive_curve_error(utilization) * elapsed_years)
+
+
+def supply_apy_from_curve(utilization: float, rate_at_target: float, fee: float = 0.0) -> float:
+    """Annual supplier APY at ``utilization`` for a continuous annual ``rate_at_target``.
+
+    ``borrow_apy = exp(r(u)) − 1`` with ``r`` the IRM curve, then Morpho's
+    ``supplyApy = borrowApy · u · (1 − fee)``.
+    """
+    if not 0.0 <= fee < 1.0:
+        raise ValueError(f"fee must be in [0, 1), got {fee}")
+    borrow_rate = adaptive_curve_borrow_apr(utilization, rate_at_target)
+    return math.expm1(borrow_rate) * utilization * (1.0 - fee)
+
+
+def utilization_for_supply_apy(target_apy: float, rate_at_target: float, fee: float = 0.0,
+                               tolerance: float = 1e-12) -> float | None:
+    """Utilisation at which the curve pays suppliers exactly ``target_apy``; ``None`` if unreachable.
+
+    ``supply_apy_from_curve`` is strictly increasing in ``u`` (both factors are),
+    so a bisection on ``[0, 1]`` is exact. Returns ``None`` when even ``u = 1``
+    pays less than ``target_apy``.
+    """
+    if target_apy <= 0.0:
+        return 0.0
+    if supply_apy_from_curve(1.0, rate_at_target, fee) < target_apy:
+        return None
+    low, high = 0.0, 1.0
+    while high - low > tolerance:
+        mid = 0.5 * (low + high)
+        if supply_apy_from_curve(mid, rate_at_target, fee) < target_apy:
+            low = mid
+        else:
+            high = mid
+    return 0.5 * (low + high)

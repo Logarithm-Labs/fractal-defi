@@ -1,22 +1,16 @@
-"""Backtest the Morpho Blue LP rotation on real hourly data.
+"""Backtest one Morpho Blue supply position on provider-backed hourly data.
 
-One position, rotated across the largest liquid USDC/USDT markets of the
-reviewed registry, with the exit gate, the signal lag and the own-position
-impact all applied. Prints the strategy's metrics next to the naive static
-reference and writes the equity curve into ``results/`` (gitignored).
-
-The honest reading of RQ2 (CONTEXT §8 M1b): the *timing* edge does not exist —
-entering on a high snapshot realises the market's own trailing average — while
-the *level* ranking does persist. This example therefore measures whether
-holding the structurally-higher markets clears costs, and reports the exit
-deferrals (RQ3) and the self-dilution (RQ4) alongside it.
+Reads a human-reviewed registry and writes local results. Universe selection
+uses current liquidity and the current market fee is applied retrospectively;
+this is a survivorship-biased smoke example, not point-in-time research evidence.
+The static reference ignores costs, liquidity constraints and position impact.
 
 Usage::
 
-    python backtest.py --chains 1,8453 --days 90 --top 8
-    python backtest.py --no-own-impact --cost-bps 5      # exogenous replay, costs on
+    python backtest.py --chains 1 --days 30 --top 8
+    python backtest.py --no-own-impact --cost-bps 5
 
-Live API; for the default (offline) test suite nothing here runs.
+Live API calls are opt-in; nothing here runs in the offline test suite.
 """
 import argparse
 import json
@@ -26,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from helpers import CASH_NAME, load_panels, load_registry, observations, select, static_reference_apy
 
 from fractal.core.entities.simple.spot import SimpleSpotExchange
-from fractal.strategies.morpho_lp_rotation import MorphoLpRotationParams, MorphoLpRotationStrategy
+from fractal.strategies.morpho_supply_rotation import MorphoSupplyRotationParams, MorphoSupplyRotationStrategy
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 UTC = timezone.utc
@@ -46,6 +40,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--signal-window-bars", type=int, default=24)
     parser.add_argument("--signal-lag-bars", type=int, default=1)
     parser.add_argument("--no-own-impact", dest="own_impact", action="store_false")
+    parser.add_argument("--absorption", type=float, default=0.0,
+                        help="share of our supply borrowers take up (0 = pure dilution, gate cannot bind; "
+                             "1 = fully absorbed, gate = historical liquidity)")
+    parser.add_argument("--rank-on-headline", dest="rank_on_projected", action="store_false",
+                        help="rank on the market's headline APY instead of the APY our own size would earn")
     parser.add_argument("--max-hold-bars", type=int, default=0)
     return parser.parse_args()
 
@@ -62,12 +61,13 @@ def main() -> None:
     stream = observations(panels)
     print(f"observations: {len(stream)} bars x {len(panels)} markets")
 
-    params = MorphoLpRotationParams(
+    params = MorphoSupplyRotationParams(
         TOP_K=args.top_k, MAX_LLTV=args.max_lltv, MIN_EDGE_BPS=args.min_edge_bps,
         SIGNAL_WINDOW_BARS=args.signal_window_bars, SIGNAL_LAG_BARS=args.signal_lag_bars,
-        MAX_HOLD_BARS=args.max_hold_bars, OWN_IMPACT=args.own_impact, COST_BPS_PER_LEG=args.cost_bps,
+        MAX_HOLD_BARS=args.max_hold_bars, OWN_IMPACT=args.own_impact, ABSORPTION=args.absorption,
+        RANK_ON_PROJECTED_APY=args.rank_on_projected, COST_BPS_PER_LEG=args.cost_bps,
     )
-    strategy = MorphoLpRotationStrategy(
+    strategy = MorphoSupplyRotationStrategy(
         markets=[panel.listing for panel in panels],
         cash_entity=SimpleSpotExchange(trading_fee=0.0),
         params=params,
@@ -83,10 +83,17 @@ def main() -> None:
     print(f"  accumulated return {metrics.accumulated_return:8.2%}   apy {metrics.apy:8.2%}   cagr {metrics.cagr:8.2%}")
     print(f"  max drawdown       {metrics.max_drawdown:8.2%}   sharpe {metrics.sharpe:7.2f}")
     print(f"  fees paid          {metrics.fees_paid:12.2f}   turnover {metrics.turnover:6.2f}x   fee drag {metrics.fee_drag:6.3%}")
-    print(f"  own impact         {'on (state-carrying)' if args.own_impact else 'off (exogenous replay)'}")
-    print("\n-- exit gate (RQ3) ----------------------------------------")
-    print(f"  blocked episodes   {report['events']:d}   deferred notional {report['deferred_notional']:.0f}")
+    mode = f"on (state-carrying, absorption {args.absorption:.2f})" if args.own_impact else "off (exogenous replay)"
+    print(f"  own impact         {mode}")
+    print(f"  ranking            {'projected APY at our size' if args.rank_on_projected else 'headline APY'}")
+    print("\n-- exit gate ----------------------------------------")
+    if args.own_impact and args.absorption == 0.0:
+        print("  NOTE: at absorption 0 our own supply is always withdrawable; exit deferrals are zero by")
+        print("        construction. Use --absorption > 0 or --no-own-impact to model blocked exits.")
+    print(f"  blocked exits      {report['events']:d}   deferred notional {report['deferred_notional']:.0f}"
+          f"   still open {report['open_exit_deferrals']:d}")
     print(f"  bars blocked       max {report['max_bars_blocked']:d}   mean {report['mean_bars_blocked']:.1f}")
+    print(f"  refused entries    {report['entry_episodes']:d} episodes, {report['entry_blocked_bars']:d} bars")
     print("\n-- naive static reference ---------------------------------")
     print(f"  equal-weight mean realised supply APY {reference:8.2%}  (no costs, no gate, no rotation)")
     print(f"  excess over static {metrics.apy - reference:+8.2%}")

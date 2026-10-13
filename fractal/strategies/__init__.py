@@ -6,11 +6,12 @@ from fractal.strategies.fixed_range_liquidity_provision import (
 from fractal.strategies.hedged_pt import HedgedPTException, HedgedPTParams, HedgedPTStrategy
 from fractal.strategies.leveraged_pt import LeveragedPTException, LeveragedPTParams, LeveragedPTStrategy
 from fractal.strategies.morpho_leveraged_pt import MorphoLeveragedPT, MorphoLeveragedPTParams
-from fractal.strategies.morpho_lp_rotation import MorphoLpRotationParams, MorphoLpRotationStrategy
 from fractal.strategies.morpho_rate_hedged_leveraged_pt import (
     MorphoRateHedgedLeveragedPT,
     MorphoRateHedgedLeveragedPTParams,
 )
+from fractal.strategies.morpho_supply_allocation import MorphoSupplyAllocationParams, MorphoSupplyAllocationStrategy
+from fractal.strategies.morpho_supply_rotation import MorphoSupplyRotationParams, MorphoSupplyRotationStrategy
 from fractal.strategies.perp_hedged_pt import PerpHedgedPT, PerpHedgedPTParams
 from fractal.strategies.rate_hedged_leveraged_pt import RateHedgedLeveragedPTParams, RateHedgedLeveragedPTStrategy
 from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy
@@ -28,10 +29,12 @@ __all__ = [
     'LeveragedPTStrategy',
     'MorphoLeveragedPT',
     'MorphoLeveragedPTParams',
-    'MorphoLpRotationParams',
-    'MorphoLpRotationStrategy',
     'MorphoRateHedgedLeveragedPT',
     'MorphoRateHedgedLeveragedPTParams',
+    'MorphoSupplyAllocationParams',
+    'MorphoSupplyAllocationStrategy',
+    'MorphoSupplyRotationParams',
+    'MorphoSupplyRotationStrategy',
     'PerpHedgedPT',
     'PerpHedgedPTParams',
     'RateHedgedLeveragedPTParams',

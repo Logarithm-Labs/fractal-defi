@@ -1,4 +1,4 @@
-"""RQ1 formula validation against the live Morpho API (>= 50 markets).
+"""Formula consistency checks against the live Morpho API.
 
 Three independent checks, each reported in basis points:
 
@@ -16,9 +16,9 @@ Usage::
 
     python validate_rq1.py [n_markets]      # default 100
 
-The recorded numbers are the deliverable: they are copied into
-``research/morpho_lp/CONTEXT.md`` §8 (M1 row). The CSV written under
-``results/`` is blanket-gitignored and is not the deliverable.
+Results are provider-backed consistency checks, not independent protocol
+validation or strategy performance evidence. CSV output stays in the gitignored
+``results/`` directory.
 """
 import json
 import os
@@ -30,12 +30,12 @@ import pandas as pd
 from fractal.core.entities.models.morpho_math import (
     adaptive_curve_borrow_apr,
     borrow_apy_from_per_second_rate,
+    from_wad,
 )
 from fractal.loaders._http import HttpClient
-from fractal.loaders.morpho import MORPHO_GRAPHQL_URL
+from fractal.loaders.morpho import graphql_query
 
 LOAN_SYMBOLS = {"USDC", "USDT"}
-WAD = 1e18
 STUCK_UTILIZATION = 0.999
 
 _MARKETS_QUERY = """
@@ -53,17 +53,11 @@ query Markets($first: Int!, $skip: Int!) {
 
 def fetch_markets(http: HttpClient, limit: int, page: int = 100) -> list[dict]:
     """Page the market list (descending supply size) until ``limit`` are read."""
-    from fractal.loaders.morpho import MorphoLoaderException  # local: keeps the import list short
-
     out: list[dict] = []
     skip = 0
     while len(out) < limit:
-        payload = http.post(MORPHO_GRAPHQL_URL, json={
-            "query": _MARKETS_QUERY, "variables": {"first": page, "skip": skip},
-        })
-        if payload.get("errors"):
-            raise MorphoLoaderException(f"Morpho GraphQL errors: {payload['errors']}")
-        items = ((payload.get("data") or {}).get("markets") or {}).get("items") or []
+        data = graphql_query(http, _MARKETS_QUERY, {"first": page, "skip": skip})
+        items = (data.get("markets") or {}).get("items") or []
         if not items:
             break
         out.extend(items)
@@ -108,7 +102,7 @@ def validate(markets: list[dict]) -> pd.DataFrame:
             row["supply_formula_bp"] = _bp(supply_apy - predicted)
         if rate_at_target is not None:
             # ``rateAtTarget`` is a per-second WAD rate; the curve is unit-preserving.
-            rate_per_second = adaptive_curve_borrow_apr(utilization, float(rate_at_target) / WAD)
+            rate_per_second = adaptive_curve_borrow_apr(utilization, from_wad(rate_at_target))
             row["irm_curve_bp"] = _bp(borrow_apy - borrow_apy_from_per_second_rate(rate_per_second))
         row["liquidity_identity_bp"] = _bp(liquidity_usd - (1.0 - utilization) * supply_usd) / max(supply_usd, 1.0)
         rows.append(row)

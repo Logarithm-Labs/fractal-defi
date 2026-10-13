@@ -22,7 +22,9 @@ on a linear-discount feed, :func:`read_linear_discount` reads
 Sizes: ``historicalState { supplyAssetsUsd, borrowAssetsUsd,
 liquidityAssetsUsd }`` come as USD notional (the raw token-unit fields
 are avoided) and ``liquidityAssetsUsd`` is the withdrawable amount the
-exit gate is measured against. ``fee`` is **not** exposed by the API's
+exit gate is measured against. ``netSupplyApy`` (supply APY including the
+market's reward campaigns) is carried as an optional column; the reward
+rate is ``net_supply_apy − supply_apy``. ``fee`` is **not** exposed by the API's
 ``MarketHistory`` type (verified live 2026-10-12: schema validation
 error), so it is not a column here — read the current value from
 :func:`get_market_info` and pass it to the entity. ``rateAtTarget`` is
@@ -37,7 +39,7 @@ from typing import Any
 
 import pandas as pd
 
-from fractal.core.entities.models.morpho_math import borrow_apy_from_per_second_rate
+from fractal.core.entities.models.morpho_math import WAD, borrow_apy_from_per_second_rate
 from fractal.loaders._dt import SECONDS_PER_YEAR, require_no_nan, to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
@@ -50,8 +52,7 @@ _MARKET_ID_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
 _INTERVAL_SECONDS = {"HOUR": 3600, "DAY": 86_400}
 # Bumped whenever the emitted column set changes, so a cached CSV written by
 # an older loader cannot be read back as if it had today's columns.
-_CACHE_SCHEMA = "v2usd"
-_WAD_SCALE = 1e18
+_CACHE_SCHEMA = "v3rewards"
 _BASE_DISCOUNT_SELECTOR = function_selector("baseDiscountPerYear()")
 
 _INFO_QUERY = """
@@ -77,6 +78,7 @@ query MarketHistory($id: String!, $cid: Int!, $o: TimeseriesOptions) {
       supplyAssetsUsd(options: $o) { x y }
       borrowAssetsUsd(options: $o) { x y }
       liquidityAssetsUsd(options: $o) { x y }
+      netSupplyApy(options: $o) { x y }
     }
     collateralAsset { historicalPriceUsd(options: $o) { x y } }
   }
@@ -89,6 +91,7 @@ __all__ = [
     "MorphoMarketInfo",
     "MorphoMarketLoader",
     "get_market_info",
+    "graphql_query",
     "read_linear_discount",
 ]
 
@@ -103,7 +106,8 @@ def _validate_market_id(value: str) -> str:
     return value.lower()
 
 
-def _graphql(http: HttpClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+def graphql_query(http: HttpClient, query: str, variables: dict[str, Any]) -> dict[str, Any]:
+    """POST one GraphQL query to the Morpho API and return its ``data`` object, raising on API errors."""
     payload = http.post(MORPHO_GRAPHQL_URL, json={"query": query, "variables": variables})
     if not isinstance(payload, dict):
         raise MorphoLoaderException(f"Morpho GraphQL: expected a JSON object, got {type(payload).__name__}")
@@ -145,13 +149,13 @@ class MorphoMarketInfo:
 
 def _wad(value: Any) -> float:
     number = float(value)
-    return number / 1e18 if number > 1.0 else number
+    return number / WAD if number > 1.0 else number
 
 
 def get_market_info(market_id: str, chain_id: int, http: HttpClient | None = None) -> MorphoMarketInfo:
     """Fetch LLTV, assets, oracle and the current state of one market."""
     client = http or HttpClient()
-    data = _graphql(client, _INFO_QUERY, {"id": _validate_market_id(market_id), "cid": int(chain_id)})
+    data = graphql_query(client, _INFO_QUERY, {"id": _validate_market_id(market_id), "cid": int(chain_id)})
     market = data.get("marketById")
     if not market:
         raise MorphoLoaderException(f"market {market_id} not found on chain {chain_id}")
@@ -181,7 +185,7 @@ def read_linear_discount(
 ) -> float:
     """``baseDiscountPerYear()`` of a ``PendleSparkLinearDiscountOracle`` feed, as a fraction."""
     result = eth_call(rpc_url, feed_address, _BASE_DISCOUNT_SELECTOR, block=block, http=http)
-    return decode_words(result, 1)[0] / 1e18
+    return decode_words(result, 1)[0] / WAD
 
 
 # ------------------------------------------------------- market history
@@ -244,7 +248,7 @@ class MorphoMarketLoader(Loader):
         )
 
     def extract(self) -> None:
-        data = _graphql(self._http, _HISTORY_QUERY, {
+        data = graphql_query(self._http, _HISTORY_QUERY, {
             "id": self.market_id, "cid": self.chain_id,
             "o": {"startTimestamp": to_seconds(self.start_time), "endTimestamp": to_seconds(self.end_time),
                   "interval": self.interval},
@@ -269,6 +273,7 @@ class MorphoMarketLoader(Loader):
             _series_to_df(hist.get("supplyAssetsUsd"), "supply_assets_usd"),
             _series_to_df(hist.get("borrowAssetsUsd"), "borrow_assets_usd"),
             _series_to_df(hist.get("liquidityAssetsUsd"), "liquidity_assets_usd"),
+            _series_to_df(hist.get("netSupplyApy"), "net_supply_apy"),
         ):
             if not frame.empty:
                 merged = merged.merge(frame, on="x", how="left")
@@ -277,7 +282,7 @@ class MorphoMarketLoader(Loader):
     def transform(self) -> None:
         cols = ["time", "lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
                 "rate_at_target", "collateral_price_usd", "supply_rate", "supply_assets_usd",
-                "borrow_assets_usd", "liquidity_assets_usd"]
+                "borrow_assets_usd", "liquidity_assets_usd", "net_supply_apy"]
         if self._data is None or self._data.empty:
             self._data = pd.DataFrame(columns=cols)
             return
@@ -338,6 +343,7 @@ class MorphoMarketLoader(Loader):
             supply_assets_usd=self._data["supply_assets_usd"].astype(float).values,
             borrow_assets_usd=self._data["borrow_assets_usd"].astype(float).values,
             liquidity_assets_usd=self._data["liquidity_assets_usd"].astype(float).values,
+            net_supply_apy=self._data["net_supply_apy"].astype(float).values,
         )
 
     def read_collateral_price(self) -> PriceHistory:

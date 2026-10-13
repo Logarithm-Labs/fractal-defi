@@ -91,7 +91,9 @@ class LendingHistory(pd.DataFrame):
         ``supply_assets_usd`` / ``borrow_assets_usd`` /
             ``liquidity_assets_usd`` — market sizes in **USD notional**
             (``liquidity = supply − borrow``, the withdrawable amount the
-            exit gate is measured against).
+            exit gate is measured against);
+        ``net_supply_apy`` — supplier APY *including* reward campaigns (the
+            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``.
     """
 
     def __init__(
@@ -107,6 +109,7 @@ class LendingHistory(pd.DataFrame):
         supply_assets_usd: ArrayLike | None = None,
         borrow_assets_usd: ArrayLike | None = None,
         liquidity_assets_usd: ArrayLike | None = None,
+        net_supply_apy: ArrayLike | None = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
@@ -117,7 +120,7 @@ class LendingHistory(pd.DataFrame):
             ("supply_apy", supply_apy), ("rate_at_target", rate_at_target),
             ("supply_rate", supply_rate), ("supply_assets_usd", supply_assets_usd),
             ("borrow_assets_usd", borrow_assets_usd),
-            ("liquidity_assets_usd", liquidity_assets_usd),
+            ("liquidity_assets_usd", liquidity_assets_usd), ("net_supply_apy", net_supply_apy),
         ):
             if values is not None:
                 data[name] = np.asarray(values, dtype=float)
