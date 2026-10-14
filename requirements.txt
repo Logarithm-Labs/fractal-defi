@@ -4,7 +4,7 @@
 # mirrors them for ``pip install -r`` convenience. Keep in sync with
 # ``setup.py``.
 # ── runtime ───────────────────────────────────────────────────────
-mlflow>=3.16.0
+mlflow>=3.17.0
 pandas>=2.3.3
 numpy>=2.2.6
 loguru>=0.7.3
