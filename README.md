@@ -166,6 +166,7 @@ below.
 | [`examples/ml_funding_rate_forecasting/`](examples/ml_funding_rate_forecasting/) | ML pipeline: forecasting Binance funding rates with feature engineering + CatBoost |
 | [`examples/pendle_pt_backtests/`](examples/pendle_pt_backtests/) | Pendle PT looping on Morpho Blue and PT carry hedged with a perp (+ Boros funding lock) on real data |
 | [`examples/susde_pt_carry/`](examples/susde_pt_carry/) | sUSDe PT leveraged loans with and without a Boros yield-unit overlay on eight markets; MLflow grid and an analysis notebook |
+| [`examples/morpho_supply/`](examples/morpho_supply/) | Morpho Blue supply: single-position rotation and multi-market allocation on live hourly data, plus a replication of Baude et al. (arXiv:2608.24206) |
 
 After cloning the repo and installing the package, run an example
 directly:

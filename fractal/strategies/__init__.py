@@ -10,6 +10,15 @@ from fractal.strategies.morpho_rate_hedged_leveraged_pt import (
     MorphoRateHedgedLeveragedPT,
     MorphoRateHedgedLeveragedPTParams,
 )
+from fractal.strategies.morpho_supply_allocation import MorphoSupplyAllocationParams, MorphoSupplyAllocationStrategy
+from fractal.strategies.morpho_supply_common import (
+    MorphoSupplyBaseParams,
+    build_supply_entity,
+    is_selectable,
+    market_entity_name,
+    validate_common_params,
+)
+from fractal.strategies.morpho_supply_rotation import MorphoSupplyRotationParams, MorphoSupplyRotationStrategy
 from fractal.strategies.perp_hedged_pt import PerpHedgedPT, PerpHedgedPTParams
 from fractal.strategies.rate_hedged_leveraged_pt import RateHedgedLeveragedPTParams, RateHedgedLeveragedPTStrategy
 from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy
@@ -29,10 +38,19 @@ __all__ = [
     'MorphoLeveragedPTParams',
     'MorphoRateHedgedLeveragedPT',
     'MorphoRateHedgedLeveragedPTParams',
+    'MorphoSupplyAllocationParams',
+    'MorphoSupplyAllocationStrategy',
+    'MorphoSupplyBaseParams',
+    'MorphoSupplyRotationParams',
+    'MorphoSupplyRotationStrategy',
     'PerpHedgedPT',
     'PerpHedgedPTParams',
     'RateHedgedLeveragedPTParams',
     'RateHedgedLeveragedPTStrategy',
     'TauResetParams',
     'TauResetStrategy',
+    'build_supply_entity',
+    'is_selectable',
+    'market_entity_name',
+    'validate_common_params',
 ]
