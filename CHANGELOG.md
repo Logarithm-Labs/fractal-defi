@@ -15,6 +15,13 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
+- **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
+- **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
+- **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
+- **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
+- **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
+- **`examples/morpho_supply/`** — discovery, formula checks, a provider-backed backtest for both strategies (`--strategy rotation|allocation`) and a replication of Baude, Danos & El Khalloufi (arXiv:2608.24206); local registries and results stay gitignored.
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
   / `"fee_growth"`. `fee_growth` accrues `Δ feeGrowthGlobal × L` per
   bar per token leg (the chain's own liquidity weighting, protocol fee
@@ -217,6 +224,8 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
+  the API to the annual APY documented by `LendingHistory`.
 - **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
   raises `ValueError` when a lending/borrowing leg carries NaN (the
   outer merge of the supply and borrow series could leave a gap that
