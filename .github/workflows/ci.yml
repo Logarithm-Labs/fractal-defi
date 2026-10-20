@@ -51,7 +51,7 @@ jobs:
     name: Lint (pre-commit)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -88,7 +88,7 @@ jobs:
       matrix:
         python-version: ['3.10', '3.11', '3.12', '3.13']
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
@@ -116,7 +116,7 @@ jobs:
     if: github.event_name == 'workflow_dispatch'
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -150,7 +150,7 @@ jobs:
           && github.event.pull_request.head.ref == 'dev')
     needs: lint
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -181,7 +181,7 @@ jobs:
           && github.event.pull_request.head.ref == 'dev')
     needs: [lint, docs, core-tests]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -204,7 +204,7 @@ jobs:
           && github.event.pull_request.head.ref == 'dev')
     needs: [lint, docs, core-tests]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -229,7 +229,7 @@ jobs:
           && github.event.pull_request.head.ref == 'dev')
     needs: [lint, docs, core-tests]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
@@ -266,7 +266,7 @@ jobs:
           && github.event.pull_request.head.ref == 'dev')
     needs: [lint, docs, core-tests]
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
       - uses: actions/setup-python@v7
         with:
           python-version: '3.12'
