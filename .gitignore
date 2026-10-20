@@ -212,10 +212,11 @@ tests/mlflow_tests/output/
 # whose name contains "review" in any case and ends in .md.
 *[Rr][Ee][Vv][Ii][Ee][Ww]*.md
 
-# Local agent state (pi routing cache/circuits, GitNexus index, autoresearch runs)
+# Local agent state (pi routing cache/circuits, GitNexus index, autoresearch runs, generated plans)
 .pi/
 .gitnexus/
 .auto/
+docs/plans/
 
 # Per-tool agent adapters and personal overrides (AGENTS.md is the canonical shared file)
 .claude/
