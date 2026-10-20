@@ -10,6 +10,7 @@ from fractal.strategies.morpho_rate_hedged_leveraged_pt import (
     MorphoRateHedgedLeveragedPT,
     MorphoRateHedgedLeveragedPTParams,
 )
+from fractal.strategies.morpho_supply_allocation import MorphoSupplyAllocationParams, MorphoSupplyAllocationStrategy
 from fractal.strategies.morpho_supply_common import (
     MorphoSupplyBaseParams,
     build_supply_entity,
@@ -37,6 +38,8 @@ __all__ = [
     'MorphoLeveragedPTParams',
     'MorphoRateHedgedLeveragedPT',
     'MorphoRateHedgedLeveragedPTParams',
+    'MorphoSupplyAllocationParams',
+    'MorphoSupplyAllocationStrategy',
     'MorphoSupplyBaseParams',
     'MorphoSupplyRotationParams',
     'MorphoSupplyRotationStrategy',
