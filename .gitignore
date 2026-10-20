@@ -222,3 +222,8 @@ tests/mlflow_tests/output/
 .codex/
 CLAUDE.local.md
 AGENTS.override.md
+
+# Morpho supply example: live-API artefacts (registry CSVs are the
+# reviewed universe, results/ holds backtest and replication outputs).
+examples/morpho_supply/results/
+examples/morpho_supply/registry/
