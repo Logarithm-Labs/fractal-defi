@@ -34,13 +34,17 @@ __all__ = [
     "adaptive_curve_error",
     "borrow_apy_from_per_second_rate",
     "from_wad",
+    "horizon_average_supply_apy",
+    "horizon_supply_capacity",
     "liquidation_incentive_factor",
     "max_borrow",
     "per_bar_borrow_rate",
     "rate_at_target_drift",
+    "static_supply_capacity",
     "supply_apy_curve",
     "supply_apy_from_curve",
     "taylor_compounded",
+    "utilization_after_deposit",
     "utilization_for_supply_apy",
 ]
 
@@ -196,3 +200,186 @@ def utilization_for_supply_apy(target_apy: float, rate_at_target: float, fee: fl
         else:
             high = mid
     return 0.5 * (low + high)
+
+
+def utilization_after_deposit(supply, borrow, deposit, alpha=0.0, beta=0.0):
+    """Post-deposit utilization under two-sided borrower and supplier response.
+
+    ``u'(P) = (borrow + alpha * P) / (supply + (1 - beta) * P)``.
+    ``alpha`` is the deposited share borrowed and ``beta`` is the share offset
+    by other suppliers withdrawing. Inputs broadcast as NumPy arrays; scalar
+    inputs return a float. The result is clamped to ``[0, 1]`` and is ``0``
+    when effective supply is zero.
+    """
+    supply_values, borrow_values, deposit_values, alpha_values, beta_values = np.broadcast_arrays(
+        np.asarray(supply, dtype=float),
+        np.asarray(borrow, dtype=float),
+        np.asarray(deposit, dtype=float),
+        np.asarray(alpha, dtype=float),
+        np.asarray(beta, dtype=float),
+    )
+    values = (supply_values, borrow_values, deposit_values, alpha_values, beta_values)
+    if not all(np.all(np.isfinite(value)) for value in values):
+        raise ValueError("supply, borrow, deposit, alpha and beta must be finite")
+    if np.any(supply_values < 0.0) or np.any(borrow_values < 0.0) or np.any(deposit_values < 0.0):
+        raise ValueError("supply, borrow and deposit must be >= 0")
+    if np.any(alpha_values < 0.0) or np.any(alpha_values > 1.0):
+        raise ValueError("alpha must be in [0, 1]")
+    if np.any(beta_values < 0.0) or np.any(beta_values > 1.0):
+        raise ValueError("beta must be in [0, 1]")
+    total_supply = supply_values + (1.0 - beta_values) * deposit_values
+    total_borrow = borrow_values + alpha_values * deposit_values
+    utilization = np.divide(
+        total_borrow,
+        total_supply,
+        out=np.zeros_like(total_borrow),
+        where=total_supply > 0.0,
+    )
+    utilization = np.clip(utilization, 0.0, 1.0)
+    return float(utilization) if utilization.ndim == 0 else utilization
+
+
+def static_supply_capacity(target_apy: float, supply: float, borrow: float, rate_at_target: float,
+                           fee: float = 0.0, alpha: float = 0.0, beta: float = 0.0) -> float:
+    """Largest deposit whose instantaneous supplier APY remains at least ``target_apy``.
+
+    The AdaptiveCurve supplier-rate curve is inverted to a target utilization,
+    then ``u'(P)`` is solved in closed form. Returns ``0`` when the undeployed
+    market is already below target or the target exceeds the curve maximum.
+    Returns ``inf`` when utilization cannot fall below the target, including
+    the full-response case ``1 - beta - alpha <= 0`` when the current rate
+    clears the target. ``alpha = beta = 0`` reduces exactly to the static
+    ``borrow / (supply + deposit)`` model.
+    """
+    if math.isnan(target_apy) or target_apy < 0.0:
+        raise ValueError(f"target_apy must be >= 0, got {target_apy}")
+    if not math.isfinite(rate_at_target) or rate_at_target < 0.0:
+        raise ValueError(f"rate_at_target must be finite and >= 0, got {rate_at_target}")
+    current_utilization = utilization_after_deposit(supply, borrow, 0.0, alpha, beta)
+    current_apy = supply_apy_from_curve(current_utilization, rate_at_target, fee)
+    if target_apy <= 0.0:
+        return float("inf")
+    if current_apy < target_apy:
+        return 0.0
+    target_utilization = utilization_for_supply_apy(target_apy, rate_at_target, fee)
+    if target_utilization is None:
+        return 0.0
+    denominator = target_utilization * (1.0 - beta) - alpha
+    if denominator <= 0.0:
+        return float("inf")
+    capacity = (borrow - target_utilization * supply) / denominator
+    return max(capacity, 0.0)
+
+
+def _horizon_path_arrays(first, second, elapsed_years_per_step):
+    """Broadcast two paths and elapsed step lengths to flat float arrays."""
+    first_values, second_values, elapsed_values = np.broadcast_arrays(
+        np.asarray(first, dtype=float),
+        np.asarray(second, dtype=float),
+        np.asarray(elapsed_years_per_step, dtype=float),
+    )
+    if first_values.size == 0:
+        raise ValueError("horizon paths must not be empty")
+    if not all(np.all(np.isfinite(value)) for value in (first_values, second_values, elapsed_values)):
+        raise ValueError("horizon paths and elapsed_years_per_step must be finite")
+    if np.any(elapsed_values < 0.0) or float(np.sum(elapsed_values)) <= 0.0:
+        raise ValueError("elapsed_years_per_step must be >= 0 with a positive total")
+    return first_values.ravel(), second_values.ravel(), elapsed_values.ravel()
+
+
+def horizon_average_supply_apy(utilization_path, rate_at_target: float, elapsed_years_per_step,
+                               fee: float = 0.0) -> float:
+    """Annualized supplier APY along a utilization path with AdaptiveCurve drift.
+
+    Each step first drifts ``rate_at_target`` for that step and clamps it to
+    ``[MIN_RATE_AT_TARGET, MAX_RATE_AT_TARGET]``, matching the controller-before-
+    accrual order. Step APYs compound over their ACT/365 durations; the return
+    value is the constant annual APY with the same horizon growth. A scalar
+    utilization broadcasts across an array of step durations.
+    """
+    utilization_values, _, elapsed_values = _horizon_path_arrays(
+        utilization_path, utilization_path, elapsed_years_per_step
+    )
+    if np.any(utilization_values < 0.0) or np.any(utilization_values > 1.0):
+        raise ValueError("utilization values must be in [0, 1]")
+    if not math.isfinite(rate_at_target) or rate_at_target < 0.0:
+        raise ValueError(f"rate_at_target must be finite and >= 0, got {rate_at_target}")
+    if not 0.0 <= fee < 1.0:
+        raise ValueError(f"fee must be in [0, 1), got {fee}")
+    current_rate = min(max(rate_at_target, MIN_RATE_AT_TARGET), MAX_RATE_AT_TARGET)
+    log_growth = 0.0
+    for utilization, elapsed_years in zip(utilization_values, elapsed_values, strict=True):
+        try:
+            drift = rate_at_target_drift(float(utilization), float(elapsed_years))
+        except OverflowError:
+            drift = float("inf")
+        current_rate = min(max(current_rate * drift, MIN_RATE_AT_TARGET), MAX_RATE_AT_TARGET)
+        step_apy = supply_apy_from_curve(float(utilization), current_rate, fee)
+        log_growth += float(elapsed_years) * math.log1p(step_apy)
+    return math.expm1(log_growth / float(np.sum(elapsed_values)))
+
+
+def horizon_supply_capacity(target_apy: float, supply: float, borrow: float, rate_at_target: float,
+                            elapsed_years_per_step, fee: float = 0.0, alpha=0.0, beta=0.0,
+                            tolerance: float = 1e-6) -> float:
+    """Largest deposit whose horizon-average supplier APY remains at least ``target_apy``.
+
+    ``alpha`` and ``beta`` may be scalars for a constant post-deposit
+    utilization response or arrays describing a response path. They broadcast
+    against ``elapsed_years_per_step``. The capacity is found by bisection,
+    using ``tolerance`` as a relative deposit-size tolerance. Returns ``0``
+    when the zero-deposit horizon rate misses the target and ``inf`` when the
+    infinite-deposit response still clears it.
+    """
+    if math.isnan(target_apy) or target_apy < 0.0:
+        raise ValueError(f"target_apy must be >= 0, got {target_apy}")
+    if not math.isfinite(tolerance) or tolerance <= 0.0:
+        raise ValueError(f"tolerance must be finite and > 0, got {tolerance}")
+    alpha_values, beta_values, elapsed_values = _horizon_path_arrays(alpha, beta, elapsed_years_per_step)
+    if np.any(alpha_values < 0.0) or np.any(alpha_values > 1.0):
+        raise ValueError("alpha must be in [0, 1]")
+    if np.any(beta_values < 0.0) or np.any(beta_values > 1.0):
+        raise ValueError("beta must be in [0, 1]")
+
+    def average_apy(deposit: float) -> float:
+        utilization_path = utilization_after_deposit(supply, borrow, deposit, alpha_values, beta_values)
+        return horizon_average_supply_apy(utilization_path, rate_at_target, elapsed_values, fee)
+
+    current_apy = average_apy(0.0)
+    if target_apy <= 0.0:
+        return float("inf")
+    if current_apy < target_apy:
+        return 0.0
+    current_utilization = utilization_after_deposit(supply, borrow, 0.0, alpha_values, beta_values)
+    retained_supply = 1.0 - beta_values
+    limit_utilization = np.divide(
+        alpha_values,
+        retained_supply,
+        out=np.zeros_like(alpha_values),
+        where=retained_supply > 0.0,
+    )
+    limit_utilization = np.where(
+        retained_supply > 0.0,
+        limit_utilization,
+        np.where(alpha_values > 0.0, 1.0, current_utilization),
+    )
+    limit_utilization = np.clip(limit_utilization, 0.0, 1.0)
+    if horizon_average_supply_apy(limit_utilization, rate_at_target, elapsed_values, fee) >= target_apy:
+        return float("inf")
+
+    low, high = 0.0, max(supply, borrow, 1.0)
+    for _ in range(256):
+        if average_apy(high) < target_apy:
+            break
+        high *= 2.0
+    else:
+        return float("inf")
+    for _ in range(256):
+        if high - low <= tolerance * max(high, 1.0):
+            break
+        mid = 0.5 * (low + high)
+        if average_apy(mid) >= target_apy:
+            low = mid
+        else:
+            high = mid
+    return low
