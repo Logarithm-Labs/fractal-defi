@@ -25,6 +25,7 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
 )
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
+from fractal.loaders.morpho_reallocations import MorphoReallocationsLoader
 from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
@@ -108,6 +109,7 @@ __all__ = [
     "MorphoMarketListing",
     "MorphoMarketLoader",
     "MorphoMarketsLoader",
+    "MorphoReallocationsLoader",
     "PendleMarketHistory",
     "PendleMarketInfo",
     "PendleMarketLoader",
