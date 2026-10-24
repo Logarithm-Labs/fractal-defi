@@ -9,6 +9,7 @@ from fractal.loaders.binance import (
     BinanceSpotPriceLoader,
 )
 from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
+from fractal.loaders.cex_stable_mid import DEFAULT_CEX_VENUES, StablecoinMidLoader
 from fractal.loaders.defillama import (
     DefiLlamaDEXLoader,
     DefiLlamaPoolLoader,
@@ -63,6 +64,7 @@ from fractal.loaders.thegraph import (
 )
 
 __all__ = [
+    "DEFAULT_CEX_VENUES",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",
     "AaveV3EthereumLoader",
@@ -119,6 +121,7 @@ __all__ = [
     "RpcCallError",
     "RpcLoaderException",
     "StETHLoader",
+    "StablecoinMidLoader",
     "SwapsHistory",
     "TVLHistory",
     "TrajectoryBundle",

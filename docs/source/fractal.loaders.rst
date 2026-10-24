@@ -22,6 +22,7 @@ Submodules
    fractal.loaders.aave
    fractal.loaders.base_loader
    fractal.loaders.boros
+   fractal.loaders.cex_stable_mid
    fractal.loaders.gmx_v1
    fractal.loaders.hyperliquid
    fractal.loaders.morpho
