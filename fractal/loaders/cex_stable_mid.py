@@ -290,7 +290,8 @@ class StablecoinMidLoader(Loader):
             self._read(self._cache_key())
         columns = ["mid", "n_venues", *self.venues]
         if self._data is None or self._data.empty:
-            return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], tz="UTC", name="time"))
+            # explicit unit: pandas 3 gives an empty index second resolution
+            return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], dtype="datetime64[ns, UTC]", name="time"))
         frame = self._data[columns].copy()
         frame["mid"] = pd.to_numeric(frame["mid"], errors="coerce")
         frame["n_venues"] = pd.to_numeric(frame["n_venues"], errors="raise").astype("int64")
