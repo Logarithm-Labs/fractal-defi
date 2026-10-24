@@ -8,6 +8,7 @@ Subpackages
    :maxdepth: 4
 
    fractal.loaders.binance
+   fractal.loaders.bridges
    fractal.loaders.defillama
    fractal.loaders.onchain
    fractal.loaders.simulations
