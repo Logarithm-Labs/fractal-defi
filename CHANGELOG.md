@@ -20,6 +20,7 @@ when the observations carry `fee_growth0/1`.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
 - **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
 - **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
+- **`MorphoMarketLoader` / `LendingHistory` market totals** — opt-in token-unit supply/borrow assets and normalized supply/borrow shares for realized share-price yield and utilization calculations; the cache schema is versioned separately from older histories.
 - **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
 - **`examples/morpho_supply/`** — discovery, formula checks, a provider-backed backtest for both strategies (`--strategy rotation|allocation`) and a replication of Baude, Danos & El Khalloufi (arXiv:2608.24206); local registries and results stay gitignored.
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`

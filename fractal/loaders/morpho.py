@@ -20,11 +20,13 @@ on a linear-discount feed, :func:`read_linear_discount` reads
 ``1 − d · t`` per bar.
 
 Sizes: ``historicalState { supplyAssetsUsd, borrowAssetsUsd,
-liquidityAssetsUsd }`` come as USD notional (the raw token-unit fields
-are avoided) and ``liquidityAssetsUsd`` is the withdrawable amount the
-exit gate is measured against. ``netSupplyApy`` (supply APY including the
-market's reward campaigns) is carried as an optional column; the reward
-rate is ``net_supply_apy − supply_apy``. ``fee`` is **not** exposed by the API's
+liquidityAssetsUsd }`` come as USD notional and ``liquidityAssetsUsd`` is
+the withdrawable amount the exit gate is measured against. With
+``include_market_totals=True``, raw supply/borrow assets are converted by
+the loan token's decimals and shares by ``decimals + 6`` (Morpho Blue's
+virtual-share offset). ``netSupplyApy`` (supply APY including the market's
+reward campaigns) is carried as an optional column; the reward rate is
+``net_supply_apy − supply_apy``. ``fee`` is **not** exposed by the API's
 ``MarketHistory`` type (verified live 2026-10-12: schema validation
 error), so it is not a column here — read the current value from
 :func:`get_market_info` and pass it to the entity. ``rateAtTarget`` is
@@ -52,7 +54,7 @@ _MARKET_ID_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
 _INTERVAL_SECONDS = {"HOUR": 3600, "DAY": 86_400}
 # Bumped whenever the emitted column set changes, so a cached CSV written by
 # an older loader cannot be read back as if it had today's columns.
-_CACHE_SCHEMA = "v3rewards"
+_CACHE_SCHEMA = "v4marketstate"
 _BASE_DISCOUNT_SELECTOR = function_selector("baseDiscountPerYear()")
 
 _INFO_QUERY = """
@@ -79,7 +81,12 @@ query MarketHistory($id: String!, $cid: Int!, $o: TimeseriesOptions) {
       borrowAssetsUsd(options: $o) { x y }
       liquidityAssetsUsd(options: $o) { x y }
       netSupplyApy(options: $o) { x y }
+      supplyAssets(options: $o) { x y }
+      supplyShares(options: $o) { x y }
+      borrowAssets(options: $o) { x y }
+      borrowShares(options: $o) { x y }
     }
+    loanAsset { decimals }
     collateralAsset { historicalPriceUsd(options: $o) { x y } }
   }
 }
@@ -196,6 +203,20 @@ def _series_to_df(points: list[dict[str, Any]] | None, col: str) -> pd.DataFrame
     return pd.DataFrame({"x": df["x"].astype("int64"), col: df["y"].astype(float)})
 
 
+def _scaled_bigint_series_to_df(
+    points: list[dict[str, Any]] | None,
+    col: str,
+    decimals: int,
+) -> pd.DataFrame:
+    if not points:
+        return pd.DataFrame({"x": pd.Series(dtype="int64"), col: pd.Series(dtype=float)})
+    scale = 10 ** int(decimals)
+    return pd.DataFrame({
+        "x": pd.Series((int(point["x"]) for point in points), dtype="int64"),
+        col: pd.Series((int(point["y"]) / scale for point in points), dtype=float),
+    })
+
+
 class MorphoMarketLoader(Loader):
     """Hourly (or daily) market history → :class:`LendingHistory` with per-bar rates.
 
@@ -207,6 +228,9 @@ class MorphoMarketLoader(Loader):
         interval: API interval, ``"HOUR"`` or ``"DAY"``.
         compounding: ``"continuous"`` (per-bar exponent ``ln(1+apy)·Δt/YEAR``)
             or ``"linear"`` (``apy · Δt / YEAR``, Aave parity).
+        include_market_totals: include token-unit supply/borrow assets and
+            normalized supply/borrow shares. Defaults to ``False`` so the
+            historical output columns are unchanged.
         http: injectable client for offline tests.
     """
 
@@ -220,6 +244,7 @@ class MorphoMarketLoader(Loader):
         resolution: int = 1,
         interval: str = "HOUR",
         compounding: str = "continuous",
+        include_market_totals: bool = False,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
@@ -239,12 +264,14 @@ class MorphoMarketLoader(Loader):
         self.resolution = int(resolution)
         self.interval = interval
         self.compounding = compounding
+        self.include_market_totals = bool(include_market_totals)
         self._http = http or HttpClient()
 
     def _cache_key(self) -> str:
         return (
             f"{self.chain_id}-{self.market_id}-{self.interval}-{to_seconds(self.start_time)}-"
-            f"{to_seconds(self.end_time)}-{self.resolution}-{self.compounding}-{_CACHE_SCHEMA}"
+            f"{to_seconds(self.end_time)}-{self.resolution}-{self.compounding}-"
+            f"{int(self.include_market_totals)}-{_CACHE_SCHEMA}"
         )
 
     def extract(self) -> None:
@@ -269,12 +296,25 @@ class MorphoMarketLoader(Loader):
             merged = merged.merge(frame, on="x", how="outer")
         # Sizes are left-joined onto the rate spine: a size series that is not
         # backfilled must not add rows (or NaNs) to the rate grid.
-        for frame in (
+        optional_frames = [
             _series_to_df(hist.get("supplyAssetsUsd"), "supply_assets_usd"),
             _series_to_df(hist.get("borrowAssetsUsd"), "borrow_assets_usd"),
             _series_to_df(hist.get("liquidityAssetsUsd"), "liquidity_assets_usd"),
             _series_to_df(hist.get("netSupplyApy"), "net_supply_apy"),
-        ):
+        ]
+        if self.include_market_totals:
+            decimals = (market.get("loanAsset") or {}).get("decimals")
+            if decimals is None:
+                raise MorphoLoaderException(
+                    f"market {self.market_id} on chain {self.chain_id}: loanAsset.decimals missing"
+                )
+            optional_frames.extend((
+                _scaled_bigint_series_to_df(hist.get("supplyAssets"), "supply_assets", decimals),
+                _scaled_bigint_series_to_df(hist.get("supplyShares"), "supply_shares", int(decimals) + 6),
+                _scaled_bigint_series_to_df(hist.get("borrowAssets"), "borrow_assets", decimals),
+                _scaled_bigint_series_to_df(hist.get("borrowShares"), "borrow_shares", int(decimals) + 6),
+            ))
+        for frame in optional_frames:
             if not frame.empty:
                 merged = merged.merge(frame, on="x", how="left")
         self._data = merged.sort_values("x").reset_index(drop=True)
@@ -283,6 +323,8 @@ class MorphoMarketLoader(Loader):
         cols = ["time", "lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
                 "rate_at_target", "collateral_price_usd", "supply_rate", "supply_assets_usd",
                 "borrow_assets_usd", "liquidity_assets_usd", "net_supply_apy"]
+        if self.include_market_totals:
+            cols.extend(("supply_assets", "supply_shares", "borrow_assets", "borrow_shares"))
         if self._data is None or self._data.empty:
             self._data = pd.DataFrame(columns=cols)
             return
@@ -330,6 +372,11 @@ class MorphoMarketLoader(Loader):
         else:
             self._read(self._cache_key())
         if self._data is None or self._data.empty:
+            if self.include_market_totals:
+                return LendingHistory(
+                    lending_rates=[], borrowing_rates=[], time=[], supply_assets=[], supply_shares=[],
+                    borrow_assets=[], borrow_shares=[],
+                )
             return LendingHistory(lending_rates=[], borrowing_rates=[], time=[])
         return LendingHistory(
             lending_rates=self._data["lending_rate"].astype(float).values,
@@ -344,6 +391,14 @@ class MorphoMarketLoader(Loader):
             borrow_assets_usd=self._data["borrow_assets_usd"].astype(float).values,
             liquidity_assets_usd=self._data["liquidity_assets_usd"].astype(float).values,
             net_supply_apy=self._data["net_supply_apy"].astype(float).values,
+            supply_assets=(self._data["supply_assets"].astype(float).values
+                           if self.include_market_totals else None),
+            supply_shares=(self._data["supply_shares"].astype(float).values
+                           if self.include_market_totals else None),
+            borrow_assets=(self._data["borrow_assets"].astype(float).values
+                           if self.include_market_totals else None),
+            borrow_shares=(self._data["borrow_shares"].astype(float).values
+                           if self.include_market_totals else None),
         )
 
     def read_collateral_price(self) -> PriceHistory:

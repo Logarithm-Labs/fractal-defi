@@ -122,7 +122,7 @@ def test_linear_compounding_and_resolution_scale_like_aave():
     continuous = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
     assert continuous._cache_key() != loader._cache_key()
     # the cache key carries the column-set tag, so a pre-extension CSV cannot be mis-read
-    assert continuous._cache_key().endswith("v3rewards")
+    assert continuous._cache_key().endswith("v4marketstate")
 
 
 @pytest.mark.core
@@ -216,6 +216,98 @@ def test_collateral_price_series_and_cache_round_trip(monkeypatch, tmp_path):
     assert len(price) == 6 and price["price"].iloc[0] == pytest.approx(0.974)
     cached = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp(), loader_type=LoaderType.JSON)
     pd.testing.assert_frame_equal(first, cached.read(with_run=False))
+
+
+class _MarketTotalsHttp(_FakeMorphoHttp):
+    def __init__(self, series):
+        super().__init__()
+        self.series = series
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        payload = super().post(url, json=json, timeout=timeout, headers=headers)
+        market = payload["data"]["marketById"]
+        market["loanAsset"] = {"decimals": 6}
+        market["historicalState"].update(self.series)
+        return payload
+
+
+class _EmptyMarketTotalsHttp(_MarketTotalsHttp):
+    def post(self, url, json=None, timeout=None, headers=None):
+        payload = super().post(url, json=json, timeout=timeout, headers=headers)
+        payload["data"]["marketById"]["collateralAsset"]["historicalPriceUsd"] = []
+        return payload
+
+
+@pytest.mark.core
+def test_market_totals_are_opt_in_and_default_columns_are_unchanged():
+    default = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
+    with_totals = MorphoMarketLoader(
+        MARKET_ID, 1, START, END, include_market_totals=True,
+        http=_MarketTotalsHttp({}),
+    )
+    default_history = default.read(with_run=True)
+    assert list(default_history.columns) == [
+        "lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
+        "rate_at_target", "supply_rate", "supply_assets_usd", "borrow_assets_usd",
+        "liquidity_assets_usd", "net_supply_apy",
+    ]
+    assert default._cache_key() == MorphoMarketLoader(
+        MARKET_ID, 1, START, END, http=_FakeMorphoHttp(),
+    )._cache_key()
+    assert default._cache_key() != with_totals._cache_key()
+
+
+@pytest.mark.core
+def test_market_totals_scale_raw_values_and_preserve_the_rate_spine():
+    def point(hour, value):
+        return [{"x": int((START + timedelta(hours=hour)).timestamp()), "y": value}]
+
+    series = {
+        "supplyAssets": point(0, "123456789"),
+        "supplyShares": point(1, "124000000000000"),
+        "borrowAssets": point(2, "98765432"),
+        "borrowShares": [
+            {"x": int((START + timedelta(hours=3)).timestamp()), "y": "99000000000000"},
+            {"x": int((START + timedelta(minutes=30)).timestamp()), "y": "1000000000000"},
+        ],
+    }
+    http = _MarketTotalsHttp(series)
+    history = MorphoMarketLoader(
+        MARKET_ID, 1, START, END, include_market_totals=True, http=http,
+    ).read(with_run=True)
+    assert history.index.equals(pd.date_range(START, END, freq="h"))
+    assert list(history.columns[-4:]) == ["supply_assets", "supply_shares", "borrow_assets", "borrow_shares"]
+    assert history["supply_assets"].iloc[0] == pytest.approx(123.456789)
+    assert history["supply_shares"].iloc[1] == pytest.approx(124.0)
+    assert history["borrow_assets"].iloc[2] == pytest.approx(98.765432)
+    assert history["borrow_shares"].iloc[3] == pytest.approx(99.0)
+    total_columns = ["supply_assets", "supply_shares", "borrow_assets", "borrow_shares"]
+    assert history[total_columns].notna().sum().tolist() == [1, 1, 1, 1]
+    query = http.calls[-1]["query"]
+    assert all(field in query for field in ("supplyAssets", "supplyShares", "borrowAssets", "borrowShares"))
+    assert "loanAsset { decimals }" in query
+
+
+@pytest.mark.core
+def test_empty_market_totals_return_the_opt_in_schema():
+    history = MorphoMarketLoader(
+        MARKET_ID, 1, START, END, include_market_totals=True,
+        http=_EmptyMarketTotalsHttp({
+            "borrowApy": [], "supplyApy": [], "utilization": [], "rateAtTarget": [],
+            "supplyAssets": [], "supplyShares": [], "borrowAssets": [], "borrowShares": [],
+        }),
+    ).read(with_run=True)
+    assert history.empty
+    assert list(history.columns) == [
+        "lending_rate", "borrowing_rate", "supply_assets", "supply_shares", "borrow_assets", "borrow_shares",
+    ]
+
+
+@pytest.mark.core
+def test_cache_schema_bump_changes_the_legacy_key():
+    loader = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
+    legacy_key = loader._cache_key().removesuffix("-0-v4marketstate") + "-v3rewards"
+    assert loader._cache_key() != legacy_key
 
 
 @pytest.mark.core

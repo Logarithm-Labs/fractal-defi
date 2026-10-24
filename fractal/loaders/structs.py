@@ -93,7 +93,10 @@ class LendingHistory(pd.DataFrame):
             (``liquidity = supply − borrow``, the withdrawable amount the
             exit gate is measured against);
         ``net_supply_apy`` — supplier APY *including* reward campaigns (the
-            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``.
+            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``;
+        ``supply_assets`` / ``borrow_assets`` — Morpho market totals in loan-token units;
+        ``supply_shares`` / ``borrow_shares`` — Morpho market shares normalized
+            by ``10 ** (loan_decimals + 6)``.
     """
 
     def __init__(
@@ -110,6 +113,10 @@ class LendingHistory(pd.DataFrame):
         borrow_assets_usd: ArrayLike | None = None,
         liquidity_assets_usd: ArrayLike | None = None,
         net_supply_apy: ArrayLike | None = None,
+        supply_assets: ArrayLike | None = None,
+        supply_shares: ArrayLike | None = None,
+        borrow_assets: ArrayLike | None = None,
+        borrow_shares: ArrayLike | None = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
@@ -121,6 +128,8 @@ class LendingHistory(pd.DataFrame):
             ("supply_rate", supply_rate), ("supply_assets_usd", supply_assets_usd),
             ("borrow_assets_usd", borrow_assets_usd),
             ("liquidity_assets_usd", liquidity_assets_usd), ("net_supply_apy", net_supply_apy),
+            ("supply_assets", supply_assets), ("supply_shares", supply_shares),
+            ("borrow_assets", borrow_assets), ("borrow_shares", borrow_shares),
         ):
             if values is not None:
                 data[name] = np.asarray(values, dtype=float)
