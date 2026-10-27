@@ -55,6 +55,7 @@ __all__ = [
     "classify_allocations",
     "hour_end",
     "hourly_supply_changes",
+    "morpho_market_id",
     "vault_v2_market_params_id",
 ]
 
@@ -231,6 +232,30 @@ def _collateral_id(token: str) -> str:
     return _hex_keccak(_word(64) + _address_word(token) + _string_tail("collateralToken"))
 
 
+def _market_params_words(loan_token: str, collateral_token: str, oracle: str, irm: str, lltv: int) -> bytes:
+    """``abi.encode(marketParams)``: five static words (four addresses, the WAD ``lltv``)."""
+    return b"".join(
+        [
+            _address_word(loan_token),
+            _address_word(collateral_token),
+            _address_word(oracle),
+            _address_word(irm),
+            _word(lltv),
+        ]
+    )
+
+
+def morpho_market_id(loan_token: str, collateral_token: str, oracle: str, irm: str, lltv_wad: int) -> str:
+    """Morpho Blue market id: ``keccak256(abi.encode(MarketParams))``.
+
+    ``MarketParams = (loanToken, collateralToken, oracle, irm, lltv)`` with
+    addresses as ``0x`` hex (case-insensitive) and ``lltv_wad`` the exact WAD
+    integer (e.g. ``860000000000000000`` for 86%), not a float fraction.
+    Returns the lowercase ``0x`` hex id the Morpho API reports as ``marketId``.
+    """
+    return _hex_keccak(_market_params_words(loan_token, collateral_token, oracle, irm, lltv_wad))
+
+
 def vault_v2_market_params_id(
     adapter: str,
     loan_token: str,
@@ -245,17 +270,8 @@ def vault_v2_market_params_id(
     ``marketParams = (loanToken, collateralToken, oracle, irm, lltv)``; ``lltv``
     is the exact WAD integer. Returns a lowercase ``0x`` hex string.
     """
-    head = b"".join(
-        [
-            _word(7 * 32),
-            _address_word(adapter),
-            _address_word(loan_token),
-            _address_word(collateral_token),
-            _address_word(oracle),
-            _address_word(irm),
-            _word(lltv),
-        ]
-    )
+    params = _market_params_words(loan_token, collateral_token, oracle, irm, lltv)
+    head = _word(7 * 32) + _address_word(adapter) + params
     return _hex_keccak(head + _string_tail("this/marketParams"))
 
 

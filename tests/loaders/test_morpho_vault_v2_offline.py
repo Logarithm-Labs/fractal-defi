@@ -13,6 +13,7 @@ from fractal.loaders.morpho_vault_v2 import (
     classify_allocations,
     hour_end,
     hourly_supply_changes,
+    morpho_market_id,
     vault_v2_market_params_id,
 )
 
@@ -151,6 +152,22 @@ def test_market_params_id_matches_reference_abi_encoding():
         "0xb5ac995e0fc657a35f90ce542b5ae0f97539364515c30d124c8414fbdd078f4a"
     )
     assert _collateral_id(COLLATERAL) == "0x3e7eb50ee20e57e63cdfa816040473776d6d1bd5e39739432c0d3e04ea18a521"
+
+
+def test_morpho_market_id_matches_reference_abi_encoding():
+    # Reference values computed with eth_abi.encode + keccak256 for the synthetic inputs.
+    assert morpho_market_id(ASSET, COLLATERAL, ORACLE, IRM, LLTV) == (
+        "0x0e1dbc97eb802ed1bd06fbcbe5d76ea2d11a8257e5aef2b3da7a7b6c8441618f"
+    )
+    zero = "0x" + "00" * 20
+    assert morpho_market_id(ASSET, zero, zero, zero, 0) == (
+        "0x687231f3f9933a17929f9b1c101ad76167bf2d67e6f270d08b88a2c3b732975b"
+    )
+    upper = ["0x" + address[2:].upper() for address in (ASSET, COLLATERAL, ORACLE, IRM)]
+    assert morpho_market_id(*upper, LLTV) == morpho_market_id(ASSET, COLLATERAL, ORACLE, IRM, LLTV)
+    assert morpho_market_id(ASSET, COLLATERAL, ORACLE, IRM, LLTV + 1) != morpho_market_id(
+        ASSET, COLLATERAL, ORACLE, IRM, LLTV
+    )
 
 
 def test_empty_api_page_returns_well_shaped_typed_empty_history():
