@@ -6,6 +6,7 @@ from fractal.loaders.onchain.aave_reserve_rates import (
 )
 from fractal.loaders.onchain.cctp_transfers import CctpTransfersLoader
 from fractal.loaders.onchain.debt_token_flows import DebtTokenFlowsLoader
+from fractal.loaders.onchain.dex_fee_tiers import OnchainDexFeeTierReader
 from fractal.loaders.onchain.gas import count_legs, transaction_gas_costs
 from fractal.loaders.onchain.uniswap_v3_swaps import RpcLoaderException, UniswapV3SwapsLoader
 
@@ -13,6 +14,7 @@ __all__ = [
     "AaveV3ReserveRatesLoader",
     "CctpTransfersLoader",
     "DebtTokenFlowsLoader",
+    "OnchainDexFeeTierReader",
     "ReserveData",
     "RpcLoaderException",
     "UniswapV3SwapsLoader",

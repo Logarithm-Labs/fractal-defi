@@ -30,6 +30,7 @@ from fractal.loaders.onchain import (
     AaveV3ReserveRatesLoader,
     CctpTransfersLoader,
     DebtTokenFlowsLoader,
+    OnchainDexFeeTierReader,
     RpcLoaderException,
     UniswapV3SwapsLoader,
 )
@@ -120,6 +121,7 @@ __all__ = [
     "MorphoMarketListing",
     "MorphoMarketLoader",
     "MorphoMarketsLoader",
+    "OnchainDexFeeTierReader",
     "PendleMarketHistory",
     "PendleMarketInfo",
     "PendleMarketLoader",
