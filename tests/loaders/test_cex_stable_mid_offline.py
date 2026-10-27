@@ -7,6 +7,7 @@ import pytest
 
 from fractal.loaders import StablecoinMidLoader
 from fractal.loaders._http import LoaderHttpError
+from fractal.loaders.base_loader import LoaderType
 
 pytestmark = pytest.mark.core
 
@@ -78,7 +79,8 @@ def test_each_venue_parses_empty_payload(venue, tmp_path, monkeypatch):
     frame = loader.read(with_run=True)
     assert frame.empty
     assert list(frame.columns) == ["mid", "n_venues", venue]
-    assert str(frame.index.dtype) == "datetime64[ns, UTC]"
+    assert str(frame.index.tz) == "UTC"
+    assert frame.dtypes.astype(str).tolist() == ["float64", "int64", "float64"]
 
 
 @pytest.mark.parametrize(
@@ -187,6 +189,137 @@ def test_constructor_rejects_invalid_pair_interval_window_and_venues():
         StablecoinMidLoader("USDC/USDT", START, END, venues=("kraken", "kraken"))
     with pytest.raises(ValueError, match="Unknown venue"):
         StablecoinMidLoader("USDC/USDT", START, END, venues=("other",))
+    with pytest.raises(ValueError, match="at least one venue"):
+        StablecoinMidLoader("USDC/USDT", START, END, venues=())
+
+
+class _CandleServer:
+    """Synthetic hourly candles answering each venue's paging parameters."""
+
+    def __init__(self, opens: list[int], close: float = 1.0):
+        self.opens = opens
+        self.close = close
+        self.calls: list[tuple[str, dict[str, Any]]] = []
+
+    @staticmethod
+    def _iso(value: str) -> int:
+        return int(datetime.strptime(value, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc).timestamp())
+
+    def get(self, url: str, params: dict[str, Any] | None = None, timeout: float | None = None) -> Any:
+        del timeout
+        params = params or {}
+        self.calls.append((url, params))
+        if "binance" in url:
+            lo, hi = params["startTime"] // 1000, params["endTime"] // 1000
+            bars = [t for t in self.opens if lo <= t <= hi][: params["limit"]]
+            return [[t * 1000, "1", "1", "1", str(self.close), "5"] for t in bars]
+        if "coinbase" in url:
+            lo, hi = self._iso(params["start"]), self._iso(params["end"])
+            bars = [t for t in self.opens if lo <= t <= hi][:300]
+            return [[t, 1.0, 1.0, 1.0, self.close, 5.0] for t in reversed(bars)]
+        if "bitstamp" in url:
+            bars = [t for t in self.opens if t >= params["start"]][: params["limit"]]
+            return {"data": {"ohlc": [{"timestamp": str(t), "close": str(self.close), "volume": "5"} for t in bars]}}
+        raise KeyError(url)
+
+
+@pytest.mark.parametrize("venue", ["binance", "coinbase", "bitstamp"])
+def test_paging_walks_past_short_pages_and_unaligned_start(venue, tmp_path, monkeypatch):
+    """An outage or listing inside one page must not end the walk early."""
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    opens = [START_SECONDS + i * 3600 for i in range(2_500) if not 100 <= i < 105]
+    start = START + timedelta(minutes=30)
+    end = START + timedelta(hours=2_500)
+    server = _CandleServer(opens)
+    frame = StablecoinMidLoader("USDT/USD", start, end, venues=(venue,), http=server).read(with_run=True)
+    expected = pd.to_datetime([t for t in opens if t >= start.timestamp()], unit="s", utc=True)
+    assert frame.index.equals(pd.DatetimeIndex(expected, name="time"))
+    assert frame["n_venues"].eq(1).all()
+    page = {"binance": 1_000, "coinbase": 300, "bitstamp": 1_000}[venue]
+    assert len(server.calls) == -(-2_499 // page)
+
+
+def test_unclosed_and_off_grid_bars_are_dropped(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "fractal.loaders.cex_stable_mid.utcnow", lambda: START + timedelta(hours=1, minutes=30)
+    )
+    frame = _read_transformed(
+        tmp_path,
+        monkeypatch,
+        ("binance",),
+        {
+            "binance": [
+                (START_SECONDS, 1.0, 1.0),
+                (START_SECONDS + 1_800, 1.1, 1.0),
+                (START_SECONDS + 3_600, 1.2, 1.0),
+            ]
+        },
+    )
+    assert frame.index.equals(pd.DatetimeIndex([START], name="time"))
+    assert frame["mid"].tolist() == [1.0]
+
+
+def test_daily_interval_keeps_only_midnight_bars(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    loader = StablecoinMidLoader("USDC/USDT", START, START + timedelta(days=2), interval="1d", venues=("kraken",))
+    loader._rows = {"kraken": [(START_SECONDS, 1.0, 1.0), (START_SECONDS + 3_600, 1.5, 1.0)]}
+    loader.transform()
+    loader.load()
+    frame = loader.read()
+    assert frame.index.equals(pd.DatetimeIndex([START], name="time"))
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"error": ["EQuery:Unknown asset pair"], "result": {}},
+        {"error": [], "result": {"USDCUSDT": [[START_SECONDS, "1"]], "last": 0}},
+        {"error": [], "result": None},
+    ],
+)
+def test_kraken_error_or_malformed_payload_skips_the_venue(payload, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    http = _FakeHttp({_url("kraken"): payload, _url("bitstamp"): _payload("bitstamp", 1.004)})
+    frame = StablecoinMidLoader(
+        "USDC/USDT", START, END, venues=("kraken", "bitstamp"), http=http
+    ).read(with_run=True)
+    assert frame["kraken"].isna().all()
+    assert frame["mid"].tolist() == [pytest.approx(1.004)]
+
+
+def test_binance_error_object_skips_the_venue(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    http = _FakeHttp({_url("binance"): {"code": -1121, "msg": "Invalid symbol."}})
+    frame = StablecoinMidLoader("USDC/USDT", START, END, venues=("binance",), http=http).read(with_run=True)
+    assert frame.empty
+
+
+def test_empty_and_non_empty_reads_share_dtypes(tmp_path, monkeypatch):
+    empty = _read_transformed(tmp_path, monkeypatch, ("binance", "kraken"), {})
+    full = _read_transformed(
+        tmp_path, monkeypatch, ("binance", "kraken"), {"binance": [(START_SECONDS, 1.0, 1.0)]}
+    )
+    assert empty.empty and not full.empty
+    assert empty.index.dtype == full.index.dtype
+    assert empty.dtypes.equals(full.dtypes)
+
+
+@pytest.mark.parametrize("loader_type", ["CSV", "JSON", "PICKLE"])
+def test_cached_read_matches_fresh_read(loader_type, tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    http = _FakeHttp(
+        {
+            _url("binance"): _payload("binance", 1.001),
+            _url("kraken"): _payload("kraken", None),
+            _url("coinbase"): _payload("coinbase", 0.8),
+        }
+    )
+    kwargs = {"venues": ("binance", "kraken", "coinbase"), "loader_type": LoaderType[loader_type]}
+    fresh = StablecoinMidLoader("USDC/USDT", START, END, http=http, **kwargs).read(with_run=True)
+    cached = StablecoinMidLoader("USDC/USDT", START, END, http=_FakeHttp({}), **kwargs).read()
+    pd.testing.assert_frame_equal(fresh, cached)
+    assert fresh["kraken"].isna().all()
+    assert fresh["mid"].iloc[0] == pytest.approx((1.001 + 1.25) / 2)
 
 
 @pytest.mark.integration

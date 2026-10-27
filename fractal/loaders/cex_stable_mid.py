@@ -19,8 +19,6 @@ from requests import RequestException
 from fractal.loaders._dt import to_seconds, to_utc, utcnow
 from fractal.loaders._http import HttpClient, LoaderHttpError
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.binance.binance_client import BinanceHttp
-from fractal.loaders.binance.binance_prices import BinanceSpotPriceLoader
 
 _LOG = logging.getLogger(__name__)
 
@@ -60,7 +58,16 @@ _PAIR_SYMBOLS: dict[str, dict[str, tuple[str, bool]]] = {
     },
 }
 _INTERVAL_SECONDS = {"1h": 3_600, "1d": 86_400}
-_VENUE_ERRORS = (LoaderHttpError, RequestException, KeyError, TypeError, ValueError, StopIteration)
+_PAGE_BARS = {"binance": 1_000, "coinbase": 300, "bitstamp": 1_000}
+_VENUE_ERRORS = (
+    LoaderHttpError,
+    RequestException,
+    AttributeError,
+    IndexError,
+    KeyError,
+    TypeError,
+    ValueError,
+)
 
 RawBar = tuple[int, float, float]
 FetchMethod = Callable[[str], list[RawBar]]
@@ -125,6 +132,8 @@ class StablecoinMidLoader(Loader):
             raise ValueError(f"interval must be one of {sorted(_INTERVAL_SECONDS)}, got {interval!r}")
         self.interval = interval
         self.venues = tuple(venue.lower() for venue in venues)
+        if not self.venues:
+            raise ValueError("venues must name at least one venue")
         if len(set(self.venues)) != len(self.venues):
             raise ValueError("venues must not contain duplicates")
         unknown = sorted(set(self.venues) - set(DEFAULT_CEX_VENUES))
@@ -135,24 +144,47 @@ class StablecoinMidLoader(Loader):
 
     def _cache_key(self) -> str:
         pair = self.pair.replace("/", "-")
-        venues = "-".join(self.venues) or "none"
+        venues = "-".join(self.venues)
         return (
             f"{pair}-{self.interval}-{to_seconds(self.start_time)}-"
             f"{to_seconds(self.end_time)}-{venues}-v1"
         )
 
+    def _pages(self, venue: str) -> list[tuple[int, int]]:
+        """Bar-aligned ``[start, stop)`` request windows of at most one venue page.
+
+        Each window holds at most the venue's page size of candles, so a
+        short page (an outage or a listing inside the window) never ends
+        the walk early.
+        """
+        interval_seconds = _INTERVAL_SECONDS[self.interval]
+        step = _PAGE_BARS[venue] * interval_seconds
+        start = to_seconds(self.start_time)
+        cursor = start + (-start) % interval_seconds
+        end = to_seconds(self.end_time)
+        windows: list[tuple[int, int]] = []
+        while cursor < end:
+            windows.append((cursor, min(end, cursor + step)))
+            cursor += step
+        return windows
+
     def _fetch_binance(self, symbol: str) -> list[RawBar]:
-        loader = BinanceSpotPriceLoader(
-            ticker=symbol,
-            interval=self.interval,
-            start_time=self.start_time,
-            end_time=self.end_time,
-            http=BinanceHttp(self._http),
-        )
-        return [
-            (int(row["openTime"].timestamp()), float(row["close"]), float(row["volume"]))
-            for row in loader.get_klines()
-        ]
+        rows: list[RawBar] = []
+        for start, stop in self._pages("binance"):
+            payload = self._http.get(
+                "https://api.binance.com/api/v3/klines",
+                params={
+                    "symbol": symbol,
+                    "interval": self.interval,
+                    "startTime": start * 1000,
+                    "endTime": stop * 1000 - 1,
+                    "limit": _PAGE_BARS["binance"],
+                },
+            )
+            if not isinstance(payload, list):
+                raise LoaderHttpError(f"Binance klines error for {symbol}: {str(payload)[:160]}")
+            rows.extend((int(row[0]) // 1000, float(row[4]), float(row[5])) for row in payload)
+        return rows
 
     def _fetch_kraken(self, symbol: str) -> list[RawBar]:
         payload = self._http.get(
@@ -177,36 +209,31 @@ class StablecoinMidLoader(Loader):
 
     def _fetch_coinbase(self, symbol: str) -> list[RawBar]:
         interval_seconds = _INTERVAL_SECONDS[self.interval]
-        start = to_seconds(self.start_time)
-        end = to_seconds(self.end_time)
         rows: list[RawBar] = []
-        cursor = start
-        while cursor < end:
-            stop = min(end, cursor + 300 * interval_seconds)
+        for start, stop in self._pages("coinbase"):
+            # ``end`` is inclusive: the last bar opens one interval before ``stop``.
+            last_open = stop - 1 - (stop - 1) % interval_seconds
             payload = self._http.get(
                 f"https://api.exchange.coinbase.com/products/{symbol}/candles",
                 params={
                     "granularity": interval_seconds,
-                    "start": _iso_utc(cursor),
-                    "end": _iso_utc(stop - interval_seconds),
+                    "start": _iso_utc(start),
+                    "end": _iso_utc(last_open),
                 },
             )
-            if isinstance(payload, dict):
+            if not isinstance(payload, list):
                 raise LoaderHttpError(f"Coinbase candles error for {symbol}: {str(payload)[:160]}")
             rows.extend((int(row[0]), float(row[4]), float(row[5])) for row in payload)
-            cursor = stop
         return rows
 
     def _fetch_bitstamp(self, symbol: str) -> list[RawBar]:
         interval_seconds = _INTERVAL_SECONDS[self.interval]
-        start = to_seconds(self.start_time)
-        end = to_seconds(self.end_time)
         rows: list[RawBar] = []
-        cursor = start
-        while cursor < end:
+        for start, _ in self._pages("bitstamp"):
+            # No ``end`` parameter: with one, Bitstamp anchors the page on ``end``.
             payload = self._http.get(
                 f"https://www.bitstamp.net/api/v2/ohlc/{symbol}/",
-                params={"step": interval_seconds, "limit": 1000, "start": cursor},
+                params={"step": interval_seconds, "limit": _PAGE_BARS["bitstamp"], "start": start},
             )
             if not isinstance(payload, dict):
                 raise TypeError("Bitstamp OHLC response must be an object")
@@ -217,7 +244,6 @@ class StablecoinMidLoader(Loader):
                 (int(row["timestamp"]), float(row["close"]), float(row["volume"]))
                 for row in batch
             )
-            cursor += 1000 * interval_seconds
         return rows
 
     def _fetch_venue(self, venue: str, symbol: str) -> list[RawBar]:
@@ -289,14 +315,20 @@ class StablecoinMidLoader(Loader):
         else:
             self._read(self._cache_key())
         columns = ["mid", "n_venues", *self.venues]
-        if self._data is None or self._data.empty:
-            # explicit unit: pandas 3 gives an empty index second resolution
-            return pd.DataFrame(columns=columns, index=pd.DatetimeIndex([], dtype="datetime64[ns, UTC]", name="time"))
-        frame = self._data[columns].copy()
-        frame["mid"] = pd.to_numeric(frame["mid"], errors="coerce")
-        frame["n_venues"] = pd.to_numeric(frame["n_venues"], errors="raise").astype("int64")
-        for venue in self.venues:
-            frame[venue] = pd.to_numeric(frame[venue], errors="coerce")
+        if self._data is None:
+            self._data = pd.DataFrame(columns=["time", *columns])
+        # Empty and non-empty reads share one path, so their dtypes (including
+        # the index resolution, which differs between pandas 2 and 3) agree.
+        frame = pd.DataFrame(
+            {
+                "mid": pd.to_numeric(self._data["mid"], errors="coerce").astype("float64"),
+                "n_venues": pd.to_numeric(self._data["n_venues"], errors="raise").astype("int64"),
+                **{
+                    venue: pd.to_numeric(self._data[venue], errors="coerce").astype("float64")
+                    for venue in self.venues
+                },
+            }
+        )
         frame.index = self._utc_index("time", unit="s")
         return frame
 
