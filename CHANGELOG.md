@@ -15,6 +15,8 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`FredSeriesLoader`** (`fractal.loaders.fred`) — one daily FRED series (default `DGS3MO`) from the keyless `fredgraph.csv` download as a `RateHistory`; published percent is converted to a decimal (`percent_to_decimal`), each row is indexed by when it becomes known (`availability_lag_days`, default 1: the value for day d is usable from d + 1 00:00 UTC), missing days are dropped, and the window keeps the value already known at `start_time`.
+- **`HttpClient.get_text`** — GET returning the raw body for CSV/text endpoints, with the same retries and HTTP error reporting as `get`; existing methods are unchanged.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
