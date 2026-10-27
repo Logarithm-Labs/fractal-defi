@@ -4,16 +4,25 @@ The loader returns one row per event over a UTC ``[start_time, end_time)``
 window. ``assets`` is scaled by the market loan token's decimals and signed
 from the vault's perspective: ``ReallocateSupply`` is positive and
 ``ReallocateWithdraw`` is negative. ``shares`` remains the unsigned raw event
-quantity because the API does not expose share decimals.
+quantity because the API does not expose share decimals. ``caller`` is the
+``msg.sender`` of ``MetaMorpho.reallocate``; ``is_public_allocator`` marks
+callers equal to the configured PublicAllocator of the event's chain.
+``log_index`` keeps events with identical payloads in one transaction
+distinguishable.
+
+Raw amounts arrive as JSON numbers when small and as decimal strings when
+large; both are parsed as exact integers before scaling.
 """
 import hashlib
+import math
+import warnings
 from collections.abc import Hashable, Mapping
 from datetime import datetime
 from typing import Any, ClassVar
 
 import pandas as pd
 
-from fractal.loaders._dt import to_seconds, to_utc, utcnow
+from fractal.loaders._dt import to_utc, utcnow
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.morpho import MorphoLoaderException, graphql_query
@@ -28,7 +37,7 @@ PUBLIC_ALLOCATORS: dict[int, str] = {
 _PAGE_SIZE_MAX = 1000
 _SKIP_CAP = 10_000
 _SLICE_SECONDS = 6 * 60 * 60
-_CACHE_SCHEMA = "v1"
+_CACHE_SCHEMA = "v2"
 _EVENT_TYPES = {"ReallocateSupply", "ReallocateWithdraw"}
 
 _REALLOCATIONS_QUERY = """
@@ -49,6 +58,31 @@ def _event_key(item: Mapping[str, Any]) -> Hashable:
     return item.get("id") or (item.get("hash"), item.get("logIndex"))
 
 
+def _epoch_ceil(moment: datetime) -> int:
+    """Smallest whole epoch second not before ``moment``.
+
+    Events carry whole-second timestamps, so a fractional window bound
+    ``t`` admits exactly the seconds ``>= ceil(t)``.
+    """
+    return math.ceil(moment.timestamp())
+
+
+def _raw_int(value: Any) -> int:
+    """Exact integer from a GraphQL BigInt delivered as a number or a string."""
+    if isinstance(value, bool):
+        raise MorphoLoaderException(f"Morpho GraphQL: expected an integer amount, got {value!r}")
+    if isinstance(value, int):
+        return value
+    text = str(value).strip()
+    try:
+        return int(text)
+    except ValueError:
+        number = float(text)
+        if not math.isfinite(number) or not number.is_integer():
+            raise MorphoLoaderException(f"Morpho GraphQL: expected an integer amount, got {value!r}") from None
+        return int(number)
+
+
 def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
     return pd.DataFrame({
         "timestamp": pd.Series(dtype="int64"),
@@ -58,7 +92,9 @@ def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
         "event_type": pd.Series(dtype="object"),
         "assets": pd.Series(dtype="float64"),
         "shares": pd.Series(dtype="object"),
+        "caller": pd.Series(dtype="object"),
         "transaction_hash": pd.Series(dtype="object"),
+        "log_index": pd.Series(dtype="int64"),
         "is_public_allocator": pd.Series(dtype=bool),
     })[list(columns)]
 
@@ -66,9 +102,15 @@ def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
 class MorphoReallocationsLoader(Loader):
     """Load MetaMorpho reallocation events for one chain and UTC window.
 
+    The window is walked in 6-hour slices; a slice whose ``countTotal``
+    exceeds the API ``skip`` cap is bisected until each part fits. A slice
+    that yields fewer distinct events than its ``countTotal`` emits a
+    ``UserWarning`` instead of failing.
+
     Args:
         chain_id: EVM chain id.
-        start_time: inclusive beginning of the UTC window.
+        start_time: inclusive beginning of the UTC window (fractional seconds
+            round up to the next whole second).
         end_time: exclusive end of the UTC window; current UTC time when omitted.
         page_size: GraphQL page size, at most 1000.
         public_allocators: chain-to-address mapping used for
@@ -86,7 +128,9 @@ class MorphoReallocationsLoader(Loader):
         "event_type",
         "assets",
         "shares",
+        "caller",
         "transaction_hash",
+        "log_index",
         "is_public_allocator",
     )
 
@@ -121,7 +165,7 @@ class MorphoReallocationsLoader(Loader):
         allocator_hash = hashlib.sha256(allocator_config.encode()).hexdigest()[:12]
         return (
             f"schema-{_CACHE_SCHEMA}-chain-{self.chain_id}-"
-            f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-"
+            f"{_epoch_ceil(self.start_time)}-{_epoch_ceil(self.end_time)}-"
             f"page-{self.page_size}-allocators-{allocator_hash}"
         )
 
@@ -172,11 +216,17 @@ class MorphoReallocationsLoader(Loader):
                     f"reallocation slice [{lower}, {upper}] requires skip {skip} above the API cap"
                 )
             page, _ = self._page(lower, upper, skip)
+        if total is not None and len(rows) < total:
+            warnings.warn(
+                f"MorphoReallocationsLoader: slice [{lower}, {upper}] on chain {self.chain_id} returned "
+                f"{len(rows)} distinct events of countTotal {total}",
+                stacklevel=3,
+            )
         return rows
 
     def extract(self) -> None:
-        start = int(to_seconds(self.start_time))
-        end = int(to_seconds(self.end_time))
+        start = _epoch_ceil(self.start_time)
+        end = _epoch_ceil(self.end_time)
         items: list[dict[str, Any]] = []
         for lower in range(start, end, _SLICE_SECONDS):
             upper = min(lower + _SLICE_SECONDS, end) - 1
@@ -194,7 +244,7 @@ class MorphoReallocationsLoader(Loader):
         vault = item.get("vault") or {}
         chain = vault.get("chain") or {}
         chain_id = int(chain.get("id", self.chain_id))
-        assets = abs(float(item["assets"])) / 10 ** int(loan_asset["decimals"])
+        assets = abs(_raw_int(item["assets"])) / 10 ** int(loan_asset["decimals"])
         if event_type == "ReallocateWithdraw":
             assets = -assets
         caller = str(item.get("caller") or "").lower()
@@ -205,11 +255,12 @@ class MorphoReallocationsLoader(Loader):
             "vault_address": str(vault.get("address") or "").lower(),
             "event_type": event_type,
             "assets": assets,
-            "shares": abs(int(item["shares"])),
+            "shares": abs(_raw_int(item["shares"])),
+            "caller": caller,
             "transaction_hash": str(item.get("hash") or "").lower(),
-            "is_public_allocator": caller == self.public_allocators.get(chain_id),
+            "log_index": int(item.get("logIndex") or 0),
+            "is_public_allocator": bool(caller) and caller == self.public_allocators.get(chain_id),
             "_event_key": _event_key(item),
-            "_log_index": int(item.get("logIndex") or 0),
         }
 
     def _normalise_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
@@ -220,6 +271,9 @@ class MorphoReallocationsLoader(Loader):
         frame["chain_id"] = frame["chain_id"].astype("int64")
         frame["assets"] = frame["assets"].astype("float64")
         frame["shares"] = frame["shares"].map(int).astype("object")
+        frame["log_index"] = frame["log_index"].astype("int64")
+        for column in ("market_id", "vault_address", "caller", "transaction_hash"):
+            frame[column] = frame[column].fillna("").astype(str)
         if frame["is_public_allocator"].dtype != bool:
             frame["is_public_allocator"] = frame["is_public_allocator"].map(
                 lambda value: str(value).lower() == "true"
@@ -236,7 +290,7 @@ class MorphoReallocationsLoader(Loader):
         frame = pd.DataFrame(rows)
         frame = frame.drop_duplicates("_event_key", keep="first")
         frame = frame.sort_values(
-            ["timestamp", "chain_id", "transaction_hash", "_log_index"], kind="stable"
+            ["timestamp", "chain_id", "transaction_hash", "log_index"], kind="stable"
         ).reset_index(drop=True)
         self._data = self._normalise_frame(frame)
 
