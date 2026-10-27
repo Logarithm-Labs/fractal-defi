@@ -15,6 +15,7 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`block_bootstrap`** (`fractal.core.base.strategy.bootstrap`) — moving-block bootstrap percentile CIs for daily series such as backtest P&L or returns: several block lengths driven by one seeded draw (common random numbers), the widest per-length interval as the headline CI, and joint resampling of aligned columns; `block_bootstrap_indices`, `percentile_ci` and `widest_block_ci` for custom statistics.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
