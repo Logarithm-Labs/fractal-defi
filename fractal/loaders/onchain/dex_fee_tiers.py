@@ -19,8 +19,14 @@ lower bound on swap cost (no price impact, hooks or gas).
 ``project``, ``symbol``, ``pool_meta``, ``fee_pct``, ``fee_resolution_pct``,
 ``fee_source``, ``tvl_usd``, ``eligible``) plus ``in_range_liquidity``
 (Uniswap V3 only), eligible and cheapest first.
+
+:func:`cheapest_fee_tier` merges this frame with the DefiLlama reader's
+(``DefiLlamaDexFeeTierLoader``, same columns): on-chain
+rows replace DefiLlama's for the projects read on chain
+(:attr:`OnchainDexFeeTierReader.covered_projects`), DefiLlama supplies the
+other projects, and the cheapest eligible pool is kept per pair.
 """
-from collections.abc import Iterable, Mapping
+from collections.abc import Collection, Iterable, Mapping
 from typing import ClassVar
 
 import numpy as np
@@ -31,7 +37,7 @@ from fractal.loaders.rpc import BlockTag, JsonRpcClient, decode_address, decode_
 from fractal.loaders.rpc import function_selector as _sel
 from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 
-__all__ = ["UNISWAP_V3_FEE_TIERS", "OnchainDexFeeTierReader"]
+__all__ = ["UNISWAP_V3_FEE_TIERS", "OnchainDexFeeTierReader", "cheapest_fee_tier", "merge_fee_tiers"]
 
 UNISWAP_V3_FEE_TIERS = (100, 500, 3_000, 10_000)  # hundredths of a basis point
 _GET_POOL = _sel("getPool(address,address,uint24)")
@@ -86,6 +92,12 @@ class OnchainDexFeeTierReader:
         self._rpc = JsonRpcClient(rpc_url, http=http)
         self._decimals: dict[str, int] = {}
 
+    @property
+    def covered_projects(self) -> frozenset[str]:
+        """Projects this reader reads on chain (whether or not a pool exists)."""
+        return frozenset({"uniswap-v3"} if self.factory else set()) | frozenset(
+            {"curve-dex"} if self.curve_pools else set())
+
     def _word(self, to: str, data: str) -> int:
         return decode_words(self._rpc.eth_call(to, data, block=self.block), 1)[0]
 
@@ -136,3 +148,66 @@ class OnchainDexFeeTierReader:
         if frame.empty or not bool(frame["eligible"].iloc[0]):
             return None
         return frame.iloc[0]
+
+
+def merge_fee_tiers(
+    defillama: pd.DataFrame | None,
+    onchain: pd.DataFrame | None,
+    *,
+    covered_projects: Collection[str] | None = None,
+    min_tvl_usd: float | None = None,
+) -> pd.DataFrame:
+    """Candidate pools of one or more pairs from both fee-tier sources.
+
+    On-chain rows come first; DefiLlama rows are kept only for projects not
+    in ``covered_projects`` (default: the projects present in ``onchain``;
+    pass :attr:`OnchainDexFeeTierReader.covered_projects` so a project read
+    on chain without a pool also hides its DefiLlama rows). With
+    ``min_tvl_usd``, ``eligible`` is recomputed for both as a known fee and
+    ``tvl_usd >= min_tvl_usd`` (an unknown TVL is not eligible); otherwise
+    each source's ``eligible`` is kept. Extra columns (``chain``, ``pair``,
+    ...) pass through.
+    """
+    frames = [f for f in (onchain, defillama) if f is not None]
+    onchain = onchain if onchain is not None else pd.DataFrame(columns=OnchainDexFeeTierReader.COLUMNS)
+    covered = set(onchain["project"]) if covered_projects is None else set(covered_projects)
+    if defillama is not None:
+        frames[-1] = defillama[~defillama["project"].isin(covered)]
+    columns = list(dict.fromkeys(OnchainDexFeeTierReader.COLUMNS + [c for f in frames for c in f.columns]))
+    frames = [f.reindex(columns=columns) for f in frames if not f.empty]
+    if not frames:
+        return pd.DataFrame(columns=columns)
+    merged = pd.concat(frames, ignore_index=True)
+    merged = merged.astype({"fee_pct": "float64", "tvl_usd": "float64"})
+    if min_tvl_usd is not None:
+        merged["eligible"] = merged["fee_pct"].notna() & (merged["tvl_usd"] >= float(min_tvl_usd))
+    merged["eligible"] = merged["eligible"].eq(True)  # a missing flag is not eligible
+    return merged
+
+
+def cheapest_fee_tier(
+    defillama: pd.DataFrame | None,
+    onchain: pd.DataFrame | None,
+    *,
+    covered_projects: Collection[str] | None = None,
+    min_tvl_usd: float | None = None,
+    by: str | list[str] | None = None,
+) -> pd.DataFrame:
+    """Cheapest eligible pool per pair from the DefiLlama and on-chain frames.
+
+    Candidates are :func:`merge_fee_tiers`; among eligible ones the lowest
+    ``fee_pct`` wins, ties to the larger ``tvl_usd`` (then on-chain first).
+    ``by`` names the columns identifying a pair (``None``: the frames hold
+    one pair). One row per pair that has an eligible pool; pairs without
+    one are left out.
+    """
+    merged = merge_fee_tiers(defillama, onchain, covered_projects=covered_projects, min_tvl_usd=min_tvl_usd)
+    live = merged[merged["eligible"]]
+    if live.empty:
+        return live.reset_index(drop=True)
+    ranked = live.sort_values(["fee_pct", "tvl_usd"], ascending=[True, False], kind="stable", na_position="last")
+    keys = [by] if isinstance(by, str) else list(by or [])
+    best = ranked.groupby(keys, sort=True, dropna=False).head(1) if keys else ranked.head(1)
+    if keys:
+        best = best.sort_values(keys, kind="stable")
+    return best.reset_index(drop=True)
