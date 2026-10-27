@@ -12,4 +12,5 @@ Submodules
    fractal.loaders.onchain.debt_token_flows
    fractal.loaders.onchain.dex_fee_tiers
    fractal.loaders.onchain.gas
+   fractal.loaders.onchain.oft_fees
    fractal.loaders.onchain.uniswap_v3_swaps
