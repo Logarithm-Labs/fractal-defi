@@ -12,20 +12,30 @@ latency between the two block times.
 The source event carries no nonce (CCTP V2 assigns it off chain), so the
 join uses, in order:
 
-1. ``nonces`` — ``(burn tx hash, log index) -> nonce`` supplied by the
-   caller, for example from Circle's Iris messages API; matched against
-   ``MessageReceived``'s indexed nonce;
+1. Iris nonces — either ``iris_messages`` (rows of
+   :class:`~fractal.loaders.bridges.cctp.CctpMessagesLoader`, one frame per
+   source transaction or concatenated), assigned to the burns of each
+   transaction in log order by amount and destination
+   (:func:`assign_iris_nonces`), or an explicit ``(burn tx hash, log index)
+   -> nonce`` map, which wins; matched against ``MessageReceived``'s
+   indexed nonce;
 2. a fingerprint of the burn message — mint recipient, amount, sender and
    ``maxFee`` — taking the first unused receipt at or after the burn time.
 
 Burns left unmatched (still in flight, or minted after the grace window)
 are kept as rows with ``join == "unmatched"``.
 
+With ``targeted=True`` the destination is not scanned in full: only the
+``MessageReceived`` logs whose indexed nonce is one of the burns' Iris
+nonces are requested (topic filter), and the ``MintAndWithdraw`` of each
+hit is read from its transaction receipt. Burns without an Iris nonce then
+stay unmatched.
+
 Events are decoded with :mod:`fractal.loaders.bridges.decoders`.
 """
 import hashlib
 from collections import defaultdict
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import Any, ClassVar
 
@@ -49,6 +59,7 @@ __all__ = [
     "MESSAGE_TRANSMITTER_V2",
     "TOKEN_MESSENGER_V2",
     "CctpTransfersLoader",
+    "assign_iris_nonces",
     "cctp_mode",
     "join_transfers",
 ]
@@ -142,6 +153,46 @@ def join_transfers(
     return matched, unmatched
 
 
+def _missing(value: Any) -> bool:
+    return value is None or (not isinstance(value, str) and bool(pd.isna(value)))
+
+
+def assign_iris_nonces(
+    burns: Iterable[Mapping[str, Any]],
+    messages: pd.DataFrame | Iterable[Mapping[str, Any]],
+) -> dict[tuple[str, int], str]:
+    """Assign Iris message nonces to on-chain burns: ``{(burn tx, log index): nonce}``.
+
+    ``messages`` are :class:`~fractal.loaders.bridges.cctp.CctpMessagesLoader`
+    rows (``tx_hash``, ``nonce``, ``amount_raw``, ``dst_domain``) in the order
+    Iris returns them. Within each transaction, burns are taken in log order
+    and each gets the first unused message whose amount and destination
+    agree (a missing field matches anything). Messages without a nonce yet
+    are skipped. Pass every burn of a transaction, whatever its destination,
+    so the log-order assignment stays aligned.
+    """
+    rows = messages.to_dict("records") if isinstance(messages, pd.DataFrame) else list(messages)
+    by_tx: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for row in rows:
+        if not _missing(row.get("nonce")) and not _missing(row.get("tx_hash")):
+            by_tx[str(row["tx_hash"]).lower()].append(row)
+    out: dict[tuple[str, int], str] = {}
+    grouped: dict[str, list[Mapping[str, Any]]] = defaultdict(list)
+    for burn in burns:
+        grouped[str(burn["tx"]).lower()].append(burn)
+    for tx, group in grouped.items():
+        free = list(by_tx.get(tx, []))
+        for burn in sorted(group, key=lambda b: int(b["log_index"])):
+            hit = next((m for m in free
+                        if (_missing(m.get("amount_raw")) or int(m["amount_raw"]) == int(burn["amount"]))
+                        and (_missing(m.get("dst_domain")) or int(m["dst_domain"]) == int(burn["dst_domain"]))),
+                       None)
+            if hit is not None:
+                free.remove(hit)
+                out[(tx, int(burn["log_index"]))] = _b32(hex_to_int(hit["nonce"]))
+    return out
+
+
 # ------------------------------------------------------------------ loader
 class CctpTransfersLoader(Loader):
     """Realised CCTP V2 transfers on one route with burns in ``[start_time, end_time)``.
@@ -163,6 +214,9 @@ class CctpTransfersLoader(Loader):
         start_time / end_time: burn window (naive = UTC).
         grace_seconds: how long after ``end_time`` to look for mints.
         nonces: optional ``(burn tx hash, log index) -> nonce`` map.
+        iris_messages: optional ``CctpMessagesLoader`` rows for the window's
+            burn transactions (see :func:`assign_iris_nonces`).
+        targeted: look up destination receipts by Iris nonce only.
         token_decimals: decimals of the burned token (USDC: 6).
         with_gas: read both legs' receipts for native gas.
     """
@@ -184,6 +238,8 @@ class CctpTransfersLoader(Loader):
         end_time: datetime,
         grace_seconds: int = 6 * 3_600,
         nonces: Mapping[tuple[str, int], str] | None = None,
+        iris_messages: pd.DataFrame | Iterable[Mapping[str, Any]] | None = None,
+        targeted: bool = False,
         token_decimals: int = 6,
         with_gas: bool = False,
         chunk_size: int = 10_000,
@@ -197,7 +253,14 @@ class CctpTransfersLoader(Loader):
         if self.end_time <= self.start_time:
             raise ValueError("end_time must be after start_time")
         self.grace_seconds = int(grace_seconds)
-        self.nonces = dict(nonces or {})
+        self.nonces = {(str(tx).lower(), int(i)): _b32(hex_to_int(n)) for (tx, i), n in (nonces or {}).items()}
+        if iris_messages is None:
+            self.iris_messages: list[dict[str, Any]] = []
+        elif isinstance(iris_messages, pd.DataFrame):
+            self.iris_messages = iris_messages.to_dict("records")
+        else:
+            self.iris_messages = [dict(m) for m in iris_messages]
+        self.targeted = bool(targeted)
         self.token_decimals = int(token_decimals)
         self.with_gas = bool(with_gas)
         self.chunk_size = int(chunk_size)
@@ -209,12 +272,15 @@ class CctpTransfersLoader(Loader):
 
     def _cache_key(self) -> str:
         nonce_tag = ""
-        if self.nonces:
+        if self.nonces or self.iris_messages:
             items = sorted(f"{tx}:{i}:{n}" for (tx, i), n in self.nonces.items())
+            items += sorted("iris:" + ":".join(str(m.get(k)) for k in ("tx_hash", "nonce", "amount_raw", "dst_domain"))
+                            for m in self.iris_messages)
             nonce_tag = "-n" + hashlib.sha256(",".join(items).encode()).hexdigest()[:12]
         gas = "-gas" if self.with_gas else ""
+        mode = "-targeted" if self.targeted else ""
         return (f"cctp-{self.src_domain}-{self.dst_domain}-{to_seconds(self.start_time)}-"
-                f"{to_seconds(self.end_time)}-{self.grace_seconds}{nonce_tag}{gas}")
+                f"{to_seconds(self.end_time)}-{self.grace_seconds}{nonce_tag}{gas}{mode}")
 
     @staticmethod
     def _range(rpc: JsonRpcClient, start: int, end: int) -> tuple[int, int] | None:
@@ -237,25 +303,46 @@ class CctpTransfersLoader(Loader):
     def _logs(self, rpc: JsonRpcClient, address: str, topic: str, blocks: tuple[int, int]) -> list[dict]:
         return list(rpc.iter_logs(address, [topic], blocks[0], blocks[1], chunk_size=self.chunk_size))
 
+    def _received_targeted(self, nonces: list[str], blocks: tuple[int, int]) -> list[dict]:
+        """``MessageReceived`` logs with one of ``nonces``; mints from each hit's receipt."""
+        received = []
+        for i in range(0, len(nonces), 100):  # OR list per topic position, in batches
+            topics = [TOPIC_CCTP_V2_MESSAGE_RECEIVED, None, nonces[i:i + 100]]
+            received += [_received(log) for log in self._dst.iter_logs(
+                MESSAGE_TRANSMITTER_V2, topics, blocks[0], blocks[1], chunk_size=self.chunk_size)]
+        mints = []
+        for tx in dict.fromkeys(r["tx"] for r in received):
+            logs = self._dst.get_transaction_receipt(tx).get("logs") or []
+            mints += [_mint(log) for log in logs
+                      if str(log.get("address", "")).lower() == TOKEN_MESSENGER_V2 and log.get("topics")
+                      and str(log["topics"][0]).lower() == TOPIC_CCTP_V2_MINT_AND_WITHDRAW]
+        _pair_mints(received, mints)
+        return received
+
     def extract(self) -> None:
         start, end = to_seconds(self.start_time), to_seconds(self.end_time)
         burns: list[dict] = []
+        nonces = dict(self.nonces)
         src_blocks = self._range(self._src, start, end)
         if src_blocks is not None:
             decoded = [_burn(log) for log in
                        self._logs(self._src, TOKEN_MESSENGER_V2, TOPIC_CCTP_V2_DEPOSIT_FOR_BURN, src_blocks)]
+            # every burn of a transaction takes part in the log-order assignment, whatever its destination
+            nonces = {**assign_iris_nonces(decoded, self.iris_messages), **nonces}
             burns = self._timed(self._src, [b for b in decoded if b["dst_domain"] == self.dst_domain], {})
         received: list[dict] = []
         dst_blocks = self._range(self._dst, start, end + self.grace_seconds) if burns else None
-        if dst_blocks is not None:
-            received = [r for r in (_received(log) for log in self._logs(
-                self._dst, MESSAGE_TRANSMITTER_V2, TOPIC_CCTP_V2_MESSAGE_RECEIVED, dst_blocks))
-                if r["src_domain"] == self.src_domain]
+        if dst_blocks is not None and self.targeted:
+            wanted = sorted({nonces[(b["tx"], b["log_index"])] for b in burns if (b["tx"], b["log_index"]) in nonces})
+            received = self._received_targeted(wanted, dst_blocks) if wanted else []
+        elif dst_blocks is not None:
+            received = [_received(log) for log in
+                        self._logs(self._dst, MESSAGE_TRANSMITTER_V2, TOPIC_CCTP_V2_MESSAGE_RECEIVED, dst_blocks)]
             mints = [_mint(log) for log in
                      self._logs(self._dst, TOKEN_MESSENGER_V2, TOPIC_CCTP_V2_MINT_AND_WITHDRAW, dst_blocks)]
             _pair_mints(received, mints)
-            self._timed(self._dst, received, {})
-        matched, unmatched = join_transfers(burns, received, self.nonces)
+        received = self._timed(self._dst, [r for r in received if r["src_domain"] == self.src_domain], {})
+        matched, unmatched = join_transfers(burns, received, nonces)
         rows = [self._row(burn, rec, how) for burn, rec, how in matched]
         rows += [self._row(burn, None, "unmatched") for burn in unmatched]
         self._data = pd.DataFrame(rows, columns=self._columns())
