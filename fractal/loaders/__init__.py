@@ -9,6 +9,14 @@ from fractal.loaders.binance import (
     BinanceSpotPriceLoader,
 )
 from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
+from fractal.loaders.bridges import (
+    CCTP_DOMAIN_CHAINS,
+    CCTP_DOMAINS,
+    CctpFastAllowanceLoader,
+    CctpFeeLoader,
+    CctpMessagesLoader,
+    LayerZeroScanLoader,
+)
 from fractal.loaders.defillama import (
     DefiLlamaDEXLoader,
     DefiLlamaPoolLoader,
@@ -71,6 +79,8 @@ from fractal.loaders.thegraph import (
 )
 
 __all__ = [
+    "CCTP_DOMAINS",
+    "CCTP_DOMAIN_CHAINS",
     "AaveV2EthereumLoader",
     "AaveV3ArbitrumLoader",
     "AaveV3EthereumLoader",
@@ -90,6 +100,9 @@ __all__ = [
     "BorosMarketHistory",
     "BorosMarketInfo",
     "BorosMarketLoader",
+    "CctpFastAllowanceLoader",
+    "CctpFeeLoader",
+    "CctpMessagesLoader",
     "CctpTransfersLoader",
     "ConstantFundingsLoader",
     "DEXHistory",
@@ -112,6 +125,7 @@ __all__ = [
     "HyperliquidPerpsPricesLoader",
     "JsonRpcClient",
     "KlinesHistory",
+    "LayerZeroScanLoader",
     "LendingHistory",
     "Loader",
     "LoaderType",
