@@ -157,3 +157,131 @@ def test_horizon_capacity_moves_with_controller_drift_direction(supply, borrow, 
         assert horizon >= static
     else:
         assert horizon <= static
+
+
+def _reference_horizon_apy(utilization_path, rate_at_target, elapsed, fee, reference_path=None):
+    """Independent loop: log-space drift clamp, drift before accrual, geometric annualization."""
+    def error(u):
+        return (u - 0.9) / 0.1 if u > 0.9 else (u - 0.9) / 0.9
+
+    low_log = math.log(MIN_RATE_AT_TARGET / rate_at_target)
+    high_log = math.log(MAX_RATE_AT_TARGET / rate_at_target)
+    log_drift, log_growth = 0.0, 0.0
+    for k, (u, dt) in enumerate(zip(utilization_path, elapsed, strict=True)):
+        offset = 0.0 if reference_path is None else error(reference_path[k])
+        log_drift = min(max(log_drift + 50.0 * (error(u) - offset) * dt, low_log), high_log)
+        log_growth += dt * math.log1p(supply_apy_from_curve(u, rate_at_target * math.exp(log_drift), fee))
+    return math.expm1(log_growth / sum(elapsed))
+
+
+@pytest.mark.parametrize("use_reference", [False, True])
+def test_horizon_average_matches_independent_loop_on_a_varying_path(use_reference):
+    path = np.linspace(0.97, 0.80, 240)
+    elapsed = np.where(np.arange(240) % 3 == 0, 2.0, 1.0) / (365.0 * 24.0)
+    reference = np.full(240, 0.93) if use_reference else None
+    got = horizon_average_supply_apy(path, 0.06, elapsed, 0.1, drift_reference_utilization=reference)
+    expected = _reference_horizon_apy(path, 0.06, elapsed, 0.1, reference)
+    assert got == pytest.approx(expected, rel=1e-12)
+
+
+def test_drift_reference_at_the_path_itself_freezes_rate_at_target():
+    elapsed = np.full(24 * 30, 1.0 / (365.0 * 24.0))
+    u = 0.97
+    frozen = horizon_average_supply_apy(u, 0.05, elapsed, 0.05, drift_reference_utilization=u)
+    drifting = horizon_average_supply_apy(u, 0.05, elapsed, 0.05)
+    assert frozen == pytest.approx(supply_apy_from_curve(u, 0.05, 0.05), rel=1e-12)
+    assert drifting > frozen * 1.5
+
+
+def test_horizon_capacity_is_the_boundary_of_the_horizon_apy():
+    elapsed = np.full(7 * 24, 1.0 / (365.0 * 24.0))
+    supply, borrow, rate_at_target = 100.0, 93.0, 0.05
+    target = supply_apy_from_curve(0.91, rate_at_target)
+    capacity = horizon_supply_capacity(target, supply, borrow, rate_at_target, elapsed, tolerance=1e-12)
+    assert 0.0 < capacity < math.inf
+
+    def horizon(deposit):
+        return horizon_average_supply_apy(borrow / (supply + deposit), rate_at_target, elapsed)
+
+    assert horizon(capacity) >= target
+    assert horizon(capacity * (1.0 + 1e-9)) < target
+
+
+def test_horizon_drift_bases_bracket_the_static_capacity_above_target():
+    elapsed = np.full(14 * 24, 1.0 / (365.0 * 24.0))
+    supply, borrow, rate_at_target = 100.0, 97.0, 0.05
+    target = supply_apy_from_curve(0.93, rate_at_target)
+    static = static_supply_capacity(target, supply, borrow, rate_at_target, alpha=0.1, beta=0.05)
+    by_basis = {
+        basis: horizon_supply_capacity(
+            target, supply, borrow, rate_at_target, elapsed, alpha=0.1, beta=0.05, tolerance=1e-12,
+            drift_basis=basis,
+        )
+        for basis in ("absolute", "deposit", "frozen")
+    }
+    assert by_basis["frozen"] == pytest.approx(static, rel=1e-9)
+    assert by_basis["deposit"] < static < by_basis["absolute"]
+
+
+def test_horizon_deposit_basis_earns_the_instant_apy_at_zero_deposit():
+    elapsed = np.full(48, 1.0 / (365.0 * 24.0))
+    supply, borrow, rate_at_target = 100.0, 80.0, 0.05
+    instant = supply_apy_from_curve(0.8, rate_at_target)
+    # just below the instant APY: absolute drift (u < target, rate falls) misses it, the deposit basis clears it
+    target = instant * (1.0 - 1e-3)
+    assert horizon_supply_capacity(target, supply, borrow, rate_at_target, elapsed) == 0.0
+    assert horizon_supply_capacity(target, supply, borrow, rate_at_target, elapsed, drift_basis="deposit") > 0.0
+
+
+def test_static_capacity_accepts_crowding_in_beta():
+    args = {"supply": 100.0, "borrow": 90.0, "rate_at_target": 0.06, "fee": 0.1, "alpha": 0.1, "beta": -0.5}
+    target_apy = supply_apy_from_curve(0.8, args["rate_at_target"], args["fee"])
+    capacity = static_supply_capacity(target_apy=target_apy, **args)
+    assert capacity == pytest.approx(_numeric_static_capacity(target_apy=target_apy, **args), rel=1e-10)
+    assert capacity < static_supply_capacity(target_apy, 100.0, 90.0, 0.06, 0.1, alpha=0.1)
+    utilization = utilization_after_deposit(100.0, 90.0, capacity, 0.1, -0.5)
+    assert supply_apy_from_curve(utilization, 0.06, 0.1) == pytest.approx(target_apy, rel=1e-9)
+
+
+def test_capacity_is_zero_below_target_even_when_the_response_lifts_utilization():
+    supply, borrow, rate_at_target, alpha, beta = 100.0, 80.0, 0.05, 0.9, 0.1
+    target = supply_apy_from_curve(0.85, rate_at_target)
+    large = utilization_after_deposit(supply, borrow, 1e6, alpha, beta)
+    assert supply_apy_from_curve(large, rate_at_target) > target  # documented: still reported as 0
+    assert static_supply_capacity(target, supply, borrow, rate_at_target, alpha=alpha, beta=beta) == 0.0
+    elapsed = np.full(24, 1.0 / (365.0 * 24.0))
+    assert horizon_supply_capacity(
+        target, supply, borrow, rate_at_target, elapsed, alpha=alpha, beta=beta, drift_basis="frozen"
+    ) == 0.0
+
+
+@pytest.mark.parametrize(
+    "kwargs,match",
+    [
+        ({"elapsed_years_per_step": np.array([])}, "must not be empty"),
+        ({"elapsed_years_per_step": np.array([1.0, -0.5])}, ">= 0"),
+        ({"elapsed_years_per_step": np.zeros(3)}, "positive total"),
+        ({"alpha": 1.1}, "alpha"),
+        ({"beta": 1.1}, "beta"),
+        ({"alpha": math.nan}, "finite"),
+        ({"drift_basis": "relative"}, "drift_basis"),
+        ({"tolerance": 0.0}, "tolerance"),
+    ],
+)
+def test_horizon_capacity_rejects_invalid_inputs(kwargs, match):
+    call = {"target_apy": 0.03, "supply": 100.0, "borrow": 90.0, "rate_at_target": 0.05,
+            "elapsed_years_per_step": np.full(3, 1.0 / 8760.0)}
+    call.update(kwargs)
+    with pytest.raises(ValueError, match=match):
+        horizon_supply_capacity(**call)
+
+
+def test_utilization_helpers_reject_out_of_range_inputs():
+    with pytest.raises(ValueError, match="beta"):
+        utilization_after_deposit(100.0, 90.0, 10.0, beta=1.5)
+    with pytest.raises(ValueError, match=">= 0"):
+        utilization_after_deposit(-1.0, 90.0, 10.0)
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        horizon_average_supply_apy(0.9, 0.05, 1.0, drift_reference_utilization=1.2)
+    assert utilization_after_deposit(0.0, 0.0, 10.0, beta=1.0) == 0.0
+    assert utilization_after_deposit(100.0, 90.0, 10.0, alpha=1.0, beta=1.0) == 1.0
