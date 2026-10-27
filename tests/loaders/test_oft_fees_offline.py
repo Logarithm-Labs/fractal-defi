@@ -5,12 +5,11 @@ import math
 import pytest
 
 from fractal.loaders import JsonRpcClient
+from fractal.loaders.bridges.decoders import TOPIC_OFT_SENT, decode_oft_sent
 from fractal.loaders.onchain.oft_fees import (
     OFT_FEE_COLUMNS,
     TOPIC_DVN_FEE_PAID,
     TOPIC_EXECUTOR_FEE_PAID,
-    TOPIC_OFT_SENT,
-    decode_oft_sent,
     oft_fee_from_receipt,
     oft_send_fees,
 )
@@ -78,12 +77,13 @@ class _Node:
 
 
 @pytest.mark.core
-def test_decode_oft_sent():
-    sent = decode_oft_sent(oft_sent(3, G1, 10, 9))
+def test_fixture_logs_match_the_shared_oft_sent_decoder():
+    log = oft_sent(3, G1, 10, 9)
+    sent = decode_oft_sent(log["topics"], log["data"])
     assert sent == {"guid": G1, "dst_eid": 30_110, "from_address": SENDER, "amount_sent_ld": 10,
                     "amount_received_ld": 9}
-    with pytest.raises(ValueError, match="not an OFTSent"):
-        decode_oft_sent(executor_fee(1, 5))
+    with pytest.raises(ValueError, match="not a OFTSent"):
+        decode_oft_sent(executor_fee(1, 5)["topics"], "0x")
 
 
 @pytest.mark.core

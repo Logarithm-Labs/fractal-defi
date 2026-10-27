@@ -21,9 +21,7 @@ join uses, in order:
 Burns left unmatched (still in flight, or minted after the grace window)
 are kept as rows with ``join == "unmatched"``.
 
-The decoders here cover the V2 layouts locally; the bridge decoders in
-``fractal.loaders.bridges`` (V1 ``MintAndWithdraw`` and other bridges) live
-in a separate change and can be consolidated with these later.
+Events are decoded with :mod:`fractal.loaders.bridges.decoders`.
 """
 import hashlib
 from collections import defaultdict
@@ -37,58 +35,35 @@ import pandas as pd
 from fractal.loaders._dt import to_seconds, to_utc
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.rpc import JsonRpcClient, event_topic, hex_to_int, topic_to_address
+from fractal.loaders.bridges.decoders import (
+    TOPIC_CCTP_V2_DEPOSIT_FOR_BURN,
+    TOPIC_CCTP_V2_MESSAGE_RECEIVED,
+    TOPIC_CCTP_V2_MINT_AND_WITHDRAW,
+    decode_cctp_v2_deposit_for_burn,
+    decode_cctp_v2_message_received,
+    decode_cctp_v2_mint_and_withdraw,
+)
+from fractal.loaders.rpc import JsonRpcClient, hex_to_int
 
 __all__ = [
     "MESSAGE_TRANSMITTER_V2",
     "TOKEN_MESSENGER_V2",
     "CctpTransfersLoader",
     "cctp_mode",
-    "decode_burn_message_body",
-    "decode_deposit_for_burn",
-    "decode_message_received",
-    "decode_mint_and_withdraw",
     "join_transfers",
 ]
 
 # Same CREATE2 addresses on every EVM chain CCTP V2 supports.
 TOKEN_MESSENGER_V2 = "0x28b5a0e9c621a5badaa536219b3a228c8168cf5d"
 MESSAGE_TRANSMITTER_V2 = "0x81d40f21f12a8f0e3252bccb954d722d4c464b64"
-TOPIC_DEPOSIT_FOR_BURN = event_topic(
-    "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)")
-TOPIC_MESSAGE_RECEIVED = event_topic("MessageReceived(address,uint32,bytes32,bytes32,uint32,bytes)")
-TOPIC_MINT_AND_WITHDRAW = event_topic("MintAndWithdraw(address,uint256,address,uint256)")
-_BODY_MIN_LEN = 228  # BurnMessageV2 up to and including expirationBlock
-
-
-# ---------------------------------------------------------------- decoding
-def _data(log: Mapping[str, Any]) -> bytes:
-    raw = str(log.get("data") or "0x")
-    return bytes.fromhex(raw[2:] if raw.startswith("0x") else raw)
-
-
-def _word(data: bytes, index: int) -> int:
-    chunk = data[32 * index: 32 * (index + 1)]
-    if len(chunk) < 32:
-        raise ValueError(f"ABI data too short for word {index}")
-    return int.from_bytes(chunk, "big")
-
-
-def _bytes_at(data: bytes, head_index: int) -> bytes:
-    """A dynamic ``bytes`` argument whose offset sits in head word ``head_index``."""
-    offset = _word(data, head_index)
-    length = int.from_bytes(data[offset: offset + 32], "big")
-    if offset + 32 + length > len(data):
-        raise ValueError("ABI bytes value runs past the end of data")
-    return data[offset + 32: offset + 32 + length]
 
 
 def _b32(value: int) -> str:
     return "0x" + format(value, "064x")
 
 
-def _meta(log: Mapping[str, Any]) -> dict[str, Any]:
-    return {"tx": str(log["transactionHash"]).lower(), "log_index": hex_to_int(log["logIndex"]),
+def _with_meta(decoded: dict[str, Any], log: Mapping[str, Any]) -> dict[str, Any]:
+    return {**decoded, "tx": str(log["transactionHash"]).lower(), "log_index": hex_to_int(log["logIndex"]),
             "block": hex_to_int(log["blockNumber"])}
 
 
@@ -99,63 +74,16 @@ def cctp_mode(min_finality: int) -> str:
     return "standard" if min_finality >= 2000 else "other"
 
 
-def decode_deposit_for_burn(log: Mapping[str, Any]) -> dict[str, Any]:
-    """``DepositForBurn(burnToken idx, amount, depositor idx, mintRecipient, destinationDomain,
-    destinationTokenMessenger, destinationCaller, maxFee, minFinalityThreshold idx, hookData)``."""
-    topics, data = log["topics"], _data(log)
-    return {
-        "burn_token": topic_to_address(topics[1]),
-        "depositor": topic_to_address(topics[2]),
-        "min_finality": hex_to_int(topics[3]),
-        "amount": _word(data, 0),
-        "mint_recipient": _b32(_word(data, 1)),
-        "dst_domain": _word(data, 2),
-        "max_fee": _word(data, 5),
-        "hook_data": "0x" + _bytes_at(data, 6).hex(),
-        **_meta(log),
-    }
+def _burn(log: Mapping[str, Any]) -> dict[str, Any]:
+    return _with_meta(decode_cctp_v2_deposit_for_burn(log["topics"], log["data"]), log)
 
 
-def decode_burn_message_body(body: bytes) -> dict[str, Any]:
-    """BurnMessageV2: version, burnToken, mintRecipient, amount, messageSender, maxFee,
-    feeExecuted, expirationBlock, hookData (packed, 32-byte fields after a 4-byte version)."""
-    if len(body) < _BODY_MIN_LEN:
-        raise ValueError(f"burn message body has {len(body)} bytes, expected at least {_BODY_MIN_LEN}")
-
-    def field(offset: int) -> int:
-        return int.from_bytes(body[offset: offset + 32], "big")
-
-    return {
-        "burn_token": "0x" + body[16:36].hex(),
-        "mint_recipient": _b32(field(36)),
-        "amount": field(68),
-        "message_sender": "0x" + body[112:132].hex(),
-        "max_fee": field(132),
-        "fee_executed": field(164),
-    }
+def _received(log: Mapping[str, Any]) -> dict[str, Any]:
+    return _with_meta(decode_cctp_v2_message_received(log["topics"], log["data"]), log)
 
 
-def decode_message_received(log: Mapping[str, Any]) -> dict[str, Any]:
-    """``MessageReceived(caller idx, sourceDomain, nonce idx, sender, finalityThresholdExecuted idx,
-    messageBody)``; ``body`` is the decoded burn message, or ``None`` for other messages."""
-    topics, data = log["topics"], _data(log)
-    body = _bytes_at(data, 2)
-    return {
-        "caller": topic_to_address(topics[1]),
-        "nonce": _b32(hex_to_int(topics[2])),
-        "finality_executed": hex_to_int(topics[3]),
-        "src_domain": _word(data, 0),
-        "sender": _b32(_word(data, 1)),
-        "body": decode_burn_message_body(body) if len(body) >= _BODY_MIN_LEN else None,
-        **_meta(log),
-    }
-
-
-def decode_mint_and_withdraw(log: Mapping[str, Any]) -> dict[str, Any]:
-    """V2 ``MintAndWithdraw(mintRecipient idx, amount, mintToken idx, feeCollected)``."""
-    topics, data = log["topics"], _data(log)
-    return {"mint_recipient": topic_to_address(topics[1]), "mint_token": topic_to_address(topics[2]),
-            "amount": _word(data, 0), "fee_collected": _word(data, 1), **_meta(log)}
+def _mint(log: Mapping[str, Any]) -> dict[str, Any]:
+    return _with_meta(decode_cctp_v2_mint_and_withdraw(log["topics"], log["data"]), log)
 
 
 def _pair_mints(received: list[dict], mints: list[dict]) -> None:
@@ -314,17 +242,17 @@ class CctpTransfersLoader(Loader):
         burns: list[dict] = []
         src_blocks = self._range(self._src, start, end)
         if src_blocks is not None:
-            decoded = [decode_deposit_for_burn(log)
-                       for log in self._logs(self._src, TOKEN_MESSENGER_V2, TOPIC_DEPOSIT_FOR_BURN, src_blocks)]
+            decoded = [_burn(log) for log in
+                       self._logs(self._src, TOKEN_MESSENGER_V2, TOPIC_CCTP_V2_DEPOSIT_FOR_BURN, src_blocks)]
             burns = self._timed(self._src, [b for b in decoded if b["dst_domain"] == self.dst_domain], {})
         received: list[dict] = []
         dst_blocks = self._range(self._dst, start, end + self.grace_seconds) if burns else None
         if dst_blocks is not None:
-            received = [r for r in (decode_message_received(log) for log in self._logs(
-                self._dst, MESSAGE_TRANSMITTER_V2, TOPIC_MESSAGE_RECEIVED, dst_blocks))
+            received = [r for r in (_received(log) for log in self._logs(
+                self._dst, MESSAGE_TRANSMITTER_V2, TOPIC_CCTP_V2_MESSAGE_RECEIVED, dst_blocks))
                 if r["src_domain"] == self.src_domain]
-            mints = [decode_mint_and_withdraw(log)
-                     for log in self._logs(self._dst, TOKEN_MESSENGER_V2, TOPIC_MINT_AND_WITHDRAW, dst_blocks)]
+            mints = [_mint(log) for log in
+                     self._logs(self._dst, TOKEN_MESSENGER_V2, TOPIC_CCTP_V2_MINT_AND_WITHDRAW, dst_blocks)]
             _pair_mints(received, mints)
             self._timed(self._dst, received, {})
         matched, unmatched = join_transfers(burns, received, self.nonces)

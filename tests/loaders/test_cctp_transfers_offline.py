@@ -6,17 +6,19 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from fractal.loaders.bridges.decoders import TOPIC_CCTP_V2_DEPOSIT_FOR_BURN as TOPIC_DEPOSIT_FOR_BURN
+from fractal.loaders.bridges.decoders import TOPIC_CCTP_V2_MESSAGE_RECEIVED as TOPIC_MESSAGE_RECEIVED
+from fractal.loaders.bridges.decoders import TOPIC_CCTP_V2_MINT_AND_WITHDRAW as TOPIC_MINT_AND_WITHDRAW
+from fractal.loaders.bridges.decoders import (
+    decode_cctp_v2_burn_message_body,
+    decode_cctp_v2_deposit_for_burn,
+    decode_cctp_v2_message_received,
+)
 from fractal.loaders.onchain.cctp_transfers import (
     MESSAGE_TRANSMITTER_V2,
     TOKEN_MESSENGER_V2,
-    TOPIC_DEPOSIT_FOR_BURN,
-    TOPIC_MESSAGE_RECEIVED,
-    TOPIC_MINT_AND_WITHDRAW,
     CctpTransfersLoader,
     cctp_mode,
-    decode_burn_message_body,
-    decode_deposit_for_burn,
-    decode_message_received,
 )
 from fractal.loaders.rpc import encode_address, event_topic
 
@@ -128,16 +130,16 @@ def _loader(nonces=None, with_gas=False, src_logs=None):
 
 
 @pytest.mark.core
-def test_decoders_read_the_v2_layouts():
-    burn = decode_deposit_for_burn(SRC_LOGS[0])
+def test_fixture_logs_match_the_shared_v2_decoders():
+    burn = decode_cctp_v2_deposit_for_burn(SRC_LOGS[0]["topics"], SRC_LOGS[0]["data"])
     assert (burn["amount"], burn["max_fee"], burn["min_finality"], burn["dst_domain"]) == (1_000 * E6, E6, 1000, 6)
     assert burn["depositor"] == D1 and burn["burn_token"] == USDC and burn["hook_data"] == "0x0102"
     assert burn["mint_recipient"] == "0x" + encode_address(R1)
-    rec = decode_message_received(DST_LOGS[2])
+    rec = decode_cctp_v2_message_received(DST_LOGS[2]["topics"], DST_LOGS[2]["data"])
     assert rec["nonce"] == _t(1) and rec["src_domain"] == 0 and rec["finality_executed"] == 1000
     assert rec["body"]["fee_executed"] == 500_000 and rec["body"]["message_sender"] == D1
     with pytest.raises(ValueError, match="at least 228"):
-        decode_burn_message_body(b"\0" * 100)
+        decode_cctp_v2_burn_message_body(b"\0" * 100)
     assert [cctp_mode(m) for m in (500, 1000, 1500, 2000)] == ["fast", "fast", "other", "standard"]
     signature = "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
     assert event_topic(signature) == TOPIC_DEPOSIT_FOR_BURN

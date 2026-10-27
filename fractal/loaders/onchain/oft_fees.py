@@ -16,9 +16,8 @@ gives:
   also split over the transaction's ``OFTSent`` events.
 
 USD values are produced only from a caller-supplied
-``native_price(timestamp)``. ``OFTSent`` is decoded locally; the bridge
-decoders in ``fractal.loaders.bridges`` (``OFTReceived`` and others) live in
-a separate change and can be consolidated with this one later.
+``native_price(timestamp)``. ``OFTSent`` is decoded with
+:func:`fractal.loaders.bridges.decoders.decode_oft_sent`.
 """
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
@@ -26,11 +25,11 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from fractal.loaders.rpc import JsonRpcClient, decode_words, event_topic, gas_cost_wei, hex_to_int, topic_to_address
+from fractal.loaders.bridges.decoders import TOPIC_OFT_SENT, decode_oft_sent
+from fractal.loaders.rpc import JsonRpcClient, decode_words, event_topic, gas_cost_wei, hex_to_int
 
-__all__ = ["OFT_FEE_COLUMNS", "decode_oft_sent", "oft_fee_from_receipt", "oft_send_fees"]
+__all__ = ["OFT_FEE_COLUMNS", "oft_fee_from_receipt", "oft_send_fees"]
 
-TOPIC_OFT_SENT = event_topic("OFTSent(bytes32,uint32,address,uint256,uint256)")
 TOPIC_EXECUTOR_FEE_PAID = event_topic("ExecutorFeePaid(address,uint256)")
 TOPIC_DVN_FEE_PAID = event_topic("DVNFeePaid(address[],address[],uint256[])")
 _WEI = 10 ** 18
@@ -44,16 +43,6 @@ OFT_FEE_COLUMNS = [
 def _topic0(log: Mapping[str, Any]) -> str:
     topics = log.get("topics") or []
     return str(topics[0]).lower() if topics else ""
-
-
-def decode_oft_sent(log: Mapping[str, Any]) -> dict[str, Any]:
-    """``OFTSent(guid idx, dstEid, fromAddress idx, amountSentLD, amountReceivedLD)`` (raw local units)."""
-    if _topic0(log) != TOPIC_OFT_SENT or len(log["topics"]) < 3:
-        raise ValueError("log is not an OFTSent event")
-    dst_eid, sent, received = decode_words(log["data"], 3)
-    return {"guid": "0x" + format(int(log["topics"][1], 16), "064x"), "dst_eid": dst_eid,
-            "from_address": topic_to_address(log["topics"][2]), "amount_sent_ld": sent,
-            "amount_received_ld": received}
 
 
 def _dvn_fees_wei(data_hex: str) -> int:
@@ -95,8 +84,8 @@ def oft_fee_from_receipt(
             seen_fee = True
         elif topic == TOPIC_OFT_SENT and str(log.get("address", "")).lower() == want_oapp:
             n_sent += 1
-            sent = decode_oft_sent(log)
-            if sent["guid"] == want_guid:
+            sent = decode_oft_sent(log["topics"], log["data"])
+            if "0x" + format(int(sent["guid"], 16), "064x") == want_guid:
                 found = sent
                 native_wei = segment_wei if seen_fee else None
             segment_wei, seen_fee = 0, False
