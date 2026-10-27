@@ -1,11 +1,15 @@
 """Offline tests for :class:`MorphoMarketsLoader` against a fake GraphQL client:
 chain enumeration, cursor-style paging, the client-side filters, the
-server-side ``listed`` clause, cache round-trip and malformed payloads."""
-from datetime import datetime, timezone
+server-side ``listed`` clause, cache round-trip and malformed payloads; and the
+point-in-time :func:`market_sizes_as_of` snapshot rules."""
+import math
+import re
+from datetime import datetime, timedelta, timezone
 
+import pandas as pd
 import pytest
 
-from fractal.loaders import LoaderType, MorphoMarketListing, MorphoMarketsLoader
+from fractal.loaders import LoaderType, MorphoMarketListing, MorphoMarketsLoader, market_sizes_as_of
 from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException
 from fractal.loaders.morpho_markets import discover_chains
 
@@ -204,3 +208,112 @@ def test_created_markets_carry_a_creation_timestamp():
     listings = MorphoMarketsLoader(http=_FakeMarketsHttp()).read(with_run=True)
     assert all(listing.creation_timestamp == 1725966209 for listing in listings)
     assert datetime.fromtimestamp(listings[0].creation_timestamp, tz=timezone.utc).year == 2024
+
+
+AS_OF = datetime(2026, 6, 15, 13, 0, tzinfo=timezone.utc)
+_ALIAS_RE = re.compile(r'(m\d+): marketById\(marketId: "(0x[0-9a-f]{64})", chainId: (\d+)\)')
+
+
+def _hourly(start: datetime, hours: int, supply, borrow=None) -> dict:
+    """``hours`` hourly points from ``start``, newest first like the API; values from callables of the hour."""
+    xs = [int((start + timedelta(hours=h)).timestamp()) for h in range(hours)]
+    sup = [{"x": x, "y": supply(h)} for h, x in enumerate(xs)]
+    bor = [{"x": x, "y": (borrow or supply)(h)} for h, x in enumerate(xs)]
+    return {"supplyAssetsUsd": sup[::-1], "borrowAssetsUsd": bor[::-1]}
+
+
+class _FakeHistoryHttp:
+    """Answers aliased ``marketById`` queries with every stored point (window filtering is the helper's job)."""
+
+    def __init__(self, histories: dict[str, dict | None]):
+        self.histories = histories
+        self.calls = []
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        assert url == MORPHO_GRAPHQL_URL
+        self.calls.append(json)
+        data = {}
+        for alias, market_id, _chain in _ALIAS_RE.findall(json["query"]):
+            history = self.histories.get(market_id)
+            data[alias] = None if history is None else {"historicalState": history}
+        return {"data": data}
+
+
+@pytest.mark.core
+def test_as_of_at_or_before_never_uses_points_after_the_instant():
+    market = "0x" + "a" * 64
+    start = AS_OF - timedelta(hours=3)
+    http = _FakeHistoryHttp({market: _hourly(start, 6, lambda h: 100.0 + h, lambda h: 50.0 + h)})
+    frame = market_sizes_as_of([(1, market)], AS_OF, http=http)
+    assert list(frame.columns) == ["chain_id", "market_id", "time", "supply_assets_usd", "borrow_assets_usd"]
+    row = frame.iloc[0]
+    assert row["time"] == pd.Timestamp(AS_OF)  # hours +1 and +2 exist but are after the as-of instant
+    assert row["supply_assets_usd"] == 103.0 and row["borrow_assets_usd"] == 53.0
+    assert http.calls[0]["variables"]["o"] == {
+        "startTimestamp": int((AS_OF - timedelta(days=1)).timestamp()),
+        "endTimestamp": int(AS_OF.timestamp()), "interval": "HOUR",
+    }
+
+
+@pytest.mark.core
+def test_as_of_end_of_day_takes_the_closing_point_of_the_utc_day():
+    market = "0x" + "b" * 64
+    day = AS_OF.replace(hour=0)
+    http = _FakeHistoryHttp({market: _hourly(day - timedelta(hours=2), 30, float)})
+    frame = market_sizes_as_of([(1, market)], AS_OF, rule="end_of_day", http=http)
+    assert frame["time"].iloc[0] == pd.Timestamp(day + timedelta(days=1))  # the next midnight, after AS_OF
+    assert frame["supply_assets_usd"].iloc[0] == 26.0
+    variables = http.calls[0]["variables"]["o"]
+    assert variables["startTimestamp"] == int(day.timestamp())
+    assert variables["endTimestamp"] == int((day + timedelta(days=1)).timestamp())
+
+
+@pytest.mark.core
+def test_as_of_snapshot_is_one_point_and_skips_null_supply():
+    market = "0x" + "c" * 64
+    history = _hourly(AS_OF - timedelta(hours=2), 3, lambda h: 10.0 + h)
+    history["supplyAssetsUsd"][0]["y"] = None  # newest supply point is null → the previous hour is the snapshot
+    history["borrowAssetsUsd"] = [p for p in history["borrowAssetsUsd"] if p["x"] != int(AS_OF.timestamp()) - 3600]
+    frame = market_sizes_as_of([(1, market)], AS_OF, http=_FakeHistoryHttp({market: history}))
+    assert frame["time"].iloc[0] == pd.Timestamp(AS_OF - timedelta(hours=1))
+    assert frame["supply_assets_usd"].iloc[0] == 11.0
+    assert math.isnan(frame["borrow_assets_usd"].iloc[0])  # borrow is never taken from a different point
+
+
+@pytest.mark.core
+def test_as_of_batches_keep_input_order_and_mark_markets_without_history():
+    ids = ["0x" + c * 64 for c in "fed"]
+    histories = {
+        ids[0]: _hourly(AS_OF - timedelta(hours=1), 2, lambda h: 1.0),
+        ids[1]: {"supplyAssetsUsd": [], "borrowAssetsUsd": []},  # not created yet at AS_OF
+        ids[2]: _hourly(AS_OF - timedelta(hours=1), 2, lambda h: 3.0),
+    }
+    http = _FakeHistoryHttp(histories)
+    listing = MorphoMarketsLoader(http=_FakeMarketsHttp()).read(with_run=True)[0]
+    histories[listing.market_id] = _hourly(AS_OF, 1, lambda h: 7.0)
+    frame = market_sizes_as_of([(8453, ids[0]), (1, ids[1].upper().replace("0X", "0x")), (1, ids[2]), listing],
+                               AS_OF, batch=2, http=http)
+    assert len(http.calls) == 2
+    assert frame["market_id"].tolist() == [ids[0], ids[1], ids[2], listing.market_id]
+    assert frame["chain_id"].tolist() == [8453, 1, 1, listing.chain_id]
+    assert frame["supply_assets_usd"].iloc[[0, 2, 3]].tolist() == [1.0, 3.0, 7.0]
+    assert math.isnan(frame["supply_assets_usd"].iloc[1]) and pd.isna(frame["time"].iloc[1])
+    assert str(frame["time"].dt.tz) == "UTC"
+
+
+@pytest.mark.core
+def test_as_of_validation_and_unknown_markets():
+    market = "0x" + "a" * 64
+    http = _FakeHistoryHttp({})
+    assert market_sizes_as_of([], AS_OF, http=http).empty and not http.calls
+    with pytest.raises(MorphoLoaderException, match="not found"):
+        market_sizes_as_of([(1, market)], AS_OF, http=http)
+    with pytest.raises(ValueError, match="market_id"):
+        market_sizes_as_of([(1, 'x" } evil: chains { id')], AS_OF, http=http)
+    with pytest.raises(ValueError, match="rule"):
+        market_sizes_as_of([(1, market)], AS_OF, rule="nearest", http=http)
+    with pytest.raises(ValueError, match="batch"):
+        market_sizes_as_of([(1, market)], AS_OF, batch=0, http=http)
+    with pytest.raises(ValueError, match="max_staleness"):
+        market_sizes_as_of([(1, market)], AS_OF, max_staleness=timedelta(0), http=http)
+    assert len(http.calls) == 1  # validation fails before any request
