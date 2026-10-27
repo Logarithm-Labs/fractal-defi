@@ -21,7 +21,7 @@ when the observations carry `fee_growth0/1`.
 - **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
 - **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
 - **`market_sizes_as_of`** — point-in-time USD supply/borrow sizes for many Morpho markets (aliased, batched `historicalState` reads) so a universe can be ranked without survivorship bias; the snapshot rule is explicit (`"at_or_before"` with a staleness bound, or `"end_of_day"`, which looks up to one day ahead).
-- **`MorphoMarketLoader` / `LendingHistory` market totals** — opt-in token-unit supply/borrow assets and normalized supply/borrow shares for realized share-price yield and utilization calculations (requested only when enabled; BigInts parsed exactly from JSON numbers or decimal/hex strings, null points kept as NaN); `read_loan_price()` returns the loan asset's USD price on the market's bars; opt-in `max_window_days` request chunking for long windows (one request by default); the cache schema is versioned separately from older histories.
+- **`MorphoMarketLoader` / `LendingHistory` market totals** — opt-in token-unit supply/borrow assets and normalized supply/borrow shares for realized share-price yield and utilization calculations (requested only when enabled; BigInts parsed exactly from JSON numbers or decimal/hex strings, null points kept as NaN); `read_loan_price()` returns the loan asset's USD price on the market's bars; opt-in `max_window_days` request chunking for long windows (one request by default); opt-in `allow_gaps` keeps bars the API omits absent instead of raising (separate cache key); `missing_bars()` lists the absent bars of a regular grid; the cache schema is versioned separately from older histories.
 - **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
 - **`examples/morpho_supply/`** — discovery, formula checks, a provider-backed backtest for both strategies (`--strategy rotation|allocation`) and a replication of Baude, Danos & El Khalloufi (arXiv:2608.24206); local registries and results stay gitignored.
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
@@ -226,6 +226,8 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **`MorphoMarketLoader` collateral price join** — the collateral price is left-joined onto the rate bars, so a
+  price point on an hour without rates no longer adds a NaN-rate row that made `read` raise.
 - **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
   the API to the annual APY documented by `LendingHistory`.
 - **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`

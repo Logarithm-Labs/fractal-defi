@@ -47,6 +47,7 @@ from fractal.loaders.structs import (
     SwapsHistory,
     TrajectoryBundle,
     TVLHistory,
+    missing_bars,
 )
 from fractal.loaders.thegraph import (
     AerodromeLoader,
@@ -138,4 +139,5 @@ __all__ = [
     "UniswapV3SwapsLoader",
     "discover_chains",
     "market_sizes_as_of",
+    "missing_bars",
 ]

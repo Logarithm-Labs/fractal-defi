@@ -8,7 +8,7 @@ from datetime import datetime, timedelta, timezone
 import pandas as pd
 import pytest
 
-from fractal.loaders import LendingHistory, LoaderType, MorphoMarketLoader
+from fractal.loaders import LendingHistory, LoaderType, MorphoMarketLoader, missing_bars
 from fractal.loaders._dt import SECONDS_PER_YEAR
 from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException, get_market_info, read_linear_discount
 
@@ -494,3 +494,56 @@ def test_chunking_deduplicates_overlapping_payloads_and_validates_the_window():
         MorphoMarketLoader(MARKET_ID, 1, START, END, max_window_days=0)
     with pytest.raises(ValueError, match="max_window_days"):
         MorphoMarketLoader(MARKET_ID, 1, START, END, interval="DAY", max_window_days=0.5)
+
+
+class _GapHttp(_FakeMorphoHttp):
+    """Removes the bar at ``gap_hour`` from every rate and size series; the collateral price keeps it."""
+
+    def __init__(self, gap_hour: int | None = None, price_only_hours=()):
+        super().__init__()
+        self.gap_hour = gap_hour
+        self.price_only_hours = price_only_hours
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        payload = super().post(url, json=json, timeout=timeout, headers=headers)
+        market = payload["data"]["marketById"]
+        if self.gap_hour is not None:
+            gap_x = int((START + timedelta(hours=self.gap_hour)).timestamp())
+            for key, points in market["historicalState"].items():
+                market["historicalState"][key] = [p for p in points if p["x"] != gap_x]
+        prices = market["collateralAsset"]["historicalPriceUsd"]
+        prices.extend(_at(h, 0.5) for h in self.price_only_hours)
+        return payload
+
+
+@pytest.mark.core
+def test_a_price_only_hour_never_creates_a_rate_bar():
+    # the collateral price has a bar one hour past the rate series' last bar: it must not add a NaN-rate row
+    end = END + timedelta(hours=1)
+    loader = MorphoMarketLoader(MARKET_ID, 1, START, end, http=_GapHttp(price_only_hours=(6,)))
+    history = loader.read(with_run=True)
+    assert len(history) == 6 and history.index[-1] == pd.Timestamp(END)
+    assert len(loader.read_collateral_price()) == 6
+
+
+@pytest.mark.core
+def test_gap_bars_raise_by_default_and_stay_absent_with_allow_gaps():
+    with pytest.raises(ValueError, match="gap"):
+        MorphoMarketLoader(MARKET_ID, 1, START, END, http=_GapHttp(gap_hour=2)).read(with_run=True)
+    loader = MorphoMarketLoader(MARKET_ID, 1, START, END, allow_gaps=True, http=_GapHttp(gap_hour=2))
+    history = loader.read(with_run=True)
+    expected = pd.date_range(START, END, freq="h").delete(2)
+    assert history.index.equals(expected.rename("time"))
+    assert history["borrowing_rate"].notna().all()  # gaps are left absent, never filled
+    assert pd.Timestamp(START + timedelta(hours=2)) not in loader.read_collateral_price().index
+    assert missing_bars(history, START, END).equals(pd.DatetimeIndex([START + timedelta(hours=2)], name="time"))
+    default_key = MorphoMarketLoader(MARKET_ID, 1, START, END)._cache_key()
+    assert loader._cache_key() != default_key and default_key.endswith("-0-v4marketstate")
+
+
+@pytest.mark.core
+def test_allow_gaps_cache_is_never_read_by_a_strict_loader(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    MorphoMarketLoader(MARKET_ID, 1, START, END, allow_gaps=True, http=_GapHttp(gap_hour=2)).read(with_run=True)
+    with pytest.raises(FileNotFoundError):
+        MorphoMarketLoader(MARKET_ID, 1, START, END).read(with_run=False)

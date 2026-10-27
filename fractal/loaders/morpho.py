@@ -8,7 +8,9 @@ interval}) { x y } }`` with points **descending** and APYs as
 fractions; the newest point is the live one (not interval-aligned) and
 is dropped. ``max_window_days`` optionally splits a long window into consecutive
 requests whose payloads are concatenated and de-duplicated by timestamp;
-by default the whole window is one request.
+by default the whole window is one request. A bar the API omits raises
+by default; ``allow_gaps=True`` leaves it absent. Sizes and prices never
+add a bar to the rate grid.
 
 Rates: the API reports effective annual ``borrowApy = exp(r·YEAR) − 1``.
 The loader converts to the **per-bar** exponent the entities apply
@@ -288,6 +290,10 @@ class MorphoMarketLoader(Loader):
             (points on a shared boundary are de-duplicated by timestamp).
             ``None`` (default) sends one request for the whole window. The
             output does not depend on it, so it is not part of the cache key.
+        allow_gaps: when ``True``, bars the API does not return are left
+            absent (never filled) instead of raising; list them with
+            :func:`fractal.loaders.missing_bars`. A bar present with a
+            missing required rate still raises. Defaults to ``False``.
         http: injectable client for offline tests.
     """
 
@@ -303,6 +309,7 @@ class MorphoMarketLoader(Loader):
         compounding: str = "continuous",
         include_market_totals: bool = False,
         max_window_days: float | None = None,
+        allow_gaps: bool = False,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
@@ -326,6 +333,7 @@ class MorphoMarketLoader(Loader):
         if max_window_days is not None and max_window_days * 86_400 < _INTERVAL_SECONDS[interval]:
             raise ValueError(f"max_window_days must cover at least one {interval} bar, got {max_window_days}")
         self.max_window_days = max_window_days
+        self.allow_gaps = bool(allow_gaps)
         self._http = http or HttpClient()
 
     def _cache_key(self) -> str:
@@ -333,6 +341,8 @@ class MorphoMarketLoader(Loader):
             f"{self.chain_id}-{self.market_id}-{self.interval}-{to_seconds(self.start_time)}-"
             f"{to_seconds(self.end_time)}-{self.resolution}-{self.compounding}-"
             f"{int(self.include_market_totals)}-{_CACHE_SCHEMA}"
+            # a gappy history must never be read back by a strict loader; the default key is unchanged
+            + ("-gaps" if self.allow_gaps else "")
         )
 
     def _request_windows(self) -> list[tuple[int, int]]:
@@ -372,14 +382,14 @@ class MorphoMarketLoader(Loader):
             _series_to_df(hist.get("supplyApy"), "supply_apy"),
             _series_to_df(hist.get("utilization"), "utilization"),
             _series_to_df(hist.get("rateAtTarget"), "rate_at_target"),
-            _series_to_df((market.get("collateralAsset") or {}).get("historicalPriceUsd"), "collateral_price_usd"),
         ]
         merged = frames[0]
         for frame in frames[1:]:
             merged = merged.merge(frame, on="x", how="outer")
-        # Sizes are left-joined onto the rate spine: a size series that is not
-        # backfilled must not add rows (or NaNs) to the rate grid.
+        # Sizes and prices are left-joined onto the rate spine: a size or price
+        # point on an hour without rates must not add rows (or NaNs) to the grid.
         optional_frames = [
+            _series_to_df((market.get("collateralAsset") or {}).get("historicalPriceUsd"), "collateral_price_usd"),
             _series_to_df(hist.get("supplyAssetsUsd"), "supply_assets_usd"),
             _series_to_df(hist.get("borrowAssetsUsd"), "borrow_assets_usd"),
             _series_to_df(hist.get("liquidityAssetsUsd"), "liquidity_assets_usd"),
@@ -423,10 +433,10 @@ class MorphoMarketLoader(Loader):
         df = df[(df["time"] >= to_seconds(self.start_time)) & (df["time"] <= to_seconds(self.end_time))]
         df = df.drop_duplicates("time", keep="last").sort_values("time").reset_index(drop=True)
         gaps = df["time"].diff().dropna() != step
-        if gaps.any():
+        if gaps.any() and not self.allow_gaps:
             raise ValueError(
                 f"Morpho history for {self.market_id} has {int(gaps.sum())} gap(s) in its {self.interval} grid; "
-                f"narrow the window instead of filling missing bars"
+                f"narrow the window, or pass allow_gaps=True to keep them absent, instead of filling missing bars"
             )
         bar_seconds = self.resolution * 3600
         if self.compounding == "continuous":
