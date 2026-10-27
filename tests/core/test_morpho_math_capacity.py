@@ -13,6 +13,7 @@ from fractal.core.entities.models.morpho_math import (
     monotone_response,
     rate_at_target_drift,
     rate_at_target_transition_years,
+    realised_supply_apy,
     static_supply_capacity,
     supply_apy_from_curve,
     utilization_after_deposit,
@@ -324,3 +325,21 @@ def test_rate_at_target_transition_years():
     assert math.log(rate_at_target_drift(0.9 + 0.4 * 0.1, years)) == pytest.approx(1.0)
     with pytest.raises(ValueError):
         rate_at_target_transition_years(math.nan)
+
+
+def test_realised_supply_apy_from_share_price_growth():
+    hourly = math.log1p(0.05) / 8760.0
+    times = np.r_[np.arange(10), np.arange(12, 20)] * 3600.0          # one 3 h gap, skipped
+    shares = np.full(times.size, 2.0)
+    assets = 2.0 * np.exp(hourly * times / 3600.0)
+    assets[3] *= 1.5                                                    # disturbs returns 2 and 3 only
+    shares[3] = np.nan                                                  # ... which are therefore skipped
+    assert realised_supply_apy(assets, shares, times) == pytest.approx(0.05, rel=1e-10)
+    daily = np.arange(5) * 86400.0
+    assert realised_supply_apy(np.exp(hourly * 24 * np.arange(5)), np.ones(5), daily,
+                               step_seconds=86400.0) == pytest.approx(0.05, rel=1e-10)
+    assert math.isnan(realised_supply_apy([1.0, 1.1], [1.0, 1.0], [0.0, 7200.0]))
+    with pytest.raises(ValueError, match="increasing"):
+        realised_supply_apy([1.0, 1.1], [1.0, 1.0], [3600.0, 0.0])
+    with pytest.raises(ValueError, match="same length"):
+        realised_supply_apy([1.0], [1.0, 1.0], [0.0, 1.0])

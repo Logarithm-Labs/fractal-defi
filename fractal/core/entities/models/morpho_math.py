@@ -44,6 +44,7 @@ __all__ = [
     "per_bar_borrow_rate",
     "rate_at_target_drift",
     "rate_at_target_transition_years",
+    "realised_supply_apy",
     "static_supply_capacity",
     "supply_apy_curve",
     "supply_apy_curve_array",
@@ -305,7 +306,9 @@ def horizon_average_supply_apy(utilization_path, rate_at_target: float, elapsed_
     ``[MIN_RATE_AT_TARGET, MAX_RATE_AT_TARGET]``, matching the controller-before-
     accrual order. Step APYs compound over their ACT/365 durations; the return
     value is the constant annual APY with the same horizon growth. A scalar
-    utilization broadcasts across an array of step durations.
+    utilization broadcasts across an array of step durations. This compounded
+    mean is never above the arithmetic mean of the step APYs; the two can
+    differ by tens of basis points when the rate moves a lot over the horizon.
 
     By default the controller steers on the absolute error ``err(u)``. A
     ``drift_reference_utilization`` (scalar or path) makes it steer on
@@ -362,6 +365,10 @@ def horizon_supply_capacity(target_apy: float, supply: float, borrow: float, rat
     ``err(u)``, ``"deposit"`` on ``err(u) - err(borrow / supply)`` (only the
     deposit's own effect drifts the rate) and ``"frozen"`` keeps
     ``rate_at_target`` fixed. See :func:`horizon_average_supply_apy`.
+
+    APYs come from the curve. To size against an observed APY that differs
+    from the curve by ``scale = observed / curve`` (constant over the
+    horizon), pass ``target_apy / scale``, as for :func:`static_supply_capacity`.
     """
     if math.isnan(target_apy) or target_apy < 0.0:
         raise ValueError(f"target_apy must be >= 0, got {target_apy}")
@@ -492,3 +499,31 @@ def rate_at_target_transition_years(delta_error: float) -> float:
     if math.isnan(delta_error):
         raise ValueError("delta_error must not be NaN")
     return math.inf if delta_error == 0.0 else 1.0 / (ADJUSTMENT_SPEED * abs(delta_error))
+
+
+def realised_supply_apy(supply_assets, supply_shares, timestamps, step_seconds: float = 3600.0) -> float:
+    """Realised supplier APY from share-price growth.
+
+    The share price is ``supply_assets / supply_shares``. Log returns are
+    taken between consecutive observations exactly ``step_seconds`` apart;
+    other gaps, non-positive shares and non-finite values are skipped. The
+    result is ``expm1(steps_per_year * mean log return)`` with ACT/365 years,
+    comparable to Morpho's APY. ``NaN`` when no return qualifies.
+    """
+    assets = np.asarray(supply_assets, dtype=float).ravel()
+    shares = np.asarray(supply_shares, dtype=float).ravel()
+    times = np.asarray(timestamps, dtype=float).ravel()
+    if not assets.shape == shares.shape == times.shape:
+        raise ValueError("supply_assets, supply_shares and timestamps must have the same length")
+    if not math.isfinite(step_seconds) or step_seconds <= 0.0:
+        raise ValueError(f"step_seconds must be finite and > 0, got {step_seconds}")
+    if np.any(~np.isfinite(times)) or np.any(np.diff(times) <= 0.0):
+        raise ValueError("timestamps must be finite and strictly increasing")
+    valid = np.isfinite(assets) & np.isfinite(shares) & (shares > 0.0) & (assets > 0.0)
+    price = np.where(valid, assets / np.where(valid, shares, 1.0), np.nan)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        returns = np.diff(np.log(price))
+    usable = (np.diff(times) == step_seconds) & np.isfinite(returns)
+    if not usable.any():
+        return math.nan
+    return math.expm1(SECONDS_PER_YEAR / step_seconds * float(returns[usable].mean()))

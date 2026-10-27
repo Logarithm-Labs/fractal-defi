@@ -66,14 +66,21 @@ class MarketPaths:
     supply_apy: np.ndarray
     elapsed_years: np.ndarray
 
-    def horizon_average_supply_apy(self) -> np.ndarray:
-        """Per-market constant APY with the growth of the supply APYs of steps ``1..steps``.
+    def horizon_average_supply_apy(self, compounded: bool = True) -> np.ndarray:
+        """Per-market horizon average of the supply APYs of steps ``1..steps``.
 
-        Step APYs compound over their ACT/365 durations, as in
+        ``compounded=True`` (default): the constant APY with the same growth,
+        step APYs compounding over their ACT/365 durations, as in
         :func:`~fractal.core.entities.models.morpho_math.horizon_average_supply_apy`.
+        ``compounded=False``: the duration-weighted arithmetic mean of the step
+        APYs. The arithmetic mean is never below the compounded one (Jensen);
+        the gap grows with the APY level and its variation over the horizon and
+        can reach tens of basis points when the controller moves the rate a lot.
         """
-        log_growth = np.log1p(self.supply_apy[:, 1:]) @ self.elapsed_years
-        return np.expm1(log_growth / float(self.elapsed_years.sum()))
+        weights = self.elapsed_years / float(self.elapsed_years.sum())
+        if not compounded:
+            return self.supply_apy[:, 1:] @ weights
+        return np.expm1(np.log1p(self.supply_apy[:, 1:]) @ weights)
 
 
 def _market_values(value, markets: int, name: str) -> np.ndarray:
@@ -113,7 +120,8 @@ def simulate_market(supply, borrow, rate_at_target, elapsed_years_per_step, *, f
                     supply_flow: FlowRule | None = None, borrow_flow: FlowRule | None = None,
                     borrow_cap=None, accrue_borrow: bool = True, accrue_supply: bool = True,
                     drift_timing: str = "same_step", initial_utilization=None,
-                    apy_scale=1.0) -> MarketPaths:
+                    apy_scale=1.0, observed_supply_apy=None,
+                    undefined_anchor: str = "clamp") -> MarketPaths:
     """Simulate markets forward under the AdaptiveCurve IRM.
 
     Args:
@@ -144,6 +152,16 @@ def simulate_market(supply, borrow, rate_at_target, elapsed_years_per_step, *, f
             anchored to the observed level) instead of ``B_k / S_k``.
         apy_scale: per-market multiplier of the supply APY, for example the
             ratio of an observed APY to the curve APY at the origin.
+        observed_supply_apy: per-market observed supply APY at the origin, used
+            only by ``undefined_anchor="hold_observed"``.
+        undefined_anchor: what to do where the curve cannot be anchored, i.e.
+            ``rate_at_target <= 0`` or the origin curve APY (unclamped rate,
+            ``u_0``, fee) is ``0``. ``"clamp"`` (default) prices those markets
+            like any other, at the rate clamped to ``MIN_RATE_AT_TARGET``.
+            ``"hold_observed"`` keeps their supply APY at
+            ``observed_supply_apy`` for the whole path (the convention of the
+            research engine this simulator was checked against); utilization,
+            rate and borrow APY paths still evolve.
 
     Supply never falls below ``max(borrow, deposit)``: other suppliers cannot
     withdraw borrowed liquidity or our deposit. Utilization is clamped to
@@ -151,13 +169,16 @@ def simulate_market(supply, borrow, rate_at_target, elapsed_years_per_step, *, f
     """
     if drift_timing not in DRIFT_TIMINGS:
         raise ValueError(f"drift_timing must be one of {DRIFT_TIMINGS}, got {drift_timing!r}")
+    if undefined_anchor not in ("clamp", "hold_observed"):
+        raise ValueError(f"undefined_anchor must be 'clamp' or 'hold_observed', got {undefined_anchor!r}")
+    if undefined_anchor == "hold_observed" and observed_supply_apy is None:
+        raise ValueError("undefined_anchor='hold_observed' needs observed_supply_apy")
     elapsed = np.asarray(elapsed_years_per_step, dtype=float).ravel()
     if elapsed.size == 0 or not np.all(np.isfinite(elapsed)) or np.any(elapsed < 0.0) or elapsed.sum() <= 0.0:
         raise ValueError("elapsed_years_per_step must be non-empty, finite, >= 0 with a positive total")
     steps = elapsed.size
     per_market = [supply, borrow, rate_at_target, fee, apy_scale]
-    if initial_utilization is not None:
-        per_market.append(initial_utilization)
+    per_market += [value for value in (initial_utilization, observed_supply_apy) if value is not None]
     if any(np.ndim(value) > 1 for value in per_market):
         raise ValueError("per-market inputs must be scalars or 1-D arrays")
     shapes = [np.shape(value) for value in per_market]
@@ -196,11 +217,21 @@ def simulate_market(supply, borrow, rate_at_target, elapsed_years_per_step, *, f
             raise ValueError("initial_utilization must be in [0, 1]")
     utilization[:, 0] = u0
     rate_path[:, 0] = np.clip(r0, MIN_RATE_AT_TARGET, MAX_RATE_AT_TARGET)
+    held = np.zeros(markets, dtype=bool)
+    observed = np.zeros(markets)
+    if undefined_anchor == "hold_observed":
+        observed = _market_values(observed_supply_apy, markets, "observed_supply_apy")
+        if not np.all(np.isfinite(observed)):
+            raise ValueError("observed_supply_apy must be finite")
+        origin_curve = np.expm1(adaptive_curve_borrow_rate_array(u0, r0)) * u0 * (1.0 - fees)
+        held = (r0 <= 0.0) | (origin_curve <= 0.0)
 
     def price(column: int) -> None:
         rate = adaptive_curve_borrow_rate_array(utilization[:, column], rate_path[:, column])
         borrow_apy[:, column] = np.expm1(rate)
         supply_apy[:, column] = borrow_apy[:, column] * utilization[:, column] * (1.0 - fees) * scale
+        if held.any():
+            supply_apy[held, column] = observed[held]
 
     price(0)
     for k in range(1, steps + 1):

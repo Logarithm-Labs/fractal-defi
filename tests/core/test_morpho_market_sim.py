@@ -255,3 +255,30 @@ def test_fit_anchored_deadband_recovers_synthetic_parameters():
         fit_anchored_deadband(gap, flow, [])
     with pytest.raises(ValueError, match="same length"):
         fit_anchored_deadband(gap, flow[:-1], [0.1])
+
+
+def test_undefined_anchor_holds_the_observed_apy_or_clamps():
+    elapsed = np.full(24, HOUR)
+    args = ([100.0, 100.0, 100.0], [90.0, 0.0, 90.0], [0.0, 0.05, 0.05], elapsed)
+    held = simulate_market(*args, observed_supply_apy=[0.054, 0.02, 0.03], undefined_anchor="hold_observed")
+    clamped = simulate_market(*args)
+    assert np.all(held.supply_apy[0] == 0.054) and np.all(held.supply_apy[1] == 0.02)
+    assert np.array_equal(held.supply_apy[2], clamped.supply_apy[2])
+    assert np.array_equal(held.utilization, clamped.utilization)
+    assert clamped.supply_apy[0, 0] == pytest.approx(supply_apy_from_curve(0.9, MIN_RATE_AT_TARGET))
+    assert clamped.supply_apy[1, 0] == 0.0
+    with pytest.raises(ValueError, match="observed_supply_apy"):
+        simulate_market(*args, undefined_anchor="hold_observed")
+    with pytest.raises(ValueError, match="undefined_anchor"):
+        simulate_market(*args, undefined_anchor="hold")
+
+
+def test_arithmetic_horizon_mean_is_at_least_the_compounded_mean():
+    elapsed = np.r_[np.full(24, HOUR), np.full(10, 24 * HOUR)]
+    paths = simulate_market(100.0, 98.0, 0.1, elapsed)
+    arithmetic = paths.horizon_average_supply_apy(compounded=False)[0]
+    assert arithmetic == pytest.approx(float(paths.supply_apy[0, 1:] @ elapsed / elapsed.sum()), rel=1e-14)
+    assert arithmetic > paths.horizon_average_supply_apy()[0]
+    flat = simulate_market(100.0, 90.0, 0.05, np.full(5, HOUR), accrue_borrow=False)
+    assert flat.horizon_average_supply_apy(compounded=False)[0] == pytest.approx(
+        flat.horizon_average_supply_apy()[0], rel=1e-14)
