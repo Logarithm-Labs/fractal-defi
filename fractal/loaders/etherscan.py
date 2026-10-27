@@ -32,7 +32,7 @@ import time
 from itertools import combinations
 from typing import Any
 
-from fractal.loaders._http import HttpClient, call_redacted
+from fractal.loaders._http import KEY_REDACTOR, HttpClient, call_redacted
 from fractal.loaders.rpc import BlockTag, RpcCallError, _hex_block, hex_to_int
 
 __all__ = ["ETHERSCAN_V2_URL", "EtherscanClient", "EtherscanError"]
@@ -93,6 +93,10 @@ class EtherscanClient:
                 time.sleep(wait)
             self._last_call = time.monotonic()
 
+    def _scrub(self, text: str) -> str:
+        """``text`` without the key (an error body may echo the request)."""
+        return KEY_REDACTOR.scrub(text, self._api_key)
+
     def request(self, module: str, action: str, **params: Any) -> Any:
         """One API call; returns ``result`` (``[]`` for "no records")."""
         query = {"chainid": self.chain_id, "module": module, "action": action, **params, "apikey": self._api_key}
@@ -103,7 +107,8 @@ class EtherscanClient:
                 raise EtherscanError(f"Etherscan {module}.{action}: non-object payload")
             if module == "proxy" and str(payload.get("status")) != "0":
                 if "error" in payload or "result" not in payload:
-                    raise RpcCallError(f"Etherscan proxy {action} failed: {payload.get('error', payload)!r}")
+                    error = payload.get("error", payload)
+                    raise RpcCallError(self._scrub(f"Etherscan proxy {action} failed: {error!r}"))
                 return payload["result"]
             if str(payload.get("status")) == "1":
                 return payload.get("result")
@@ -115,7 +120,7 @@ class EtherscanClient:
             if any(marker in text.lower() for marker in _RATE_LIMIT_MARKERS) and attempt < self.rate_limit_retries:
                 time.sleep(1.0 + attempt)
                 continue
-            raise EtherscanError(f"Etherscan {module}.{action}: {text[:200]}")
+            raise EtherscanError(f"Etherscan {module}.{action}: {self._scrub(text)[:200]}")
         raise EtherscanError(f"Etherscan {module}.{action}: still rate limited")
 
     def _paged(self, module: str, action: str, lo_key: str, hi_key: str, lo: int, hi: int,

@@ -42,6 +42,9 @@ __all__ = [
     "function_selector",
     "gas_cost_wei",
     "hex_to_int",
+    "is_range_limit_error",
+    "is_splittable_error",
+    "is_transient_error",
     "keccak256",
     "topic_to_address",
     "topic_to_int",
@@ -52,6 +55,42 @@ BlockTag = int | str
 
 class RpcCallError(RuntimeError):
     """JSON-RPC returned an error or a malformed payload."""
+
+
+# ------------------------------------------------------- error classes
+# Providers phrase the same failure differently; these markers are matched
+# case-insensitively against the error text (JSON-RPC error bodies and
+# ``HTTP <status>`` messages of :class:`~fractal.loaders._http.HttpClient`).
+_TRANSIENT_MARKERS = (
+    "temporarily unavailable", "internal error", "-32603", "header not found", "http 5", "http 429",
+    "urlerror", "connection", "remote end closed",
+)
+_RANGE_LIMIT_MARKERS = (
+    "10000", "-32005", "too many", "range", "limit exceeded", "response size", "http 400",
+)
+_SPLIT_MARKERS = ("413", "timeout", "timed out", "smaller result", "exceed")
+
+
+def is_transient_error(exc: BaseException) -> bool:
+    """A provider hiccup worth retrying unchanged (overload, 5xx/429, dropped connection)."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _TRANSIENT_MARKERS)
+
+
+def is_range_limit_error(exc: BaseException) -> bool:
+    """The node refused the block range or the result size (too many logs, range cap)."""
+    text = str(exc).lower()
+    return any(marker in text for marker in _RANGE_LIMIT_MARKERS)
+
+
+def is_splittable_error(exc: BaseException) -> bool:
+    """A failure a smaller block range may avoid: a range/limit error, 413 or a timeout.
+
+    Checked before :func:`is_transient_error`: a range rejection that also
+    looks transient is split rather than retried as-is.
+    """
+    text = str(exc).lower()
+    return is_range_limit_error(exc) or any(marker in text for marker in _SPLIT_MARKERS)
 
 
 # ------------------------------------------------------------------ keccak
