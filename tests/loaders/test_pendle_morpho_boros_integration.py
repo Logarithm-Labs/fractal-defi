@@ -14,6 +14,7 @@ from fractal.loaders import (
     LoaderType,
     MorphoMarketLoader,
     MorphoReallocationsLoader,
+    MorphoVaultLoader,
     PendleMarketLoader,
     PendleOHLCVLoader,
 )
@@ -74,6 +75,18 @@ def test_morpho_reallocations_live(monkeypatch, tmp_path):
     assert list(frame.columns) == list(MorphoReallocationsLoader.COLUMNS)
     assert frame["event_type"].isin(["ReallocateSupply", "ReallocateWithdraw"]).all()
     assert ((frame["assets"] > 0) == (frame["event_type"] == "ReallocateSupply")).all()
+
+
+@pytest.mark.integration
+def test_morpho_vault_history_live(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    end = utcnow() - timedelta(days=1)
+    usdc_base = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913"
+    frame = MorphoVaultLoader(8453, end - timedelta(days=3), end, asset_addresses=[usdc_base]).read(with_run=True)
+    assert list(frame.columns) == list(MorphoVaultLoader.COLUMNS)
+    assert frame["vault_address"].nunique() > 10
+    assert (frame["timestamp"] % 86_400 == 0).all()
+    assert (frame["total_assets_usd"].dropna() >= 0).all()
 
 
 @pytest.mark.integration

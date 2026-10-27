@@ -27,6 +27,7 @@ Submodules
    fractal.loaders.morpho
    fractal.loaders.morpho_markets
    fractal.loaders.morpho_reallocations
+   fractal.loaders.morpho_vaults
    fractal.loaders.pendle
    fractal.loaders.rpc
    fractal.loaders.structs
