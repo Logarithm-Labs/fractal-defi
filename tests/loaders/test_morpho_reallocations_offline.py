@@ -85,10 +85,15 @@ class _FakeReallocationsHttp:
 
 
 class _EventStoreHttp:
-    """Answers each query from an event list by its inclusive timestamp range, ``skip`` and ``first``."""
+    """Answers each query from an event list by its inclusive timestamp range, ``skip`` and ``first``.
 
-    def __init__(self, events: list[dict]):
+    With ``short_pages`` a page that is not the last one comes back one event
+    short and that event never appears on any page, as the live API does.
+    """
+
+    def __init__(self, events: list[dict], short_pages: bool = False):
         self.events = sorted(events, key=lambda event: event["timestamp"])
+        self.short_pages = short_pages
         self.windows: list[tuple[int, int, int]] = []
 
     def post(self, url, json=None, timeout=None, headers=None):
@@ -98,7 +103,9 @@ class _EventStoreHttp:
         lower, upper = where["timestamp_gte"], where["timestamp_lte"]
         self.windows.append((lower, upper, variables["skip"]))
         matching = [event for event in self.events if lower <= event["timestamp"] <= upper]
-        page = matching[variables["skip"]:variables["skip"] + variables["first"]]
+        skip, first = variables["skip"], variables["first"]
+        more_follow = skip + first < len(matching)
+        page = matching[skip:skip + first - (1 if self.short_pages and more_follow else 0)]
         info = {"count": len(page), "countTotal": len(matching)}
         return {"data": {"vaultReallocates": {"items": page, "pageInfo": info}}}
 
@@ -238,26 +245,26 @@ def test_identical_events_in_one_transaction_stay_distinct_by_log_index():
     assert frame.drop(columns="log_index").duplicated().iloc[1]
 
 
-def test_two_pages_deduplicate_an_overlapping_event():
+def test_two_pages_in_one_second_deduplicate_an_overlapping_event():
     first = _event("a", T0, log_index=0)
-    overlap = _event("b", T0 + 1, log_index=1)
-    last = _event("c", T0 + 2, log_index=2)
+    overlap = _event("b", T0, log_index=1)
+    last = _event("c", T0, log_index=2)
     http = _FakeReallocationsHttp({0: [first, overlap], 2: [overlap, last]}, total=3)
 
-    frame = _loader(http=http, page_size=2).read(with_run=True)
+    frame = _loader(http=http, end=START + timedelta(seconds=1), page_size=2).read(with_run=True)
 
     assert len(http.calls) == 2
-    assert frame["timestamp"].tolist() == [T0, T0 + 1, T0 + 2]
+    assert frame["log_index"].tolist() == [0, 1, 2]
     assert len(frame["transaction_hash"].unique()) == 3
     assert all(call["variables"]["where"]["chainId_in"] == [CHAIN_ID] for call in http.calls)
 
 
 def test_repeated_page_stops_pagination_and_warns_when_short_of_count_total():
-    page = [_event("a", T0), _event("b", T0 + 1)]
+    page = [_event("a", T0), _event("b", T0, log_index=1)]
     http = _FakeReallocationsHttp({0: page}, total=5, repeat_first=True)
 
     with pytest.warns(UserWarning, match="2 distinct events of countTotal 5"):
-        frame = _loader(http=http, page_size=2).read(with_run=True)
+        frame = _loader(http=http, end=START + timedelta(seconds=1), page_size=2).read(with_run=True)
 
     assert len(http.calls) == 2
     assert len(frame) == 2
@@ -310,8 +317,7 @@ def test_fractional_bounds_round_up_to_whole_seconds_in_query_and_cache_key():
     assert loader._cache_key() != _loader(start=START, end=START + timedelta(seconds=11))._cache_key()
 
 
-def test_slice_above_skip_cap_is_bisected(monkeypatch):
-    monkeypatch.setattr("fractal.loaders.morpho_reallocations._SKIP_CAP", 4)
+def test_slice_above_one_page_is_bisected_in_time_without_skip():
     events = [_event(f"e{i}", T0 + 600 * i, log_index=i) for i in range(6)]
     http = _EventStoreHttp(events)
 
@@ -320,8 +326,32 @@ def test_slice_above_skip_cap_is_bisected(monkeypatch):
     assert frame["log_index"].tolist() == list(range(6))
     first_pages = [(lower, upper) for lower, upper, skip in http.windows if skip == 0]
     middle = (T0 + T0 + 3599) // 2
-    assert first_pages[:3] == [(T0, T0 + 3599), (T0, middle), (middle + 1, T0 + 3599)]
-    assert max(skip for _, _, skip in http.windows) <= 4
+    assert first_pages[:2] == [(T0, T0 + 3599), (T0, middle)]
+    assert (middle + 1, T0 + 3599) in first_pages
+    assert all(skip == 0 for _, _, skip in http.windows)
+
+
+def test_short_skip_pages_do_not_drop_events_across_seconds():
+    events = [_event(f"e{i}", T0 + 60 * i, log_index=i) for i in range(7)]
+    http = _EventStoreHttp(events, short_pages=True)
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        frame = _loader(http=http, page_size=3).read(with_run=True)
+
+    assert frame["log_index"].tolist() == list(range(7))
+    assert all(skip == 0 for _, _, skip in http.windows)
+
+
+def test_short_page_within_one_second_is_not_terminal():
+    events = [_event(f"e{i}", T0, log_index=i) for i in range(5)]
+    http = _EventStoreHttp(events, short_pages=True)
+
+    with pytest.warns(UserWarning, match="3 distinct events of countTotal 5"):
+        frame = _loader(http=http, end=START + timedelta(seconds=1), page_size=2).read(with_run=True)
+
+    assert [skip for _, _, skip in http.windows] == [0, 2, 4]
+    assert frame["log_index"].tolist() == [0, 2, 4]
 
 
 def test_single_second_above_skip_cap_raises(monkeypatch):

@@ -102,10 +102,14 @@ def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
 class MorphoReallocationsLoader(Loader):
     """Load MetaMorpho reallocation events for one chain and UTC window.
 
-    The window is walked in 6-hour slices; a slice whose ``countTotal``
-    exceeds the API ``skip`` cap is bisected until each part fits. A slice
-    that yields fewer distinct events than its ``countTotal`` emits a
-    ``UserWarning`` instead of failing.
+    The window is walked in 6-hour slices, and a slice whose ``countTotal``
+    exceeds one page is bisected in time until each part fits in a single
+    page. Offset paging is avoided because ``skip`` pages of Morpho API event
+    queries can come back short of ``first`` and miss events across page
+    boundaries, and ``orderBy: Timestamp`` does not order events that share a
+    second; only a single second that holds more events than one page is read
+    with ``skip``, up to the API cap. A slice that yields fewer distinct
+    events than its ``countTotal`` emits a ``UserWarning`` instead of failing.
 
     Args:
         chain_id: EVM chain id.
@@ -191,13 +195,13 @@ class MorphoReallocationsLoader(Loader):
 
     def _extract_slice(self, lower: int, upper: int) -> list[dict[str, Any]]:
         page, total = self._page(lower, upper, 0)
-        if total is not None and total > _SKIP_CAP:
-            if lower >= upper:
-                raise MorphoLoaderException(
-                    f"{total} reallocations in second {lower}; cannot paginate below the API skip cap"
-                )
+        if total is not None and total > self.page_size and lower < upper:
             middle = (lower + upper) // 2
             return self._extract_slice(lower, middle) + self._extract_slice(middle + 1, upper)
+        if total is not None and total > _SKIP_CAP:
+            raise MorphoLoaderException(
+                f"{total} reallocations in second {lower}; cannot paginate below the API skip cap"
+            )
 
         rows: list[dict[str, Any]] = []
         seen: set[Hashable] = set()
@@ -209,7 +213,10 @@ class MorphoReallocationsLoader(Loader):
             rows.extend(new_rows)
             seen.update(_event_key(item) for item in page)
             skip += self.page_size
-            if len(page) < self.page_size or (total is not None and skip >= total):
+            # Pages can come back short of ``first`` while more events remain,
+            # so a known ``countTotal`` decides when to stop.
+            done = len(page) < self.page_size if total is None else skip >= total
+            if done:
                 break
             if skip > _SKIP_CAP:
                 raise MorphoLoaderException(
