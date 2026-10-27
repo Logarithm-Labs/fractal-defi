@@ -14,6 +14,7 @@ purpose: convert them explicitly with ``pd.to_datetime(..., unit="s",
 utc=True)`` (or ``Loader._utc_index``) so the unit is never guessed.
 """
 from collections.abc import Sequence
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -45,6 +46,40 @@ def _to_utc_index(time: TimeLike) -> pd.DatetimeIndex:
         idx = pd.DatetimeIndex(idx)
     idx.name = "time"
     return idx
+
+
+def missing_bars(
+    time: TimeLike | pd.DataFrame,
+    start: datetime,
+    end: datetime,
+    freq: str | pd.Timedelta = "1h",
+    *,
+    inclusive: str = "both",
+) -> pd.DatetimeIndex:
+    """Bars of the regular ``freq`` grid from ``start`` that are absent from ``time``.
+
+    Args:
+        time: timestamps, or a struct / DataFrame whose index is used.
+        start / end: grid bounds (naive datetimes are UTC); the grid is
+            anchored at ``start``.
+        freq: bar length (``"1h"``, ``"1D"``, a ``Timedelta``).
+        inclusive: ``"both"`` (``[start, end]``, the loaders' window
+            convention) or ``"left"`` (``[start, end)``).
+
+    Returns:
+        A UTC ``DatetimeIndex`` named ``time``; off-grid timestamps in
+        ``time`` neither fill nor create a bar.
+    """
+    if inclusive not in ("both", "left"):
+        raise ValueError(f"inclusive must be 'both' or 'left', got {inclusive!r}")
+    lo, hi = pd.Timestamp(start), pd.Timestamp(end)
+    lo = lo.tz_localize("UTC") if lo.tz is None else lo.tz_convert("UTC")
+    hi = hi.tz_localize("UTC") if hi.tz is None else hi.tz_convert("UTC")
+    if hi < lo:
+        raise ValueError(f"end {hi} precedes start {lo}")
+    present = _to_utc_index(time.index if isinstance(time, pd.DataFrame) else time)
+    grid = pd.date_range(lo, hi, freq=freq, inclusive=inclusive, name="time")
+    return grid[~grid.isin(present)]
 
 
 class PriceHistory(pd.DataFrame):
@@ -93,7 +128,10 @@ class LendingHistory(pd.DataFrame):
             (``liquidity = supply − borrow``, the withdrawable amount the
             exit gate is measured against);
         ``net_supply_apy`` — supplier APY *including* reward campaigns (the
-            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``.
+            source's ``netSupplyApy``); rewards = ``net_supply_apy − supply_apy``;
+        ``supply_assets`` / ``borrow_assets`` — Morpho market totals in loan-token units;
+        ``supply_shares`` / ``borrow_shares`` — Morpho market shares normalized
+            by ``10 ** (loan_decimals + 6)``.
     """
 
     def __init__(
@@ -110,6 +148,10 @@ class LendingHistory(pd.DataFrame):
         borrow_assets_usd: ArrayLike | None = None,
         liquidity_assets_usd: ArrayLike | None = None,
         net_supply_apy: ArrayLike | None = None,
+        supply_assets: ArrayLike | None = None,
+        supply_shares: ArrayLike | None = None,
+        borrow_assets: ArrayLike | None = None,
+        borrow_shares: ArrayLike | None = None,
     ):
         data = {
             "lending_rate": np.asarray(lending_rates, dtype=float),
@@ -121,6 +163,8 @@ class LendingHistory(pd.DataFrame):
             ("supply_rate", supply_rate), ("supply_assets_usd", supply_assets_usd),
             ("borrow_assets_usd", borrow_assets_usd),
             ("liquidity_assets_usd", liquidity_assets_usd), ("net_supply_apy", net_supply_apy),
+            ("supply_assets", supply_assets), ("supply_shares", supply_shares),
+            ("borrow_assets", borrow_assets), ("borrow_shares", borrow_shares),
         ):
             if values is not None:
                 data[name] = np.asarray(values, dtype=float)

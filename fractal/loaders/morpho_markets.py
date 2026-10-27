@@ -16,21 +16,37 @@ Discovery is a data step, not a risk decision: the filters here (exact loan
 symbol, ``listed``, an optional LLTV ceiling used as a download size cap) are
 deliberately loose. The example writes an address-pinned registry CSV from the
 result and a human reviews it before a backtest reads it.
+
+The listing's sizes are *current*: ranking a past universe by them is
+survivorship-biased. :func:`market_sizes_as_of` reads each market's USD sizes
+at a past timestamp from ``marketById { historicalState }`` (batched with
+GraphQL aliases) so a universe can be ranked point-in-time.
 """
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from typing import Any
 
+import pandas as pd
+
 from fractal.core.entities.models.morpho_math import from_wad
+from fractal.loaders._dt import to_seconds, to_utc
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.morpho import MorphoLoaderException, graphql_query
+from fractal.loaders.morpho import MorphoLoaderException, _validate_market_id, graphql_query
 
 __all__ = [
+    "AS_OF_RULES",
     "MorphoMarketListing",
     "MorphoMarketsLoader",
     "discover_chains",
+    "market_sizes_as_of",
 ]
+
+#: Snapshot rules of :func:`market_sizes_as_of`.
+AS_OF_RULES = ("at_or_before", "end_of_day")
+_DAY = timedelta(days=1)
+_AS_OF_COLUMNS = ["chain_id", "market_id", "time", "supply_assets_usd", "borrow_assets_usd"]
 
 _CHAINS_QUERY = """
 query Chains { chains { id network } }
@@ -236,3 +252,116 @@ class MorphoMarketsLoader(Loader):
         else:
             self._read(self._cache_key())
         return list(self._data or [])
+
+
+def _as_of_window(timestamp: datetime, rule: str, max_staleness: timedelta) -> tuple[int, int]:
+    if rule == "at_or_before":
+        return to_seconds(timestamp - max_staleness), to_seconds(timestamp)
+    day = timestamp.replace(hour=0, minute=0, second=0, microsecond=0)
+    return to_seconds(day), to_seconds(day + _DAY)
+
+
+def _snapshot(history: dict[str, Any], lo: int, hi: int) -> tuple[int | None, float, float]:
+    """Latest point in ``[lo, hi]`` with a supply value, and the borrow value at that same point."""
+    def points(key: str) -> dict[int, float]:
+        out = {}
+        for point in history.get(key) or []:
+            if point.get("x") is not None and point.get("y") is not None and lo <= int(point["x"]) <= hi:
+                out[int(point["x"])] = float(point["y"])
+        return out
+
+    supply, borrow = points("supplyAssetsUsd"), points("borrowAssetsUsd")
+    if not supply:
+        return None, float("nan"), float("nan")
+    x = max(supply)
+    return x, supply[x], borrow.get(x, float("nan"))
+
+
+def market_sizes_as_of(
+    markets: Iterable[MorphoMarketListing | tuple[int, str]],
+    timestamp: datetime,
+    *,
+    rule: str = "at_or_before",
+    max_staleness: timedelta = _DAY,
+    interval: str = "HOUR",
+    batch: int = 25,
+    http: HttpClient | None = None,
+) -> pd.DataFrame:
+    """Point-in-time USD supply/borrow sizes of many markets, for survivorship-free ranking.
+
+    Each market's ``historicalState { supplyAssetsUsd, borrowAssetsUsd }`` is
+    read over a short window (``batch`` markets per aliased GraphQL request)
+    and one snapshot point is kept: the **latest** point inside the window
+    that carries a supply value; the borrow size is taken at that same point.
+
+    Rules (``rule``):
+        ``"at_or_before"`` — window ``[timestamp − max_staleness, timestamp]``:
+            the last observation at or before ``timestamp``, so no data after
+            the as-of instant is used.
+        ``"end_of_day"`` — window ``[D, D + 1 day]`` with ``D`` the UTC day of
+            ``timestamp``: the day's closing point (the next midnight when the
+            API has it). This uses up to one day of data *after* ``D`` and
+            matches a "size on date D" convention; prefer ``"at_or_before"``
+            when look-ahead matters.
+
+    Args:
+        markets: :class:`MorphoMarketListing` items or ``(chain_id, market_id)``
+            pairs. The result is only as survivorship-free as this list: a list
+            from ``MorphoMarketsLoader(listed=True)`` already drops markets that
+            are no longer listed.
+        timestamp: the as-of instant (naive datetimes are UTC).
+        max_staleness: look-back of ``"at_or_before"`` (> 0).
+        interval: API interval, ``"HOUR"`` or ``"DAY"``.
+        batch: markets per request.
+        http: injectable client for offline tests.
+
+    Returns:
+        One row per input market, in input order, with columns ``chain_id``,
+        ``market_id``, ``time`` (UTC time of the snapshot point, ``NaT`` when
+        none) and ``supply_assets_usd`` / ``borrow_assets_usd`` (NaN when the
+        window has no point, e.g. before the market's creation). A market the
+        API does not know raises :class:`MorphoLoaderException`.
+    """
+    if rule not in AS_OF_RULES:
+        raise ValueError(f"rule must be one of {AS_OF_RULES}, got {rule!r}")
+    if interval not in ("HOUR", "DAY"):
+        raise ValueError(f"interval must be 'HOUR' or 'DAY', got {interval!r}")
+    if batch <= 0:
+        raise ValueError(f"batch must be > 0, got {batch}")
+    if max_staleness <= timedelta(0):
+        raise ValueError(f"max_staleness must be positive, got {max_staleness}")
+    pairs = [
+        (int(m.chain_id), _validate_market_id(m.market_id)) if isinstance(m, MorphoMarketListing)
+        else (int(m[0]), _validate_market_id(m[1]))
+        for m in markets
+    ]
+    lo, hi = _as_of_window(to_utc(timestamp), rule, max_staleness)
+    client = http or HttpClient()
+    rows = []
+    for start in range(0, len(pairs), batch):
+        chunk = pairs[start:start + batch]
+        # Market ids are regex-validated hex and chain ids are ints, so inlining
+        # them as alias arguments cannot inject GraphQL.
+        aliases = " ".join(
+            f'm{i}: marketById(marketId: "{market_id}", chainId: {chain_id}) {{ historicalState {{ '
+            f"supplyAssetsUsd(options: $o) {{ x y }} borrowAssetsUsd(options: $o) {{ x y }} }} }}"
+            for i, (chain_id, market_id) in enumerate(chunk)
+        )
+        data = graphql_query(client, f"query MarketSizesAsOf($o: TimeseriesOptions) {{ {aliases} }}", {
+            "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": interval},
+        })
+        for i, (chain_id, market_id) in enumerate(chunk):
+            market = data.get(f"m{i}")
+            if not market:
+                raise MorphoLoaderException(f"market {market_id} not found on chain {chain_id}")
+            x, supply, borrow = _snapshot(market.get("historicalState") or {}, lo, hi)
+            rows.append({
+                "chain_id": chain_id, "market_id": market_id,
+                "time": pd.NaT if x is None else pd.Timestamp(x, unit="s", tz="UTC"),
+                "supply_assets_usd": supply, "borrow_assets_usd": borrow,
+            })
+    frame = pd.DataFrame(rows, columns=_AS_OF_COLUMNS)
+    frame["chain_id"] = frame["chain_id"].astype("int64")
+    frame["time"] = pd.to_datetime(frame["time"], utc=True)
+    frame[["supply_assets_usd", "borrow_assets_usd"]] = frame[["supply_assets_usd", "borrow_assets_usd"]].astype(float)
+    return frame
