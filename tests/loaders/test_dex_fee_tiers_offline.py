@@ -195,3 +195,16 @@ def test_constructor_validation():
         DefiLlamaDexFeeTierLoader([TOKEN_A, TOKEN_B], "")
     with pytest.raises(ValueError, match="min_tvl_usd"):
         DefiLlamaDexFeeTierLoader([TOKEN_A, TOKEN_B], "Ethereum", min_tvl_usd=float("nan"))
+
+
+def test_default_projects_cover_unlabelled_dexes_as_nan_fee_candidates(tmp_path, monkeypatch):
+    payload = {
+        "data": [
+            _pool("p-kyber", "kyberswap-fairflow", "Univ4 Kyber FairFlow", 5e6),
+            _pool("p-supernova", "supernova-cl", "CL - 1", 5e6),
+        ]
+    }
+    frame = _loader(payload, tmp_path, monkeypatch).read(with_run=True)
+    assert sorted(frame["pool"]) == ["p-kyber", "p-supernova"]
+    assert frame["fee_pct"].isna().all()
+    assert not frame["eligible"].any()

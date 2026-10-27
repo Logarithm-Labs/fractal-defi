@@ -36,7 +36,9 @@ from fractal.loaders.defillama.defillama import DefiLlamaBaseLoader
 
 YIELDS_BASE_URL = "https://yields.llama.fi"
 
-# DefiLlama project slugs of spot DEXes whose pools carry a swap fee.
+# DefiLlama project slugs of spot DEXes whose pools carry a swap fee. Some
+# (fluid-dex, kyberswap-fairflow, supernova-cl) label pools without a fixed
+# fee; they are listed so they appear as candidates, with ``fee_pct`` NaN.
 DEFAULT_DEX_PROJECTS = frozenset(
     {
         "aerodrome-slipstream",
@@ -46,9 +48,11 @@ DEFAULT_DEX_PROJECTS = frozenset(
         "curve-dex",
         "ekubo",
         "fluid-dex",
+        "kyberswap-fairflow",
         "maverick-v2",
         "pancakeswap-amm-v3",
         "solidly-v3",
+        "supernova-cl",
         "sushiswap-v3",
         "uniswap-v2",
         "uniswap-v3",

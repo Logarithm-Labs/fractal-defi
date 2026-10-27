@@ -12,6 +12,7 @@ import logging
 import math
 from collections.abc import Callable, Iterable
 from datetime import datetime, timezone
+from typing import Any
 
 import pandas as pd
 from requests import RequestException
@@ -92,17 +93,31 @@ class StablecoinMidLoader(Loader):
     Args:
         pair: Stablecoin pair, with or without ``/`` (for example,
             ``"USDC/USDT"`` or ``"USDCUSDT"``).
-        start_time: Inclusive start of the requested UTC window.
-        end_time: Exclusive end of the requested UTC window.
+        start_time: Inclusive start of the requested UTC window; the first
+            bar is the first one opening at or after it.
+        end_time: Exclusive end of the requested UTC window for bar
+            *opens*: a bar opening before ``end_time`` is kept once it has
+            closed, even when it closes after an unaligned ``end_time``.
         interval: Candle interval, ``"1h"`` or ``"1d"``.
         venues: Ordered subset of ``binance``, ``kraken``, ``coinbase``
             and ``bitstamp``. Unsupported pair/venue combinations are skipped.
         http: Injectable shared HTTP client; public endpoints require no keys.
         loader_type: Cache serialization format.
+        include_volume: Also return one ``<venue>_volume`` column per venue,
+            in units of the pair's base asset (a reciprocal venue's volume
+            is converted with its close).
 
     ``read`` returns a UTC-indexed :class:`pandas.DataFrame` with ``mid``,
     ``n_venues`` and one nullable close column per requested venue. A failed
     venue is skipped, so ``n_venues`` counts only closes present in each bar.
+
+    After a fetch (``run`` or ``read(with_run=True)``), :attr:`venue_report`
+    maps each requested venue to its coverage: ``status`` (``"ok"``,
+    ``"unsupported"`` or ``"error: <message>"``), ``symbol``, ``inverted``,
+    ``expected_bars`` (bars opening in the window that have closed),
+    ``present_bars``, ``missing_bars``, ``missing_ranges`` (``[start,
+    end)`` epoch-second pairs) and ``zero_volume_dropped``. It is empty after
+    a cache-only ``read``.
 
     Binance and Bitstamp requests are paged at 1,000 candles and Coinbase at
     300 candles. Kraken's OHLC endpoint exposes only its most recent 720 bars,
@@ -119,9 +134,11 @@ class StablecoinMidLoader(Loader):
         venues: Iterable[str] = DEFAULT_CEX_VENUES,
         http: HttpClient | None = None,
         loader_type: LoaderType = LoaderType.CSV,
+        include_volume: bool = False,
     ) -> None:
         super().__init__(loader_type=loader_type)
         self.pair = _canonical_pair(pair)
+        self.include_volume = include_volume
         self.start_time = to_utc(start_time)
         self.end_time = to_utc(end_time)
         if self.start_time is None or self.end_time is None:
@@ -141,13 +158,15 @@ class StablecoinMidLoader(Loader):
             raise ValueError(f"Unknown venue(s) {unknown}; choose from {list(DEFAULT_CEX_VENUES)}")
         self._http = http or HttpClient()
         self._rows: dict[str, list[RawBar]] = {}
+        self._errors: dict[str, str] = {}
+        self.venue_report: dict[str, dict[str, Any]] = {}
 
     def _cache_key(self) -> str:
         pair = self.pair.replace("/", "-")
         venues = "-".join(self.venues)
         return (
             f"{pair}-{self.interval}-{to_seconds(self.start_time)}-"
-            f"{to_seconds(self.end_time)}-{venues}-v1"
+            f"{to_seconds(self.end_time)}-{venues}-v2"
         )
 
     def _pages(self, venue: str) -> list[tuple[int, int]]:
@@ -257,6 +276,7 @@ class StablecoinMidLoader(Loader):
 
     def extract(self) -> None:
         self._rows = {}
+        self._errors = {}
         symbols = _PAIR_SYMBOLS[self.pair]
         for venue in self.venues:
             if venue not in symbols:
@@ -268,45 +288,89 @@ class StablecoinMidLoader(Loader):
             except _VENUE_ERRORS as exc:
                 _LOG.warning("Skipping %s for %s: %s", venue, self.pair, exc)
                 self._rows[venue] = []
+                self._errors[venue] = str(exc)[:160]
 
     def transform(self) -> None:
         interval_seconds = _INTERVAL_SECONDS[self.interval]
         start = to_seconds(self.start_time)
         end = to_seconds(self.end_time)
-        latest_closed = min(end, to_seconds(utcnow()))
+        now = to_seconds(utcnow())
+        first = start + (-start) % interval_seconds
+        expected = [opened for opened in range(first, end, interval_seconds) if opened + interval_seconds <= now]
         symbols = _PAIR_SYMBOLS[self.pair]
         series: list[pd.Series] = []
+        self.venue_report = {}
 
         for venue in self.venues:
-            inverted = symbols.get(venue, ("", False))[1]
+            symbol, inverted = symbols.get(venue, ("", False))
             closes: dict[int, float] = {}
+            volumes: dict[int, float] = {}
+            zero_volume = 0
             for timestamp, close, volume in self._rows.get(venue, []):
                 outside_window = (
                     timestamp % interval_seconds
                     or timestamp < start
                     or timestamp >= end
-                    or timestamp + interval_seconds > latest_closed
+                    or timestamp + interval_seconds > now
                 )
-                invalid_trade = (
-                    not math.isfinite(close)
-                    or not math.isfinite(volume)
-                    or close <= 0
-                    or volume <= 0
-                )
-                if outside_window or invalid_trade:
+                if outside_window or not math.isfinite(close) or close <= 0 or not math.isfinite(volume):
+                    continue
+                if volume <= 0:
+                    # A zero-volume candle carries the previous close forward.
+                    zero_volume += 1
                     continue
                 closes[timestamp] = 1.0 / close if inverted else close
+                volumes[timestamp] = volume * close if inverted else volume
             series.append(pd.Series(closes, dtype="float64", name=venue))
+            series.append(pd.Series(volumes, dtype="float64", name=f"{venue}_volume"))
+            self.venue_report[venue] = self._coverage(venue, symbol, inverted, expected, closes, zero_volume)
 
-        venue_frame = pd.concat(series, axis=1).sort_index() if series else pd.DataFrame()
+        volume_columns = [f"{venue}_volume" for venue in self.venues]
+        cached_columns = ["time", "mid", "n_venues", *self.venues, *volume_columns]
+        venue_frame = pd.concat(series, axis=1).sort_index()
         if venue_frame.empty:
-            self._data = pd.DataFrame(columns=["time", "mid", "n_venues", *self.venues])
+            self._data = pd.DataFrame(columns=cached_columns)
             return
-        venue_frame = venue_frame.reindex(columns=self.venues).dropna(how="all")
-        venue_frame.insert(0, "n_venues", venue_frame.count(axis=1).astype("int64"))
+        venue_frame = venue_frame.dropna(how="all", subset=list(self.venues))
+        venue_frame.insert(0, "n_venues", venue_frame[list(self.venues)].count(axis=1).astype("int64"))
         venue_frame.insert(0, "mid", venue_frame[list(self.venues)].median(axis=1))
         venue_frame.insert(0, "time", venue_frame.index.astype("int64"))
-        self._data = venue_frame.reset_index(drop=True)[["time", "mid", "n_venues", *self.venues]]
+        self._data = venue_frame.reset_index(drop=True)[cached_columns]
+
+    def _coverage(
+        self,
+        venue: str,
+        symbol: str,
+        inverted: bool,
+        expected: list[int],
+        closes: dict[int, float],
+        zero_volume: int,
+    ) -> dict[str, Any]:
+        interval_seconds = _INTERVAL_SECONDS[self.interval]
+        if not symbol:
+            status = "unsupported"
+        elif venue in self._errors:
+            status = f"error: {self._errors[venue]}"
+        else:
+            status = "ok"
+        ranges: list[list[int]] = []
+        for opened in expected:
+            if opened in closes:
+                continue
+            if ranges and ranges[-1][1] == opened:
+                ranges[-1][1] = opened + interval_seconds
+            else:
+                ranges.append([opened, opened + interval_seconds])
+        return {
+            "status": status,
+            "symbol": symbol or None,
+            "inverted": inverted,
+            "expected_bars": len(expected),
+            "present_bars": len(closes),
+            "missing_bars": len(expected) - len(closes),
+            "missing_ranges": ranges,
+            "zero_volume_dropped": zero_volume,
+        }
 
     def read(self, with_run: bool = False) -> pd.DataFrame:
         """Return the cached or freshly fetched UTC-indexed median series."""
@@ -314,9 +378,10 @@ class StablecoinMidLoader(Loader):
             self.run()
         else:
             self._read(self._cache_key())
+        volume_columns = [f"{venue}_volume" for venue in self.venues]
         columns = ["mid", "n_venues", *self.venues]
         if self._data is None:
-            self._data = pd.DataFrame(columns=["time", *columns])
+            self._data = pd.DataFrame(columns=["time", *columns, *volume_columns])
         # Empty and non-empty reads share one path, so their dtypes (including
         # the index resolution, which differs between pandas 2 and 3) agree.
         frame = pd.DataFrame(
@@ -329,6 +394,9 @@ class StablecoinMidLoader(Loader):
                 },
             }
         )
+        if self.include_volume:
+            for column in volume_columns:
+                frame[column] = pd.to_numeric(self._data[column], errors="coerce").astype("float64")
         frame.index = self._utc_index("time", unit="s")
         return frame
 

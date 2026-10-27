@@ -322,6 +322,84 @@ def test_cached_read_matches_fresh_read(loader_type, tmp_path, monkeypatch):
     assert fresh["mid"].iloc[0] == pytest.approx((1.001 + 1.25) / 2)
 
 
+@pytest.mark.parametrize(
+    ("now_offset", "expected_bars"),
+    [(timedelta(days=1), 2), (timedelta(hours=1, minutes=45), 1)],
+)
+def test_unaligned_end_keeps_the_last_bar_once_closed(now_offset, expected_bars, tmp_path, monkeypatch):
+    """A bar opening before an unaligned end_time is kept after it closes."""
+    monkeypatch.setattr("fractal.loaders.cex_stable_mid.utcnow", lambda: START + now_offset)
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    loader = StablecoinMidLoader("USDC/USDT", START, START + timedelta(hours=1, minutes=30), venues=("binance",))
+    loader._rows = {"binance": [(START_SECONDS, 1.0, 1.0), (START_SECONDS + 3_600, 1.1, 1.0)]}
+    loader.transform()
+    loader.load()
+    frame = loader.read()
+    assert frame.index.equals(pd.date_range(START, periods=expected_bars, freq="h", name="time"))
+    assert loader.venue_report["binance"]["expected_bars"] == expected_bars
+
+
+def test_unaligned_end_requests_cover_the_last_open_bar(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    end = START + timedelta(hours=1, minutes=30)
+    server = _CandleServer([START_SECONDS, START_SECONDS + 3_600])
+    frame = StablecoinMidLoader(
+        "USDT/USD", START, end, venues=("binance", "coinbase", "bitstamp"), http=server
+    ).read(with_run=True)
+    assert frame["n_venues"].tolist() == [3, 3]
+
+
+def test_venue_report_lists_status_gaps_and_zero_volume(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    monkeypatch.setattr("fractal.loaders.cex_stable_mid.utcnow", lambda: START + timedelta(hours=5, minutes=10))
+    hour = 3_600
+    window = (START, START + timedelta(hours=8))
+    failing = _FakeHttp({_url("kraken"): {"error": ["EService:Unavailable"], "result": {}}})
+    loader = StablecoinMidLoader("PYUSD/USD", *window, venues=("binance", "kraken"), http=failing)
+    loader.read(with_run=True)
+    # PYUSD/USD has no Binance market: reported as unsupported and never requested.
+    assert loader.venue_report["binance"]["status"] == "unsupported"
+    assert loader.venue_report["binance"]["symbol"] is None
+    assert loader.venue_report["kraken"]["status"].startswith("error: Kraken OHLC error")
+    assert [url for url, _ in failing.calls] == [_url("kraken")]
+
+    rows = [[START_SECONDS + h * hour, "1", "1", "1", "1.0", "1", "0" if h == 3 else "2", 1] for h in (0, 3, 4, 6)]
+    ok = _FakeHttp({_url("kraken"): {"error": [], "result": {"PYUSDUSD": rows, "last": 0}}})
+    loader = StablecoinMidLoader("PYUSD/USD", *window, venues=("kraken",), http=ok)
+    loader.read(with_run=True)
+    # Bars 0..4 have closed by 05:10 (bar 6 is unclosed); bar 3 had zero volume.
+    assert loader.venue_report["kraken"] == {
+        "status": "ok",
+        "symbol": "PYUSDUSD",
+        "inverted": False,
+        "expected_bars": 5,
+        "present_bars": 2,
+        "missing_bars": 3,
+        "missing_ranges": [[START_SECONDS + hour, START_SECONDS + 4 * hour]],
+        "zero_volume_dropped": 1,
+    }
+    # A cache-only read has no coverage information.
+    cached = StablecoinMidLoader("PYUSD/USD", *window, venues=("kraken",), http=_FakeHttp({}))
+    assert not cached.read().empty
+    assert cached.venue_report == {}
+
+
+def test_include_volume_adds_base_unit_volume_columns(tmp_path, monkeypatch):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    http = _FakeHttp({_url("binance"): _payload("binance", 1.001), _url("coinbase"): _payload("coinbase", 0.8)})
+    kwargs = {"venues": ("binance", "coinbase")}
+    plain = StablecoinMidLoader("USDC/USDT", START, END, http=http, **kwargs).read(with_run=True)
+    assert list(plain.columns) == ["mid", "n_venues", "binance", "coinbase"]
+    with_volume = StablecoinMidLoader("USDC/USDT", START, END, include_volume=True, **kwargs).read()
+    assert list(with_volume.columns) == [
+        "mid", "n_venues", "binance", "coinbase", "binance_volume", "coinbase_volume"
+    ]
+    assert with_volume["binance_volume"].iloc[0] == pytest.approx(2.0)
+    # Coinbase quotes USDT-USDC: 2 USDT at 0.8 USDC per USDT is 1.6 USDC.
+    assert with_volume["coinbase_volume"].iloc[0] == pytest.approx(1.6)
+    pd.testing.assert_frame_equal(plain, with_volume[plain.columns])
+
+
 @pytest.mark.integration
 def test_stablecoin_mid_loader_integration_smoke(request, tmp_path, monkeypatch):
     if request.config.getoption("-m").strip() == "core":

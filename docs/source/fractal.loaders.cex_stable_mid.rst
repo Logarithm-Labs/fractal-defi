@@ -13,6 +13,14 @@ pages those endpoints. Kraken's OHLC endpoint exposes only the most recent 720
 bars even when an earlier ``since`` value is requested, so long windows can
 have an absent Kraken prefix.
 
+A bar belongs to the window when it opens in ``[start_time, end_time)`` and
+has closed by the time of the request, so an unaligned ``end_time`` keeps the
+bar it falls inside once that bar has closed. After a fetch,
+``venue_report`` gives each venue's status, expected and present bars,
+missing ``[start, end)`` ranges and the number of zero-volume candles dropped.
+``include_volume=True`` adds per-venue volume columns in units of the pair's
+base asset.
+
 .. automodule:: fractal.loaders.cex_stable_mid
    :members:
    :show-inheritance:
