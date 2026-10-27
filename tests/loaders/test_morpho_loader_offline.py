@@ -1,6 +1,7 @@
 """Offline tests for the Morpho loaders against a fake GraphQL client:
 ``marketById`` queries, descending points, the dropped live point,
 APY → per-bar conversion, optional columns, NaN policy, oracle read."""
+import itertools
 import math
 from datetime import datetime, timedelta, timezone
 
@@ -413,3 +414,83 @@ def test_read_linear_discount_decodes_the_feed():
             return {"jsonrpc": "2.0", "id": 1, "result": "0x" + f"{int(0.06 * 1e18):064x}"}
 
     assert read_linear_discount("http://rpc", "0x" + "cd" * 20, http=_Rpc()) == pytest.approx(0.06)
+
+
+class _WindowedMorphoHttp:
+    """Serves hourly points over ``[START, START + hours]`` and honours each request's window, newest first."""
+
+    def __init__(self, hours: int):
+        self.hours = hours
+        self.calls = []
+
+    def post(self, url, json=None, timeout=None, headers=None):
+        assert url == MORPHO_GRAPHQL_URL
+        self.calls.append(json)
+        window = json["variables"]["o"]
+        xs = [int((START + timedelta(hours=h)).timestamp()) for h in range(self.hours + 1)]
+        xs = [x for x in xs if window["startTimestamp"] <= x <= window["endTimestamp"]][::-1]
+
+        def series(value):
+            return [{"x": x, "y": value(x)} for x in xs]
+
+        hist = {
+            "borrowApy": series(lambda x: 0.05 + (x % 86_400) / 1e7), "supplyApy": series(lambda x: 0.04),
+            "utilization": series(lambda x: 0.8), "rateAtTarget": series(lambda x: RATE_AT_TARGET_WAD),
+            "supplyAssets": series(lambda x: str(10**12 + x)), "supplyShares": series(lambda x: str(10**18)),
+            "borrowAssets": series(lambda x: str(10**11)), "borrowShares": series(lambda x: str(10**17)),
+        }
+        return {"data": {"marketById": {
+            "historicalState": hist,
+            "loanAsset": {"decimals": 6, "historicalPriceUsd": series(lambda x: 1.0)},
+            "collateralAsset": {"historicalPriceUsd": series(lambda x: 0.97)},
+        }}}
+
+
+@pytest.mark.core
+def test_default_loader_sends_one_request_for_the_whole_window():
+    end = START + timedelta(days=3)
+    http = _WindowedMorphoHttp(72)
+    loader = MorphoMarketLoader(MARKET_ID, 1, START, end, http=http)
+    assert loader.max_window_days is None
+    assert len(loader.read(with_run=True)) == 73
+    assert len(http.calls) == 1
+    assert http.calls[0]["variables"]["o"]["startTimestamp"] == int(START.timestamp())
+    assert http.calls[0]["variables"]["o"]["endTimestamp"] == int(end.timestamp())
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(("max_window_days", "requests"), [(1, 3), (0.75, 4), (10, 1)])
+def test_chunked_requests_match_the_single_request(max_window_days, requests):
+    end = START + timedelta(days=3)
+    single = MorphoMarketLoader(MARKET_ID, 1, START, end, include_market_totals=True, http=_WindowedMorphoHttp(72))
+    http = _WindowedMorphoHttp(72)
+    chunked = MorphoMarketLoader(MARKET_ID, 1, START, end, include_market_totals=True,
+                                 max_window_days=max_window_days, http=http)
+    expected, got = single.read(with_run=True), chunked.read(with_run=True)
+    assert len(http.calls) == requests
+    windows = [(c["variables"]["o"]["startTimestamp"], c["variables"]["o"]["endTimestamp"]) for c in http.calls]
+    assert windows[0][0] == int(START.timestamp()) and windows[-1][1] == int(end.timestamp())
+    assert all(prev[1] == nxt[0] for prev, nxt in itertools.pairwise(windows))  # contiguous, shared edge
+    assert len(got) == 73 and got.index.is_unique  # boundary bars neither lost nor duplicated
+    pd.testing.assert_frame_equal(expected, got)
+    pd.testing.assert_frame_equal(single.read_loan_price(), chunked.read_loan_price())
+    pd.testing.assert_frame_equal(single.read_collateral_price(), chunked.read_collateral_price())
+    assert chunked._cache_key() == single._cache_key()  # chunking never changes the data
+
+
+@pytest.mark.core
+def test_chunking_deduplicates_overlapping_payloads_and_validates_the_window():
+    # a source that ignores the window returns every point in every chunk
+    history = MorphoMarketLoader(MARKET_ID, 1, START, END, max_window_days=1 / 24, http=_FakeMorphoHttp()).read(
+        with_run=True)
+    pd.testing.assert_frame_equal(
+        history, MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp()).read(with_run=True))
+    # de-duplication happens at the merge, so the raw extract has one row per timestamp (no join blow-up)
+    raw = MorphoMarketLoader(MARKET_ID, 1, START, END, include_market_totals=True, max_window_days=1 / 24,
+                             http=_MarketTotalsHttp({"supplyAssets": [_at(h, "1") for h in range(6)]}))
+    raw.extract()
+    assert raw._data["x"].is_unique and len(raw._data) == 7  # six bars + the live point
+    with pytest.raises(ValueError, match="max_window_days"):
+        MorphoMarketLoader(MARKET_ID, 1, START, END, max_window_days=0)
+    with pytest.raises(ValueError, match="max_window_days"):
+        MorphoMarketLoader(MARKET_ID, 1, START, END, interval="DAY", max_window_days=0.5)

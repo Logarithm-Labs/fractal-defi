@@ -6,7 +6,9 @@ API: ``https://api.morpho.org/graphql`` (no key; 750 req/min). Since
 from ``historicalState { field(options: {startTimestamp, endTimestamp,
 interval}) { x y } }`` with points **descending** and APYs as
 fractions; the newest point is the live one (not interval-aligned) and
-is dropped.
+is dropped. ``max_window_days`` optionally splits a long window into consecutive
+requests whose payloads are concatenated and de-duplicated by timestamp;
+by default the whole window is one request.
 
 Rates: the API reports effective annual ``borrowApy = exp(r·YEAR) − 1``.
 The loader converts to the **per-bar** exponent the entities apply
@@ -242,6 +244,31 @@ def _scaled_bigint_series_to_df(
     })
 
 
+def _merge_points(series: list[list[dict[str, Any]] | None]) -> list[dict[str, Any]]:
+    """Concatenate chunked ``{x, y}`` series; a timestamp seen twice (a shared boundary) keeps its last value."""
+    by_x: dict[Any, dict[str, Any]] = {}
+    for points in series:
+        for point in points or []:
+            by_x[point.get("x")] = point
+    return list(by_x.values())
+
+
+def _merge_market_payloads(markets: list[dict[str, Any]]) -> dict[str, Any]:
+    """One ``marketById`` payload from the payloads of consecutive request windows."""
+    hist_keys = dict.fromkeys(key for market in markets for key in (market.get("historicalState") or {}))
+    merged: dict[str, Any] = {"historicalState": {
+        key: _merge_points([(market.get("historicalState") or {}).get(key) for market in markets])
+        for key in hist_keys
+    }}
+    for asset in ("loanAsset", "collateralAsset"):
+        parts = [market.get(asset) or {} for market in markets]
+        combined = {key: value for part in parts for key, value in part.items() if value is not None}
+        if "historicalPriceUsd" in combined:
+            combined["historicalPriceUsd"] = _merge_points([part.get("historicalPriceUsd") for part in parts])
+        merged[asset] = combined
+    return merged
+
+
 class MorphoMarketLoader(Loader):
     """Hourly (or daily) market history → :class:`LendingHistory` with per-bar rates.
 
@@ -256,6 +283,11 @@ class MorphoMarketLoader(Loader):
         include_market_totals: include token-unit supply/borrow assets and
             normalized supply/borrow shares. Defaults to ``False`` so the
             historical output columns are unchanged.
+        max_window_days: split ``[start_time, end_time]`` into consecutive
+            request windows of at most this many days and concatenate them
+            (points on a shared boundary are de-duplicated by timestamp).
+            ``None`` (default) sends one request for the whole window. The
+            output does not depend on it, so it is not part of the cache key.
         http: injectable client for offline tests.
     """
 
@@ -270,6 +302,7 @@ class MorphoMarketLoader(Loader):
         interval: str = "HOUR",
         compounding: str = "continuous",
         include_market_totals: bool = False,
+        max_window_days: float | None = None,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
@@ -290,6 +323,9 @@ class MorphoMarketLoader(Loader):
         self.interval = interval
         self.compounding = compounding
         self.include_market_totals = bool(include_market_totals)
+        if max_window_days is not None and max_window_days * 86_400 < _INTERVAL_SECONDS[interval]:
+            raise ValueError(f"max_window_days must cover at least one {interval} bar, got {max_window_days}")
+        self.max_window_days = max_window_days
         self._http = http or HttpClient()
 
     def _cache_key(self) -> str:
@@ -299,16 +335,37 @@ class MorphoMarketLoader(Loader):
             f"{int(self.include_market_totals)}-{_CACHE_SCHEMA}"
         )
 
-    def extract(self) -> None:
+    def _request_windows(self) -> list[tuple[int, int]]:
+        """Inclusive ``(start, end)`` request windows; consecutive windows share their boundary second."""
+        start, end = to_seconds(self.start_time), to_seconds(self.end_time)
+        if self.max_window_days is None:
+            return [(start, end)]
+        span = int(self.max_window_days * 86_400)
+        windows = []
+        lo = start
+        while True:
+            hi = min(lo + span, end)
+            windows.append((lo, hi))
+            if hi >= end:
+                return windows
+            lo = hi
+
+    def _fetch_market(self) -> dict[str, Any]:
         query = _HISTORY_QUERY % (_MARKET_TOTALS_QUERY if self.include_market_totals else "")
-        data = graphql_query(self._http, query, {
-            "id": self.market_id, "cid": self.chain_id,
-            "o": {"startTimestamp": to_seconds(self.start_time), "endTimestamp": to_seconds(self.end_time),
-                  "interval": self.interval},
-        })
-        market = data.get("marketById")
-        if not market:
-            raise MorphoLoaderException(f"market {self.market_id} not found on chain {self.chain_id}")
+        payloads = []
+        for lo, hi in self._request_windows():
+            data = graphql_query(self._http, query, {
+                "id": self.market_id, "cid": self.chain_id,
+                "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": self.interval},
+            })
+            market = data.get("marketById")
+            if not market:
+                raise MorphoLoaderException(f"market {self.market_id} not found on chain {self.chain_id}")
+            payloads.append(market)
+        return payloads[0] if len(payloads) == 1 else _merge_market_payloads(payloads)
+
+    def extract(self) -> None:
+        market = self._fetch_market()
         hist = market.get("historicalState") or {}
         frames = [
             _series_to_df(hist.get("borrowApy"), "borrow_apy"),
