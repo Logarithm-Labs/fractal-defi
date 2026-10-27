@@ -28,6 +28,7 @@ from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
 from fractal.loaders.onchain import (
     AaveV3ReserveRatesLoader,
+    CctpTransfersLoader,
     DebtTokenFlowsLoader,
     RpcLoaderException,
     UniswapV3SwapsLoader,
@@ -88,6 +89,7 @@ __all__ = [
     "BorosMarketHistory",
     "BorosMarketInfo",
     "BorosMarketLoader",
+    "CctpTransfersLoader",
     "ConstantFundingsLoader",
     "DEXHistory",
     "DebtTokenFlowsLoader",
