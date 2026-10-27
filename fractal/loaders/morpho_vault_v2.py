@@ -10,8 +10,8 @@ Market mapping. A ``MorphoMarketV1`` adapter tags every ``Allocate`` /
 ``keccak256(abi.encode("collateralToken", collateral))`` and
 ``keccak256(abi.encode("this/marketParams", adapter, marketParams))`` with
 ``marketParams = (loanToken, collateralToken, oracle, irm, lltv)``. The loader
-fetches the ``MarketParams`` of every Morpho Blue market whose loan token is a
-loaded vault's asset and maps a row to the market whose market-params id is
+fetches the ``MarketParams`` (:func:`fetch_market_params`) of every Morpho
+Blue market whose loan token is a loaded vault's asset and maps a row to the market whose market-params id is
 among the row's ``ids`` (``map_method="id"``). The match is a hash of the
 event's own ids, so it holds for markets the adapter has since exited, and it
 needs no ABI library: the fixed-layout encodings are built here and hashed with
@@ -32,9 +32,11 @@ the same vault, ``allocator`` when sent by a current vault allocator, else
 the source (e.g. that label) whose signed flows dominate the hour.
 """
 import hashlib
+import warnings
 from collections.abc import Callable, Hashable, Iterable
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any, NamedTuple
 
 import numpy as np
@@ -47,12 +49,14 @@ from fractal.loaders.morpho import MorphoLoaderException, graphql_query
 from fractal.loaders.rpc import keccak256
 
 __all__ = [
+    "MorphoMarketParams",
     "MorphoVaultV2Coverage",
     "MorphoVaultV2History",
     "MorphoVaultV2Listing",
     "MorphoVaultV2Loader",
     "attribute_supply_changes",
     "classify_allocations",
+    "fetch_market_params",
     "hour_end",
     "hourly_supply_changes",
     "morpho_market_id",
@@ -62,9 +66,9 @@ __all__ = [
 _DEFAULT_TVL_FLOOR_USD = 1_000_000.0
 _ALLOCATION_SLICE_SECONDS = 7 * 86_400
 _TRANSACTION_SLICE_SECONDS = 86_400
-_TRANSACTION_SKIP_CAP = 10_000
+_EVENT_SKIP_CAP = 10_000
 _MARKET_PAGE_SIZE = 1000
-_CACHE_SCHEMA = "v2"
+_CACHE_SCHEMA = "v3"
 _ZERO_ADDRESS = "0x" + "00" * 20
 
 _VAULTS_QUERY = """
@@ -75,6 +79,7 @@ query VaultV2Vaults($first: Int!, $skip: Int!, $where: VaultV2sFilters) {
       liquidityAdapter { address }
       allocators { allocator { address } }
     }
+    pageInfo { countTotal }
   }
 }
 """
@@ -201,7 +206,12 @@ class MorphoVaultV2History:
     coverage: MorphoVaultV2Coverage
 
 
-class _MarketParams(NamedTuple):
+class MorphoMarketParams(NamedTuple):
+    """Morpho Blue ``MarketParams``: lowercase addresses (zero address when absent) and the WAD ``lltv``.
+
+    ``morpho_market_id(*params)`` returns the market's id.
+    """
+
     loan_token: str
     collateral_token: str
     oracle: str
@@ -280,10 +290,24 @@ def _lower(value: Any) -> str:
     return str(value or "").lower()
 
 
+def _raw_int(value: Any) -> int:
+    """Exact integer from a GraphQL BigInt sent as an int, a digit string or scientific notation."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value
+    if not isinstance(value, bool):
+        try:
+            number = Decimal(str(value).strip())
+        except InvalidOperation:
+            number = None
+        if number is not None and number.is_finite() and number == number.to_integral_value():
+            return int(number)
+    raise MorphoLoaderException(f"Morpho GraphQL: expected an integer amount, got {value!r}")
+
+
 def _scale(value: Any, decimals: int | None) -> float | None:
     if value is None or decimals is None:
         return None
-    return int(value) / 10**decimals
+    return _raw_int(value) / 10**decimals
 
 
 def _event_key(item: dict[str, Any]) -> tuple[str, int, str]:
@@ -320,20 +344,13 @@ def _paged_items(
     variables: dict[str, Any],
     page_size: int,
     identity: Callable[[dict[str, Any]], Hashable],
-    *,
-    initial_page: list[dict[str, Any]] | None = None,
-    total: int | None = None,
 ) -> list[dict[str, Any]]:
-    """Skip-paginate until a short page, a page without new rows, or ``total`` rows."""
+    """Skip-paginate a listing until a short page, a page without new rows, or ``countTotal`` rows."""
     items: list[dict[str, Any]] = []
     seen: set[Hashable] = set()
     skip = 0
     while True:
-        if skip == 0 and initial_page is not None:
-            page = initial_page
-        else:
-            page, page_total = _query_page(http, query, root, variables, page_size, skip)
-            total = total if total is not None else page_total
+        page, total = _query_page(http, query, root, variables, page_size, skip)
         new_items = []
         for item in page:
             key = identity(item)
@@ -342,8 +359,57 @@ def _paged_items(
                 new_items.append(item)
         items.extend(new_items)
         skip += page_size
-        if len(page) < page_size or not new_items or (total is not None and skip >= total):
+        done = skip >= total if total is not None else len(page) < page_size
+        if done or not new_items:
             return items
+
+
+def _event_slice(
+    http: HttpClient,
+    query: str,
+    root: str,
+    variables: Callable[[int, int], dict[str, Any]],
+    page_size: int,
+    lo: int,
+    hi: int,
+    label: str,
+) -> list[dict[str, Any]]:
+    """Events in ``[lo, hi]``, bisecting the window until its first page holds ``countTotal`` rows.
+
+    ``skip`` pages of Morpho API event queries can come back short of ``first``
+    while more rows remain, so offset paging is used only for a single second
+    that holds more events than one page; it stops on ``countTotal`` (on a
+    short page when the API omits it) and a result short of ``countTotal``
+    emits a ``UserWarning`` instead of failing.
+    """
+    bounded = variables(lo, hi)
+    page, total = _query_page(http, query, root, bounded, page_size, 0)
+    if total is not None and total > len(page) and lo < hi:
+        mid = (lo + hi) // 2
+        return _event_slice(http, query, root, variables, page_size, lo, mid, label) + _event_slice(
+            http, query, root, variables, page_size, mid + 1, hi, label
+        )
+    if total is not None and total > _EVENT_SKIP_CAP:
+        raise MorphoLoaderException(f"{total} {label} in second {lo}; cannot page past the API skip cap")
+    rows: list[dict[str, Any]] = []
+    seen: set[Hashable] = set()
+    skip = 0
+    while page:
+        new_rows = [item for item in page if _event_key(item) not in seen]
+        if not new_rows:
+            break
+        rows.extend(new_rows)
+        seen.update(_event_key(item) for item in new_rows)
+        skip += page_size
+        if (len(page) < page_size if total is None else skip >= total) or skip > _EVENT_SKIP_CAP:
+            break
+        page, _ = _query_page(http, query, root, bounded, page_size, skip)
+    if total is not None and len(rows) < total:
+        warnings.warn(
+            f"MorphoVaultV2Loader: {label} in [{lo}, {hi}] returned {len(rows)} distinct events of countTotal {total}",
+            stacklevel=2,
+        )
+    return rows
 
 
 def _allocation_slice(
@@ -353,31 +419,17 @@ def _allocation_slice(
     lo: int,
     hi: int,
 ) -> list[dict[str, Any]]:
-    """Allocations in ``[lo, hi]``, bisecting the window while one page cannot hold them."""
-    bounded = {**variables, "where": {"timestamp_gte": lo, "timestamp_lte": hi}}
-    root = "vaultV2AllocationTransactions"
-    page, total = _query_page(http, _ALLOCATIONS_QUERY, root, bounded, page_size, 0)
-    if total is None:
-        if len(page) < page_size:
-            return page
-        return _paged_items(http, _ALLOCATIONS_QUERY, root, bounded, page_size, _event_key, initial_page=page)
-    if total <= len(page):
-        return page
-    if hi > lo:
-        mid = (lo + hi) // 2
-        return (
-            _allocation_slice(http, variables, page_size, lo, mid)
-            + _allocation_slice(http, variables, page_size, mid + 1, hi)
-        )
-    items = _paged_items(
-        http, _ALLOCATIONS_QUERY, root, bounded, page_size, _event_key, initial_page=page, total=total
+    """Allocations of one vault in ``[lo, hi]``."""
+    return _event_slice(
+        http,
+        _ALLOCATIONS_QUERY,
+        "vaultV2AllocationTransactions",
+        lambda a, b: {**variables, "where": {"timestamp_gte": a, "timestamp_lte": b}},
+        page_size,
+        lo,
+        hi,
+        f"Vault V2 allocations of {variables['vaultAddress']}",
     )
-    if len(items) < total:
-        raise MorphoLoaderException(
-            f"{total} Vault V2 allocations of {variables['vaultAddress']} in second {lo}; "
-            f"pagination returned {len(items)}"
-        )
-    return items
 
 
 def _transaction_slice(
@@ -387,26 +439,16 @@ def _transaction_slice(
     lo: int,
     hi: int,
 ) -> list[dict[str, Any]]:
-    """Vault transactions in ``[lo, hi]``, bisecting while the count exceeds the API skip cap."""
-    bounded = {"where": {**where, "timestamp_gte": lo, "timestamp_lte": hi}}
-    page, total = _query_page(http, _TRANSACTIONS_QUERY, "vaultV2transactions", bounded, page_size, 0)
-    if total is not None and total > _TRANSACTION_SKIP_CAP:
-        if hi <= lo:
-            raise MorphoLoaderException(f"{total} Vault V2 transactions in one second")
-        mid = (lo + hi) // 2
-        return (
-            _transaction_slice(http, where, page_size, lo, mid)
-            + _transaction_slice(http, where, page_size, mid + 1, hi)
-        )
-    return _paged_items(
+    """Vault transactions of a vault batch in ``[lo, hi]``."""
+    return _event_slice(
         http,
         _TRANSACTIONS_QUERY,
         "vaultV2transactions",
-        bounded,
+        lambda a, b: {"where": {**where, "timestamp_gte": a, "timestamp_lte": b}},
         page_size,
-        _event_key,
-        initial_page=page,
-        total=total,
+        lo,
+        hi,
+        "Vault V2 transactions",
     )
 
 
@@ -436,30 +478,69 @@ def _listing(item: dict[str, Any]) -> MorphoVaultV2Listing:
     )
 
 
-def _market_params(item: dict[str, Any]) -> _MarketParams:
-    return _MarketParams(
+def _market_params(item: dict[str, Any]) -> MorphoMarketParams:
+    return MorphoMarketParams(
         loan_token=_lower((item.get("loanAsset") or {}).get("address")) or _ZERO_ADDRESS,
         collateral_token=_lower((item.get("collateralAsset") or {}).get("address")) or _ZERO_ADDRESS,
         oracle=_lower(item.get("oracleAddress")) or _ZERO_ADDRESS,
         irm=_lower(item.get("irmAddress")) or _ZERO_ADDRESS,
-        lltv=int(item.get("lltv") or 0),
+        lltv=_raw_int(item.get("lltv") or 0),
     )
+
+
+def fetch_market_params(
+    chain_id: int,
+    *,
+    market_ids: Iterable[str] = (),
+    loan_addresses: Iterable[str] = (),
+    http: HttpClient | None = None,
+    batch_size: int = 100,
+) -> dict[str, MorphoMarketParams]:
+    """Exact Morpho Blue ``MarketParams`` from the public Morpho API.
+
+    Returns ``{market_id: MorphoMarketParams}`` for the markets in
+    ``market_ids`` (queried in batches of ``batch_size``) and every market on
+    ``chain_id`` whose loan token is in ``loan_addresses``, listed or not.
+    Ids and addresses are matched case-insensitively and returned lowercase.
+    """
+    if batch_size <= 0:
+        raise ValueError(f"batch_size must be > 0, got {batch_size}")
+    client = http or HttpClient()
+    ids = sorted({_lower(market_id) for market_id in market_ids})
+    wheres = [
+        {"chainId_in": [int(chain_id)], "uniqueKey_in": ids[i:i + batch_size]} for i in range(0, len(ids), batch_size)
+    ]
+    loans = sorted({_lower(address) for address in loan_addresses})
+    if loans:
+        wheres.append({"chainId_in": [int(chain_id)], "loanAssetAddress_in": loans})
+    out: dict[str, MorphoMarketParams] = {}
+    for where in wheres:
+        for item in _paged_items(
+            client,
+            _MARKETS_QUERY,
+            "markets",
+            {"where": where},
+            _MARKET_PAGE_SIZE,
+            lambda item: _lower(item.get("marketId")),
+        ):
+            out[_lower(item.get("marketId"))] = _market_params(item)
+    return out
 
 
 class _MarketIndex:
     """Resolve allocation ``ids`` to a Blue market id through the market-params id."""
 
-    def __init__(self, markets: Iterable[dict[str, Any]]) -> None:
-        self._by_collateral: dict[tuple[int, str, str], list[tuple[str, _MarketParams]]] = {}
+    def __init__(self, markets: dict[int, dict[str, MorphoMarketParams]]) -> None:
+        self._by_collateral: dict[tuple[int, str, str], list[tuple[str, MorphoMarketParams]]] = {}
         self._params_ids: dict[tuple[str, int, str], str] = {}
         collateral_ids: dict[str, str] = {}
-        for item in markets:
-            params = _market_params(item)
-            token = params.collateral_token
-            if token not in collateral_ids:
-                collateral_ids[token] = _collateral_id(token)
-            key = (int(item["chain_id"]), params.loan_token, collateral_ids[token])
-            self._by_collateral.setdefault(key, []).append((_lower(item.get("marketId")), params))
+        for chain_id, chain_markets in markets.items():
+            for market_id, params in chain_markets.items():
+                token = params.collateral_token
+                if token not in collateral_ids:
+                    collateral_ids[token] = _collateral_id(token)
+                key = (int(chain_id), params.loan_token, collateral_ids[token])
+                self._by_collateral.setdefault(key, []).append((market_id, params))
 
     def resolve(self, chain_id: int, loan_token: str, adapter: str, ids: Iterable[str]) -> str | None:
         """The unique market whose market-params id for ``adapter`` is in ``ids``, else ``None``."""
@@ -671,6 +752,11 @@ def _event_frame(rows: list[dict[str, Any]], columns: list[str]) -> pd.DataFrame
 class MorphoVaultV2Loader(Loader):
     """Load Vault V2 listings, allocation events and depositor transactions.
 
+    Event windows are bisected in time until each part fits in one page, and
+    a part that returns fewer distinct events than its ``countTotal`` emits a
+    ``UserWarning``. BigInt amounts are parsed
+    exactly, including scientific notation such as ``"1.5e+21"``.
+
     Args:
         start_time / end_time: Inclusive UTC event window. ``end_time``
             defaults to construction time.
@@ -782,7 +868,7 @@ class MorphoVaultV2Loader(Loader):
         for vault in vaults:
             by_chain.setdefault(vault.chain_id, []).append(vault)
         transactions: list[dict[str, Any]] = []
-        markets: list[dict[str, Any]] = []
+        markets: dict[int, dict[str, MorphoMarketParams]] = {}
         for chain_id, chain_vaults in sorted(by_chain.items()):
             for i in range(0, len(chain_vaults), self.vault_batch_size):
                 where = {
@@ -796,21 +882,10 @@ class MorphoVaultV2Loader(Loader):
                         for event in _transaction_slice(self._http, where, self.event_page_size, lo, hi)
                     )
             if any(row["chain_id"] == chain_id for row in allocations):
-                markets.extend(
-                    {"chain_id": chain_id, **item}
-                    for item in _paged_items(
-                        self._http,
-                        _MARKETS_QUERY,
-                        "markets",
-                        {
-                            "where": {
-                                "chainId_in": [chain_id],
-                                "loanAssetAddress_in": sorted({vault.asset_address for vault in chain_vaults}),
-                            }
-                        },
-                        _MARKET_PAGE_SIZE,
-                        lambda item: _lower(item.get("marketId")),
-                    )
+                markets[chain_id] = fetch_market_params(
+                    chain_id,
+                    loan_addresses={vault.asset_address for vault in chain_vaults},
+                    http=self._http,
                 )
         self._data = {
             "vaults": vaults,
@@ -824,7 +899,7 @@ class MorphoVaultV2Loader(Loader):
         raw = self._data or {}
         listings: tuple[MorphoVaultV2Listing, ...] = tuple(raw.get("vaults", ()))
         by_vault = {(listing.chain_id, listing.vault_address): listing for listing in listings}
-        index = _MarketIndex(raw.get("markets", []))
+        index = _MarketIndex(raw.get("markets", {}))
 
         allocation_rows = []
         for item in raw.get("allocations", []):

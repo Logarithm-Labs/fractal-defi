@@ -1,4 +1,5 @@
 """Offline synthetic tests for the Morpho Vault V2 activity loader."""
+import warnings
 from collections.abc import Callable
 from datetime import datetime, timedelta, timezone
 
@@ -8,9 +9,11 @@ import pytest
 from fractal.loaders import LoaderType, MorphoVaultV2History, MorphoVaultV2Loader
 from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException
 from fractal.loaders.morpho_vault_v2 import (
+    MorphoMarketParams,
     _collateral_id,
     attribute_supply_changes,
     classify_allocations,
+    fetch_market_params,
     hour_end,
     hourly_supply_changes,
     morpho_market_id,
@@ -272,7 +275,7 @@ def test_allocation_window_bisects_only_while_count_exceeds_the_page():
     assert all(v["skip"] == 0 for v in calls)
 
 
-def test_single_second_overflow_paginates_and_rejects_a_short_result():
+def test_single_second_overflow_paginates_and_warns_on_a_short_result():
     second = int(START.timestamp())
     events = [{**_allocation(log_index=i), "timestamp": second} for i in (1, 2, 3)]
 
@@ -285,8 +288,87 @@ def test_single_second_overflow_paginates_and_rejects_a_short_result():
     assert one_second.read(with_run=True).allocations["log_index"].tolist() == [1, 2, 3]
 
     stuck = _FakeVaultV2Http(vault_pages={0: [_vault()]}, allocations=lambda v: (events[:2], len(events)))
-    with pytest.raises(MorphoLoaderException, match="pagination returned 2"):
-        MorphoVaultV2Loader(START, START, chain_ids=[CHAIN_ID], event_page_size=2, http=stuck).read(with_run=True)
+    with pytest.warns(UserWarning, match="2 distinct events of countTotal 3"):
+        history = MorphoVaultV2Loader(START, START, chain_ids=[CHAIN_ID], event_page_size=2, http=stuck).read(
+            with_run=True
+        )
+    assert history.allocations["log_index"].tolist() == [1, 2]
+
+
+def test_transactions_survive_short_skip_pages_by_bisecting_the_window():
+    base = int(START.timestamp())
+    rows = [
+        {**_transaction("Deposit", "1000000", i), "timestamp": base + i, "txHash": "0x" + f"{1000 + i:064x}"}
+        for i in range(1, 51)
+    ]
+
+    def lossy(variables):
+        """Windowed source whose full pages come back three rows short."""
+        where, skip, first = variables["where"], variables["skip"], variables["first"]
+        window = [row for row in rows if where["timestamp_gte"] <= row["timestamp"] <= where["timestamp_lte"]]
+        page = window[skip:skip + first]
+        return (page[:-3] if len(page) == first else page), len(window)
+
+    http = _FakeVaultV2Http(vault_pages={0: [_vault()]}, transactions=lossy)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        history = _loader(http, event_page_size=10).read(with_run=True)
+    assert len(history.transactions) == len(rows)
+    assert all(v["skip"] == 0 for v in http.variables("VaultV2Transactions"))
+
+
+def test_transaction_count_short_of_count_total_warns():
+    second = int(START.timestamp())
+    rows = [{**_transaction("Deposit", "1", i), "timestamp": second} for i in (1, 2, 3)]
+    http = _FakeVaultV2Http(vault_pages={0: [_vault()]}, transactions=lambda v: (rows[:2], 3))
+    loader = MorphoVaultV2Loader(START, START, chain_ids=[CHAIN_ID], event_page_size=2, http=http)
+    with pytest.warns(UserWarning, match="countTotal 3"):
+        assert len(loader.read(with_run=True).transactions) == 2
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("1500000000000000000000", 1500.0), ("1.5e+21", 1500.0), (1.5e21, 1500.0), ("15E20", 1500.0), (7, 7e-18)],
+)
+def test_bigint_amounts_parse_exactly_including_scientific_notation(raw, expected):
+    vault = {**_vault(), "asset": {"address": ASSET, "symbol": "SYN", "decimals": 18}}
+    http = _FakeVaultV2Http(vault_pages={0: [vault]}, allocations=_by_skip({0: [{**_allocation(), "assets": raw}]}))
+    assert _loader(http).read(with_run=True).allocations["assets_native"].iloc[0] == pytest.approx(expected)
+
+
+@pytest.mark.parametrize("raw", ["abc", "1.5", "1e-3", "nan", "inf", True])
+def test_malformed_bigint_amount_raises_a_named_error(raw):
+    http = _FakeVaultV2Http(vault_pages={0: [_vault()]}, allocations=_by_skip({0: [{**_allocation(), "assets": raw}]}))
+    with pytest.raises(MorphoLoaderException, match="integer amount"):
+        _loader(http).read(with_run=True)
+
+
+def test_fetch_market_params_by_id_batches_and_by_loan_token():
+    market_c = "0x" + "c" * 64
+
+    def markets(variables):
+        where = variables["where"]
+        catalogue = [_market(MARKET_A, LLTV), _market(MARKET_B, LLTV - 1), {**_market(market_c, 0),
+                     "collateralAsset": None, "oracleAddress": None, "irmAddress": None}]
+        if "uniqueKey_in" in where:
+            items = [item for item in catalogue if item["marketId"] in where["uniqueKey_in"]]
+        else:
+            items = [item for item in catalogue if item["loanAsset"]["address"] in where["loanAssetAddress_in"]]
+        return items[variables["skip"]:variables["skip"] + variables["first"]], len(items)
+
+    http = _FakeVaultV2Http()
+    http.handlers["VaultV2Markets"] = ("markets", markets)
+    by_id = fetch_market_params(CHAIN_ID, market_ids=[MARKET_A.upper().replace("0X", "0x"), market_c], http=http,
+                                batch_size=1)
+    assert by_id == {
+        MARKET_A: MorphoMarketParams(ASSET, COLLATERAL, ORACLE, IRM, LLTV),
+        market_c: MorphoMarketParams(ASSET, "0x" + "00" * 20, "0x" + "00" * 20, "0x" + "00" * 20, 0),
+    }
+    assert [v["where"]["uniqueKey_in"] for v in http.variables("VaultV2Markets")] == [[MARKET_A], [market_c]]
+    assert morpho_market_id(*by_id[MARKET_A]) == "0x0e1dbc97eb802ed1bd06fbcbe5d76ea2d11a8257e5aef2b3da7a7b6c8441618f"
+    by_loan = fetch_market_params(CHAIN_ID, loan_addresses=[ASSET], http=http)
+    assert set(by_loan) == {MARKET_A, MARKET_B, market_c}
+    assert fetch_market_params(CHAIN_ID, http=http) == {}
 
 
 def test_transactions_are_batched_per_chain_and_attributed_to_their_vault():
