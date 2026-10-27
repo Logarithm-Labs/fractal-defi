@@ -6,7 +6,8 @@ One transport for the three things a backtest reads from a node:
   oracle's ``baseDiscountPerYear``, any view function);
 * event logs over a block range (``eth_getLogs`` with adaptive chunking:
   Uniswap ``Swap``, Aave ``Supply`` / ``Borrow``, Morpho ``Borrow``, ...);
-* block headers for timestamps.
+* block headers for timestamps, and the block at a timestamp;
+* transactions and receipts.
 
 No web3 dependency: requests go through :class:`HttpClient` like every
 other transport in the package, and the ABI helpers cover the static
@@ -20,11 +21,14 @@ Example — every ``Supply`` of one Aave V3 pool::
     for log in rpc.iter_logs(POOL, [topic], from_block=21_000_000, to_block=21_100_000):
         reserve, on_behalf_of = topic_to_address(log["topics"][1]), topic_to_address(log["topics"][3])
         amount, referral = decode_words(log["data"], 2)
+
+A keyed endpoint (``https://<host>/v3/<key>``) is kept out of error
+messages and urllib3 log records: see :func:`fractal.loaders._http.url_secrets`.
 """
 from collections.abc import Iterator, Sequence
 from typing import Any
 
-from fractal.loaders._http import HttpClient, LoaderHttpError
+from fractal.loaders._http import HttpClient, LoaderHttpError, RedactingTransport, url_secrets
 
 __all__ = [
     "JsonRpcClient",
@@ -36,6 +40,7 @@ __all__ = [
     "eth_call",
     "event_topic",
     "function_selector",
+    "hex_to_int",
     "keccak256",
     "topic_to_address",
     "topic_to_int",
@@ -154,9 +159,27 @@ def _hex_block(block: BlockTag) -> str:
     return hex(block) if isinstance(block, int) else block
 
 
+def hex_to_int(value: Any) -> int:
+    """Integer from a JSON-RPC quantity: an int, ``0x…`` hex (``"0x"`` and
+    ``None`` are 0, as some providers encode zero) or a decimal string."""
+    if isinstance(value, int):
+        return value
+    if value in (None, "", "0x"):
+        return 0
+    text = str(value)
+    return int(text, 16) if text.startswith(("0x", "0X")) else int(text)
+
+
 # ----------------------------------------------------------------- client
 class JsonRpcClient:
     """Thin JSON-RPC client over :class:`HttpClient`.
+
+    When ``rpc_url`` carries a path or query (a keyed endpoint), requests
+    go through :class:`~fractal.loaders._http.RedactingTransport`: errors
+    are re-raised with the key scrubbed and detached from the original,
+    and urllib3 log records are scrubbed while a request runs. Pass the
+    key in the URL (e.g. read from an environment variable), never commit
+    it.
 
     Args:
         rpc_url: JSON-RPC endpoint.
@@ -165,8 +188,12 @@ class JsonRpcClient:
 
     def __init__(self, rpc_url: str, http: HttpClient | None = None) -> None:
         self.rpc_url = rpc_url
-        self._http = http or HttpClient()
+        transport = http or HttpClient()
+        secrets = url_secrets(rpc_url)
+        self._http = RedactingTransport(transport, secrets) if secrets else transport
         self._id = 0
+        # Header times of mined blocks never change; cached for block_at_timestamp.
+        self._block_times: dict[int, int] = {}
 
     def call(self, method: str, params: Sequence[Any]) -> Any:
         """Raw JSON-RPC call; raises :class:`RpcCallError` on an error body."""
@@ -190,6 +217,82 @@ class JsonRpcClient:
 
     def block_timestamp(self, block: BlockTag) -> int:
         return int(self.get_block(block)["timestamp"], 16)
+
+    def _block_time(self, block: int) -> int:
+        if block not in self._block_times:
+            self._block_times[block] = self.block_timestamp(block)
+        return self._block_times[block]
+
+    def _first_block_at_or_after(self, timestamp: int, lo: int, hi: int) -> int:
+        """Smallest block in ``(lo, hi]`` with time >= ``timestamp``, given
+        ``time(lo) < timestamp <= time(hi)``. Interpolation steps on the
+        block rate alternate with bisection, so a regular chain converges
+        in a few calls and an irregular one stays logarithmic."""
+        interpolate = True
+        while hi - lo > 1:
+            t_lo, t_hi = self._block_time(lo), self._block_time(hi)
+            if interpolate and t_hi > t_lo:
+                mid = lo + (timestamp - t_lo) * (hi - lo) // (t_hi - t_lo)
+                mid = min(max(mid, lo + 1), hi - 1)
+            else:
+                mid = (lo + hi) // 2
+            interpolate = not interpolate
+            if self._block_time(mid) < timestamp:
+                lo = mid
+            else:
+                hi = mid
+        return hi
+
+    def block_at_timestamp(
+        self,
+        timestamp: int,
+        closest: str = "after",
+        *,
+        low: int = 0,
+        high: int | None = None,
+    ) -> int:
+        """Block at a UNIX timestamp, searched over block headers.
+
+        ``closest="after"`` returns the first block with time ``>= timestamp``;
+        ``"before"`` the last block with time ``<= timestamp`` (the state an
+        observer at ``timestamp`` could have read, so no look-ahead).
+        ``low`` / ``high`` narrow the search and must bracket the answer;
+        ``high`` defaults to the latest block. Raises :class:`ValueError`
+        when no block in ``[low, high]`` qualifies.
+        """
+        if closest not in ("after", "before"):
+            raise ValueError(f"closest must be 'after' or 'before', got {closest!r}")
+        ts = int(timestamp)
+        lo = int(low)
+        hi = self.block_number() if high is None else int(high)
+        if lo > hi:
+            raise ValueError(f"empty block range [{lo}, {hi}]")
+        if closest == "after":
+            if self._block_time(hi) < ts:
+                raise ValueError(f"no block at or after {ts} up to block {hi}")
+            if self._block_time(lo) >= ts:
+                return lo
+            return self._first_block_at_or_after(ts, lo, hi)
+        if self._block_time(lo) > ts:
+            raise ValueError(f"no block at or before {ts} from block {lo}")
+        if self._block_time(hi) <= ts:
+            return hi
+        return self._first_block_at_or_after(ts + 1, lo, hi) - 1
+
+    # ------------------------------------------------------ transactions
+    def get_transaction(self, tx_hash: str) -> dict[str, Any]:
+        """``eth_getTransactionByHash``; raises when the node does not know it."""
+        result = self.call("eth_getTransactionByHash", [tx_hash])
+        if not isinstance(result, dict):
+            raise RpcCallError(f"eth_getTransactionByHash({tx_hash}) returned {result!r}")
+        return result
+
+    def get_transaction_receipt(self, tx_hash: str) -> dict[str, Any]:
+        """``eth_getTransactionReceipt``; raises for unknown or pending transactions."""
+        result = self.call("eth_getTransactionReceipt", [tx_hash])
+        if not isinstance(result, dict):
+            raise RpcCallError(f"eth_getTransactionReceipt({tx_hash}) returned {result!r}")
+        return result
 
     # ------------------------------------------------------------- calls
     def eth_call(self, to: str, data: str, block: BlockTag = "latest") -> str:

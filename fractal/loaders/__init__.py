@@ -16,6 +16,7 @@ from fractal.loaders.defillama import (
     DefiLlamaTVLLoader,
     DefiLlamaYieldsLoader,
 )
+from fractal.loaders.etherscan import EtherscanClient, EtherscanError
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
@@ -25,7 +26,12 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
 )
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
-from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.onchain import (
+    AaveV3ReserveRatesLoader,
+    DebtTokenFlowsLoader,
+    RpcLoaderException,
+    UniswapV3SwapsLoader,
+)
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
@@ -67,6 +73,7 @@ __all__ = [
     "AaveV3ArbitrumLoader",
     "AaveV3EthereumLoader",
     "AaveV3RatesLoader",
+    "AaveV3ReserveRatesLoader",
     "AerodromeLoader",
     "AerodromeSlipstreamPoolHourDataLoader",
     "ArbitrumGraphLoader",
@@ -83,12 +90,15 @@ __all__ = [
     "BorosMarketLoader",
     "ConstantFundingsLoader",
     "DEXHistory",
+    "DebtTokenFlowsLoader",
     "DefiLlamaDEXLoader",
     "DefiLlamaPoolLoader",
     "DefiLlamaProLoader",
     "DefiLlamaTVLLoader",
     "DefiLlamaYieldsLoader",
     "EthereumUniswapV2PoolDataLoader",
+    "EtherscanClient",
+    "EtherscanError",
     "FundingHistory",
     "GMXV1FundingLoader",
     "GraphLoaderException",

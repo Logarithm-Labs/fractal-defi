@@ -15,6 +15,10 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`EtherscanClient`** (`fractal.loaders.etherscan`) — throttled Etherscan V2 (multichain) client: block at a timestamp, address-filtered logs in the JSON-RPC log shape (paged, with the 10 000-row window split by block range), ERC-20 transfers of an account and a proxy `eth_call`; body-level rate-limit answers are retried; the key comes from `api_key=` or `ETHERSCAN_API_KEY`.
+- **`JsonRpcClient.block_at_timestamp`** (interpolation-guided search over cached block headers, `closest="after"|"before"`), **`get_transaction`** and **`get_transaction_receipt`**, plus a `hex_to_int` helper for provider quantity encodings.
+- **`AaveV3ReserveRatesLoader`** (`fractal.loaders.onchain`) — supply and variable-borrow rates of one Aave V3-layout reserve (Aave V3, Spark, ...) from `Pool.getReserveData` at the last block at or before each bar, as a `LendingHistory` with per-bar continuous rates and annual APYs; `decode_reserve_data` also exposes the aToken and variable-debt-token addresses.
+- **`DebtTokenFlowsLoader`** (`fractal.loaders.onchain`) — per-event borrow/repay flows of a variable-debt token from zero-address `Transfer` logs (keyless `eth_getLogs`, optional borrower filter); `split_interest=True` reads the Aave V3 `Mint`/`Burn` events to separate accrued interest from principal.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
@@ -224,6 +228,7 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Keyed RPC URLs no longer leak into errors or logs.** `JsonRpcClient` routes requests to an endpoint with a path or query (`https://<host>/v3/<key>`) through the shared `_http` redaction (generalised from the DefiLlama Pro loaders): failures are re-raised as scrubbed copies with no key-bearing `__cause__`/`__context__`, and urllib3 log records are scrubbed while a request runs. `HttpClient` itself is unchanged.
 - **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
   the API to the annual APY documented by `LendingHistory`.
 - **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
