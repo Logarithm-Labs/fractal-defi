@@ -123,6 +123,53 @@ def test_cache_round_trip_preserves_fees(monkeypatch, tmp_path):
     assert first["minimum_fee_bps"].tolist() == [5.0, 0.0]
 
 
+@pytest.mark.core
+def test_rows_are_sorted_by_threshold_and_non_dict_rows_skipped():
+    loader = CctpFeeLoader(SOURCE_DOMAIN, DESTINATION_DOMAIN)
+    loader._data = [
+        {"finalityThreshold": "2000", "minimumFee": "0"},
+        "unexpected",
+        {"finalityThreshold": 1000, "minimumFee": 1.3},
+    ]
+    loader.transform()
+    assert loader._data["mode"].tolist() == ["fast", "standard"]
+    assert loader._data["minimum_fee_bps"].tolist() == [1.3, 0.0]
+    assert loader._data["finality_threshold"].dtype == "int64"
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    "payload",
+    [
+        [{"finalityThreshold": 1000}],
+        [{"finalityThreshold": "fast", "minimumFee": 1}],
+        {"data": {"finalityThreshold": 1000}},
+    ],
+)
+def test_malformed_fee_payload_raises(payload):
+    loader = CctpFeeLoader(SOURCE_DOMAIN, DESTINATION_DOMAIN)
+    loader._data = payload
+    with pytest.raises(ValueError):
+        loader.transform()
+
+
+@pytest.mark.core
+def test_non_404_http_error_propagates():
+    loader = CctpFeeLoader(
+        SOURCE_DOMAIN,
+        DESTINATION_DOMAIN,
+        http=_FakeHttp(LoaderHttpError("HTTP 500 for upstream")),
+    )
+    with pytest.raises(LoaderHttpError):
+        loader.extract()
+
+
+@pytest.mark.core
+def test_negative_domain_rejected():
+    with pytest.raises(ValueError, match="non-negative"):
+        CctpFeeLoader(-1, DESTINATION_DOMAIN)
+
+
 @pytest.mark.integration
 def test_cctp_fee_integration_smoke():
     frame = CctpFeeLoader(CCTP_DOMAINS["ethereum"], CCTP_DOMAINS["base"]).read(with_run=True)

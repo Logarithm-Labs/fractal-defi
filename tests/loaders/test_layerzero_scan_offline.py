@@ -16,25 +16,38 @@ START = datetime(2026, 1, 1, tzinfo=timezone.utc)
 END = START + timedelta(hours=1)
 
 
-def _message(index: int, *, destination_timestamp: int | None = None) -> dict:
-    source_timestamp = int(START.timestamp()) + index * 60
+def _payload(amount_sd: int, *, compose: bytes = b"") -> str:
+    send_to = bytes(12) + bytes.fromhex("cd" * 20)
+    return "0x" + (send_to + amount_sd.to_bytes(8, "big") + compose).hex()
+
+
+def _message(
+    index: int,
+    *,
+    destination_timestamp: int | None = None,
+    status: str = "DELIVERED",
+    payload: str | None = None,
+    source_timestamp: int | None = None,
+    destination_eid: int = DESTINATION_EID,
+    sender: str = OFT_ADDRESS,
+) -> dict:
+    if source_timestamp is None:
+        source_timestamp = int(START.timestamp()) + index * 60
     destination_tx = {} if destination_timestamp is None else {"blockTimestamp": destination_timestamp}
+    source_tx = {"txHash": f"0x{index:064x}", "blockTimestamp": source_timestamp}
+    if payload is not None:
+        source_tx["payload"] = payload
     return {
         "guid": f"0x{index:064x}",
         "pathway": {
             "srcEid": SOURCE_EID,
-            "dstEid": DESTINATION_EID,
-            "sender": {"address": OFT_ADDRESS.upper()},
+            "dstEid": destination_eid,
+            "sender": {"address": sender.upper()},
             "nonce": index,
         },
-        "source": {
-            "tx": {
-                "txHash": f"0x{index:064x}",
-                "blockTimestamp": source_timestamp,
-            }
-        },
+        "source": {"tx": source_tx},
         "destination": {"tx": destination_tx},
-        "status": {"name": "DELIVERED"},
+        "status": {"name": status},
     }
 
 
@@ -70,6 +83,7 @@ def test_transform_empty_response_has_stable_columns():
         "src_ts",
         "dst_ts",
         "status",
+        "amount",
         "latency_s",
     ]
 
@@ -175,3 +189,130 @@ def test_layerzero_scan_integration_smoke():
         assert (frame["src_eid"] == 30101).all()
         assert (frame["dst_eid"] == 30367).all()
         assert frame["latency_s"].dropna().ge(0).all()
+
+
+@pytest.mark.core
+def test_latency_only_for_delivered_messages():
+    destination_timestamp = int(START.timestamp()) + 300
+    loader = _loader()
+    loader._data = [_message(1, destination_timestamp=destination_timestamp, status="PAYLOAD_STORED")]
+    loader.transform()
+    row = loader._data.iloc[0]
+    assert row["status"] == "PAYLOAD_STORED"
+    assert row["dst_ts"] == destination_timestamp
+    assert pd.isna(row["latency_s"])
+
+
+@pytest.mark.core
+def test_amount_decoded_from_oft_payload_with_shared_decimals():
+    messages = [
+        _message(0, payload=_payload(1_234_567)),
+        _message(1, payload=_payload(2_500_000, compose=b"\x01" * 40)),
+        _message(2, payload="0x" + "00" * 39),
+        _message(3, payload="0xzz"),
+        _message(4),
+    ]
+    loader = _loader()
+    loader._data = messages
+    loader.transform()
+    amounts = loader._data["amount"].tolist()
+    assert amounts[:2] == [1.234567, 2.5]
+    assert all(pd.isna(value) for value in amounts[2:])
+    scaled = _loader(shared_decimals=8)
+    scaled._data = messages[:1]
+    scaled.transform()
+    assert scaled._data["amount"].tolist() == [0.01234567]
+    assert _loader(shared_decimals=8)._cache_key() != _loader()._cache_key()
+
+
+@pytest.mark.core
+def test_transform_filters_route_sender_window_and_duplicates():
+    start = int(START.timestamp())
+    end = int(END.timestamp())
+    keep_first = _message(0, source_timestamp=start)
+    keep_last = _message(1, source_timestamp=end - 1)
+    loader = _loader()
+    loader._data = [
+        keep_last,
+        keep_first,
+        dict(keep_first),  # duplicate GUID
+        _message(2, source_timestamp=start - 1),
+        _message(3, source_timestamp=end),
+        _message(4, destination_eid=DESTINATION_EID + 1),
+        _message(5, sender="0x" + "ef" * 20),
+        {"guid": "0xmalformed"},
+        _message(6, source_timestamp=None) | {"source": {"tx": {"txHash": "0x06"}}},
+    ]
+    loader.transform()
+    assert loader._data["guid"].tolist() == [keep_first["guid"], keep_last["guid"]]
+    assert loader._data["src_ts"].tolist() == [start, end - 1]
+
+
+@pytest.mark.core
+def test_iso_and_nan_timestamps_are_parsed():
+    source_iso = "2026-01-01T00:05:00.000Z"
+    message = _message(1, destination_timestamp=None)
+    message["source"]["tx"]["blockTimestamp"] = source_iso
+    message["destination"]["tx"]["blockTimestamp"] = float("nan")
+    loader = _loader()
+    loader._data = [message]
+    loader.transform()
+    assert loader._data.loc[0, "src_ts"] == int(START.timestamp()) + 300
+    assert pd.isna(loader._data.loc[0, "dst_ts"])
+
+
+@pytest.mark.core
+def test_extract_follows_tokens_and_sends_utc_window():
+    http = _FakeHttp({
+        None: {"data": [_message(0)], "nextToken": "page-2"},
+        "page-2": {"data": [_message(1)], "nextToken": "page-3"},
+        "page-3": {"data": [_message(2)]},
+    })
+    loader = _loader(http=http)
+    loader.extract()
+    assert len(loader._data) == 3
+    first_params = http.calls[0][1]
+    assert first_params == {"limit": 100, "start": "2026-01-01T00:00:00.000Z", "end": "2026-01-01T01:00:00.000Z"}
+    assert [params.get("nextToken") for _, params in http.calls] == [None, "page-2", "page-3"]
+
+
+@pytest.mark.core
+def test_repeated_continuation_token_raises():
+    http = _FakeHttp({
+        None: {"data": [], "nextToken": "loop"},
+        "loop": {"data": [], "nextToken": "loop"},
+    })
+    with pytest.raises(ValueError, match="repeated continuation token"):
+        _loader(http=http).extract()
+
+
+@pytest.mark.core
+def test_first_page_404_is_not_swallowed():
+    http = _FakeHttp({None: LoaderHttpError("HTTP 404 for unknown application")})
+    with pytest.raises(LoaderHttpError):
+        _loader(http=http).extract()
+
+
+@pytest.mark.core
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"source_eid": -1}, "non-negative"),
+        ({"oft_address": " "}, "oft_address"),
+        ({"end_time": START}, "must be after"),
+        ({"max_messages": 0}, "max_messages"),
+        ({"shared_decimals": -1}, "shared_decimals"),
+    ],
+)
+def test_constructor_validation(kwargs, message):
+    arguments = {
+        "source_eid": SOURCE_EID,
+        "destination_eid": DESTINATION_EID,
+        "oft_address": OFT_ADDRESS,
+        "start_time": START,
+        "end_time": END,
+    }
+    options = {key: kwargs.pop(key) for key in list(kwargs) if key in ("max_messages", "shared_decimals")}
+    arguments.update(kwargs)
+    with pytest.raises(ValueError, match=message):
+        LayerZeroScanLoader(**arguments, **options)

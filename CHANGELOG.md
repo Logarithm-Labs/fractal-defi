@@ -15,7 +15,7 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
-- **`LayerZeroScanLoader` / `CctpFeeLoader`** — keyless LayerZero Scan OFT message latency and Circle Iris V2 Fast/Standard CCTP fee schedules, with deterministic sampling and documented CCTP domain IDs.
+- **`LayerZeroScanLoader` / `CctpFeeLoader`** — keyless LayerZero Scan OFT messages (sent amount from the OFT payload, latency for delivered messages) and Circle Iris V2 Fast/Standard CCTP fee schedules, with deterministic sampling and documented CCTP domain IDs.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.

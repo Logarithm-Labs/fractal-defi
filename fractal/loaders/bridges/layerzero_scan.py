@@ -2,6 +2,8 @@
 
 The loader queries the public LayerZero Scan v1 API. Timestamps are UTC
 Unix seconds and the requested window is half-open: ``[start_time, end_time)``.
+Latency is reported only for ``DELIVERED`` messages: a destination transaction
+that stored a failed payload is not a completed transfer.
 """
 
 from datetime import datetime
@@ -14,7 +16,11 @@ from fractal.loaders._http import HttpClient, LoaderHttpError
 from fractal.loaders.base_loader import Loader, LoaderType
 
 LAYERZERO_SCAN_API = "https://scan.layerzero-api.com/v1"
-_CACHE_SCHEMA = "v1"
+_CACHE_SCHEMA = "v2"
+DELIVERED = "DELIVERED"
+OFT_SHARED_DECIMALS = 6
+# OFT message payload: sendTo (bytes32) + amountSD (uint64) [+ compose message].
+_OFT_AMOUNT_SLICE = slice(32, 40)
 
 
 def _iso(timestamp: datetime) -> str:
@@ -22,10 +28,10 @@ def _iso(timestamp: datetime) -> str:
 
 
 def _epoch(value: Any) -> int | None:
-    if value in (None, ""):
+    if value is None or (isinstance(value, str) and not value.strip()):
         return None
-    if isinstance(value, (int, float)) and not pd.isna(value):
-        return int(value)
+    if isinstance(value, (int, float)):
+        return None if pd.isna(value) else int(value)
     text = str(value)
     try:
         return int(text)
@@ -33,6 +39,20 @@ def _epoch(value: Any) -> int | None:
         timestamp = pd.Timestamp(text)
         timestamp = timestamp.tz_localize("UTC") if timestamp.tzinfo is None else timestamp.tz_convert("UTC")
         return int(timestamp.timestamp())
+
+
+def _oft_amount(payload: Any, shared_decimals: int) -> float:
+    """Token amount of an OFT send payload, or NaN when absent or malformed."""
+    if not isinstance(payload, str):
+        return float("nan")
+    text = payload[2:] if payload.lower().startswith("0x") else payload
+    try:
+        raw = bytes.fromhex(text)
+    except ValueError:
+        return float("nan")
+    if len(raw) < _OFT_AMOUNT_SLICE.stop:
+        return float("nan")
+    return int.from_bytes(raw[_OFT_AMOUNT_SLICE], "big") / 10**shared_decimals
 
 
 def _is_404(error: LoaderHttpError) -> bool:
@@ -49,8 +69,15 @@ class LayerZeroScanLoader(Loader):
         start_time: Inclusive start of the UTC window.
         end_time: Exclusive end of the UTC window.
         max_messages: Optional deterministic even time subsample size.
+        shared_decimals: OFT shared decimals used to scale the payload's
+            ``amountSD`` into token units (the OFT standard default is 6).
         loader_type: Cache format.
         http: Injectable HTTP client for offline tests.
+
+    Columns: ``guid``, ``src_eid``, ``dst_eid``, ``src_tx``, ``src_ts`` and
+    ``dst_ts`` (UTC Unix seconds; ``dst_ts`` is missing until executed),
+    ``status``, ``amount`` (token units sent, from the source payload) and
+    ``latency_s`` (``dst_ts - src_ts`` for ``DELIVERED`` messages, else NaN).
     """
 
     _columns = (
@@ -61,6 +88,7 @@ class LayerZeroScanLoader(Loader):
         "src_ts",
         "dst_ts",
         "status",
+        "amount",
         "latency_s",
     )
 
@@ -73,6 +101,7 @@ class LayerZeroScanLoader(Loader):
         end_time: datetime,
         *,
         max_messages: int | None = None,
+        shared_decimals: int = OFT_SHARED_DECIMALS,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
@@ -84,6 +113,8 @@ class LayerZeroScanLoader(Loader):
             raise ValueError("oft_address must not be empty")
         if max_messages is not None and max_messages <= 0:
             raise ValueError(f"max_messages must be > 0 or None, got {max_messages}")
+        if int(shared_decimals) < 0:
+            raise ValueError(f"shared_decimals must be non-negative, got {shared_decimals}")
         self.source_eid = int(source_eid)
         self.destination_eid = int(destination_eid)
         self.oft_address = address
@@ -94,13 +125,14 @@ class LayerZeroScanLoader(Loader):
         if self.end_time <= self.start_time:
             raise ValueError(f"end_time {self.end_time} must be after start_time {self.start_time}")
         self.max_messages = max_messages
+        self.shared_decimals = int(shared_decimals)
         self._http = http or HttpClient()
 
     def _cache_key(self) -> str:
         limit = "all" if self.max_messages is None else str(self.max_messages)
         return (
             f"{_CACHE_SCHEMA}-{self.source_eid}-{self.destination_eid}-{self.oft_address}-"
-            f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-max-{limit}"
+            f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-max-{limit}-sd-{self.shared_decimals}"
         )
 
     def extract(self) -> None:
@@ -165,8 +197,11 @@ class LayerZeroScanLoader(Loader):
             "src_ts": source_timestamp,
             "dst_ts": destination_timestamp,
             "status": status_name,
+            "amount": _oft_amount(source.get("payload"), self.shared_decimals),
             "latency_s": (
-                float(destination_timestamp - source_timestamp) if destination_timestamp is not None else float("nan")
+                float(destination_timestamp - source_timestamp)
+                if destination_timestamp is not None and status_name == DELIVERED
+                else float("nan")
             ),
         }
 
@@ -179,6 +214,7 @@ class LayerZeroScanLoader(Loader):
         frame["dst_eid"] = pd.to_numeric(frame["dst_eid"], errors="raise").astype("int64")
         frame["src_ts"] = pd.to_numeric(frame["src_ts"], errors="raise").astype("int64")
         frame["dst_ts"] = pd.array(pd.to_numeric(frame["dst_ts"], errors="coerce"), dtype="Int64")
+        frame["amount"] = pd.to_numeric(frame["amount"], errors="coerce").astype(float)
         frame["latency_s"] = pd.to_numeric(frame["latency_s"], errors="coerce").astype(float)
         return frame
 
