@@ -2,6 +2,7 @@
 import math
 
 import numpy as np
+import pandas as pd
 import pytest
 
 from fractal.core.entities.models.route_costs import (
@@ -10,8 +11,13 @@ from fractal.core.entities.models.route_costs import (
     RouteCosts,
     RouteLeg,
     amortise,
+    amortised_cost_days,
+    basis_pnl,
     break_even,
+    conversion_cost,
     fast_break_even,
+    fit_fee_schedule,
+    friction_table,
     latency_cost,
     venue_crossings,
 )
@@ -167,3 +173,136 @@ def test_fast_break_even():
     assert fast_break_even(1e6, 12.0, 2.0, 24.0, 24.0) == math.inf   # dearer, saves nothing
     with pytest.raises(ValueError):
         fast_break_even(0.0, 1.0, 0.0, 0.0, 1.0)
+
+
+def test_amortised_cost_days_counts_days_the_spread_does_not_repay():
+    days = pd.date_range("2026-01-01", periods=4, freq="D")
+    cost = pd.Series([0.001, 0.001, 0.002, np.nan], index=days)         # fraction of size per round trip
+    spread = pd.Series([0.02, 0.005, 0.03, 0.01], index=days)
+    # amortised over 36.5 days: 0.01, 0.01, 0.02 per year; the NaN day drops out
+    assert amortised_cost_days(cost, spread, horizon_days=36.5) == pytest.approx(1 / 3)
+    other = pd.Series([0.5], index=pd.date_range("2027-01-01", periods=1, freq="D"))
+    assert math.isnan(amortised_cost_days(cost, other, horizon_days=30.0))
+    with pytest.raises(ValueError):
+        amortised_cost_days(cost, spread, horizon_days=0.0)
+
+
+def test_conversion_cost_picks_the_cheaper_route():
+    # DEX: 1M * (1 + 2) bps = 300; issuer: 1M * 1 bp + 1M * 5 % * 48 h / 8760 = 100 + 273.97
+    out = conversion_cost(1e6, dex_fee_bps=1.0, basis_bps=2.0, issuer_fee_bps=1.0, issuer_latency_hours=48.0,
+                          rate=0.05)
+    assert out["route"] == "dex" and out["cost_usd"] == pytest.approx(300.0)
+    assert out["issuer_cost_usd"] == pytest.approx(100.0 + 1e6 * 0.05 * 48 / 8760)
+    # an adverse basis flips it to the issuer; a favourable one makes the DEX cheaper still
+    assert conversion_cost(1e6, 1.0, 10.0, 1.0, 48.0, 0.05)["route"] == "issuer"
+    assert conversion_cost(1e6, 1.0, -1.0, 1.0, 48.0, 0.05)["cost_usd"] == pytest.approx(0.0)
+    # unavailable routes
+    assert conversion_cost(1e6, None, 0.0, 1.0, 0.0, 0.05)["route"] == "issuer"
+    assert conversion_cost(1e6, 1.0, 0.0, None, 0.0, 0.05)["route"] == "dex"
+    none = conversion_cost(1e6, None, 0.0, np.nan, 0.0, 0.05)
+    assert none["route"] == "none" and math.isnan(none["cost_usd"])
+    vector = conversion_cost(np.array([1e5, 1e7]), 1.0, 0.0, 0.5, np.array([0.0, 24.0]), 0.05)
+    assert vector["route"].tolist() == ["issuer", "dex"]
+    assert vector["cost_usd"] == pytest.approx([5.0, 1000.0])
+
+
+def test_fit_fee_schedule_recovers_fixed_plus_bps_and_clips_negative_parts():
+    amount = np.array([1e4, 5e4, 2e5, 1e6, 3e6])
+    assert fit_fee_schedule(amount, 2.0 + 1.5 * amount / 1e4) == pytest.approx((2.0, 1.5), rel=1e-9)
+    assert fit_fee_schedule([1e5, 1e5, 1e5], [1.0, 3.0, 2.0]) == (2.0, 0.0)          # one size: median as fixed
+    assert fit_fee_schedule(amount, 10.0 - amount / 1e6) == (pytest.approx(9.8), 0.0)  # falling fee: flat median
+    fixed, bps = fit_fee_schedule(amount, -5.0 + 2.0 * amount / 1e4)                   # negative intercept
+    assert fixed == 0.0 and bps == pytest.approx(np.median((-5.0 + 2.0 * amount / 1e4) / amount) * 1e4)
+    assert all(math.isnan(x) for x in fit_fee_schedule([], []))
+    assert fit_fee_schedule([1e4, np.nan, 2e4], [1.0, 5.0, 2.0]) == pytest.approx((0.0, 1.0), abs=1e-9)
+    with pytest.raises(ValueError):
+        fit_fee_schedule([1.0, 2.0], [1.0])
+
+
+def _transfers() -> pd.DataFrame:
+    amounts = [1e4, 1e5, 1e6, 2e6, 5e5]
+    rows = [{"protocol": "bridge_a", "asset": "USDC", "src_chain": 1, "dst_chain": 8453, "mode": "std",
+             "amount_usd": a, "fee_usd": 0.5 + 0.2 * a / 1e4, "latency_s": 600.0 * (i + 1),
+             "gas_usd": 2.0 if a < 1e5 else 4.0, "matched": True} for i, a in enumerate(amounts)]
+    rows.append({**rows[0], "matched": False, "latency_s": np.nan})
+    rows.append({"protocol": "bridge_b", "asset": "USDT", "src_chain": 1, "dst_chain": 42161, "mode": "oft",
+                 "amount_usd": 1e5, "fee_usd": 7.0, "latency_s": 3600.0, "gas_usd": np.nan, "matched": True})
+    return pd.DataFrame(rows)
+
+
+def test_friction_table_summarises_each_route():
+    table = friction_table(_transfers(), sizes_usd=[1e6, 5e4], thin_below=3, gas_buckets_usd=[0.0, 1e5, np.inf])
+    assert table["protocol"].tolist() == ["bridge_a", "bridge_b"]
+    a, b = table.iloc[0], table.iloc[1]
+    assert (a["n"], a["n_unmatched"], a["thin"], b["n"], b["thin"]) == (5, 1, False, 1, True)
+    assert a["latency_p50_h"] == pytest.approx(0.5)                     # median of 10..50 minutes
+    assert a["latency_p10_h"] == pytest.approx(np.quantile([600, 1200, 1800, 2400, 3000], 0.1) / 3600)
+    assert (a["fee_fixed_usd"], a["fee_bps"]) == (pytest.approx(0.5), pytest.approx(0.2))
+    assert a["fee_bps_at_1m"] == pytest.approx((0.5 + 20.0) / 1e6 * 1e4)
+    assert a["fee_bps_at_50k"] == pytest.approx((0.5 + 1.0) / 5e4 * 1e4)
+    assert (b["fee_fixed_usd"], b["fee_bps"]) == (7.0, 0.0)              # one size: flat fee
+    assert a["gas_bps_0_100k"] == pytest.approx(2.0 / 1e4 * 1e4)
+    assert a["gas_bps_100k_inf"] == pytest.approx(np.median([4.0 / a_ * 1e4 for a_ in (1e5, 1e6, 2e6, 5e5)]))
+    assert math.isnan(b["gas_bps_0_100k"])
+
+
+def test_friction_table_optional_columns_and_validation():
+    plain = friction_table(_transfers().drop(columns=["matched", "gas_usd"]), sizes_usd=[1e6],
+                           group_by=["protocol"], quantiles=[0.5])
+    assert list(plain.columns) == ["protocol", "n", "n_unmatched", "latency_p50_h", "fee_fixed_usd", "fee_bps",
+                                   "fee_bps_at_1m"]
+    assert plain["n"].tolist() == [6, 1]                                 # no matched column: all count
+    with pytest.raises(ValueError, match="missing columns"):
+        friction_table(_transfers().drop(columns=["fee_usd"]), sizes_usd=[1e6])
+    with pytest.raises(ValueError):
+        friction_table(_transfers(), sizes_usd=[0.0])
+    with pytest.raises(ValueError):
+        friction_table(_transfers(), sizes_usd=[1e6], gas_buckets_usd=[1e5, 0.0])
+    with pytest.raises(ValueError):
+        friction_table(_transfers().drop(columns=["gas_usd"]), sizes_usd=[1e6], gas_buckets_usd=[0.0, 1.0])
+
+
+def _basis_reference(exposure: pd.DataFrame, prices: pd.DataFrame) -> np.ndarray:
+    """Row-by-row loop: last bar's exposure times this bar's relative price change."""
+    out = np.zeros(len(exposure))
+    marked = prices.sort_index().reindex(exposure.index, method="ffill")
+    for i in range(1, len(exposure)):
+        for asset, amount in exposure.iloc[i - 1].items():
+            if asset in marked.columns and np.isfinite(amount) and amount:
+                p0, p1 = marked[asset].iloc[i - 1], marked[asset].iloc[i]
+                if np.isfinite(p0) and np.isfinite(p1) and p0 > 0:
+                    out[i] += amount * (p1 / p0 - 1.0)
+    return out
+
+
+def test_basis_pnl_marks_last_bars_exposure_to_the_price_change():
+    hours = pd.date_range("2026-01-01", periods=4, freq="h")
+    exposure = pd.DataFrame({"USDT": [1e6, 1e6, 0.0, 5e5], "DAI": [0.0, 2e5, 2e5, 2e5]}, index=hours)
+    prices = pd.DataFrame({"USDT": [1.0, 0.999, 1.001, 1.0], "DAI": [1.0, 1.0, 1.002, 1.002]}, index=hours)
+    pnl = basis_pnl(exposure, prices)
+    assert pnl.iloc[0] == 0.0
+    assert pnl.iloc[1] == pytest.approx(1e6 * (0.999 - 1.0))
+    assert pnl.iloc[2] == pytest.approx(1e6 * (1.001 / 0.999 - 1.0) + 2e5 * 0.002)
+    assert pnl.iloc[3] == pytest.approx(0.0)                             # USDT flat at 0, DAI unchanged
+
+
+def test_basis_pnl_forward_fills_sparse_prices_and_skips_bad_ones():
+    hours = pd.date_range("2026-01-01", periods=6, freq="h")
+    exposure = pd.DataFrame({"USDT": [1e6] * 6, "FOO": [5e5] * 6}, index=hours)
+    prices = pd.DataFrame({"USDT": [1.0, 0.0, 0.998, np.nan]},
+                          index=[hours[4], hours[0], hours[2], hours[5]])     # unsorted, sparse
+    pnl = basis_pnl(exposure, prices)
+    # prices on the bars: 0 (h0), 0, 0.998, 0.998, 1.0, nan -> only h4 has a valid previous price
+    assert pnl.tolist() == pytest.approx([0.0, 0.0, 0.0, 0.0, 1e6 * (1.0 / 0.998 - 1.0), 0.0])
+    assert basis_pnl(exposure[["FOO"]], prices).tolist() == [0.0] * 6     # no price column: no basis
+
+
+def test_basis_pnl_matches_a_row_by_row_loop():
+    rng = np.random.default_rng(7)
+    hours = pd.date_range("2026-01-01", periods=200, freq="h")
+    exposure = pd.DataFrame(rng.uniform(-1e6, 1e6, size=(200, 3)), index=hours, columns=["A", "B", "C"])
+    exposure.iloc[rng.integers(0, 200, 20), 1] = 0.0
+    price_hours = hours[np.sort(rng.choice(200, 120, replace=False))]
+    prices = pd.DataFrame(1.0 + rng.normal(0.0, 1e-3, size=(120, 2)), index=price_hours, columns=["A", "B"])
+    prices.iloc[rng.integers(0, 120, 5), 0] = np.nan
+    assert basis_pnl(exposure, prices).to_numpy() == pytest.approx(_basis_reference(exposure, prices), abs=1e-9)

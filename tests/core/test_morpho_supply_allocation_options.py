@@ -269,6 +269,20 @@ def test_max_chunks_caps_the_grid_and_flags_the_resolve():
     assert row["idle_usd"] >= 800_000.0 - 1e-6
 
 
+@pytest.mark.parametrize("budget, units, capped", [
+    (200_000.0, 20, False),           # exactly MAX_CHUNKS chunks
+    (205_000.0, 20, True),            # 20.5 chunks: a partial 21st chunk would be needed
+    (199_999.99999999, 20, False),    # float residue below a whole count is not a partial chunk
+    (195_000.0, 19, False),
+    (5_000.0, 0, False),
+])
+def test_grid_counts_whole_chunks_and_flags_a_cap_including_a_partial_chunk(budget, units, capped):
+    strategy = MorphoSupplyAllocationStrategy(
+        markets=MARKETS[:1], cash_entity=SimpleSpotExchange(trading_fee=0.0),
+        params=MorphoSupplyAllocationParams(ALLOCATION_MODE="marginal", CHUNK_USD=10_000.0, MAX_CHUNKS=20))
+    assert strategy._grid(budget) == (10_000.0, units, capped)        # pylint: disable=protected-access
+
+
 def test_capital_below_one_chunk_stays_idle():
     strategy, names = build_flat(5_000.0, RICH, TARGET_APY=0.0, CHUNK_USD=10_000.0)
     assert strategy.resolve_log[0]["capacity_units"] == 0

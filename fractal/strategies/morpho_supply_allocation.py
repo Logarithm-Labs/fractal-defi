@@ -301,7 +301,8 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         """One row per ``"marginal"`` re-solve.
 
         Keys: ``bar``, ``budget`` (USD), ``chunk`` (USD), ``capacity_units`` (grid
-        chunks), ``capped`` (``MAX_CHUNKS`` bound the grid), ``idle_usd`` (budget
+        chunks), ``capped`` (covering the budget, a partial last chunk included,
+        would take more than ``MAX_CHUNKS`` chunks), ``idle_usd`` (budget
         the solution leaves in cash) and ``idle_chunks`` (the same in chunks).
         """
         return [dict(row) for row in self._resolve_log]
@@ -479,13 +480,19 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         return targets
 
     def _grid(self, budget: float) -> tuple[float, int, bool]:
-        """``(chunk USD, grid chunks, capped)`` of the marginal grid for ``budget``."""
+        """``(chunk USD, grid chunks, capped)`` of the marginal grid for ``budget``.
+
+        The grid holds the whole chunks that fit (``floor``), at most ``MAX_CHUNKS``;
+        ``capped`` is set when covering the budget would take more than
+        ``MAX_CHUNKS`` chunks, counting a partial last one (``ceil``).
+        """
         params = self._params
         if params.CHUNK_USD is None:
             return budget / params.ALLOC_CHUNKS, params.ALLOC_CHUNKS, False
         chunk = float(params.CHUNK_USD)
-        needed = max(math.floor(budget / chunk + 1e-9), 0)
-        return chunk, min(needed, params.MAX_CHUNKS), needed > params.MAX_CHUNKS
+        whole = max(math.floor(budget / chunk + 1e-9), 0)
+        covering = math.ceil(budget / chunk - 1e-9)
+        return chunk, min(whole, params.MAX_CHUNKS), covering > params.MAX_CHUNKS
 
     def _valued_apy(self, name: str, amounts: np.ndarray, snap: MorphoSupplyGlobalState) -> np.ndarray:
         """Whole-position APY of each candidate amount under ``VALUATION`` (``0`` for an empty position)."""
