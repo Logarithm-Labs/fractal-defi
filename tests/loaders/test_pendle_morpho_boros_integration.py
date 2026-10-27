@@ -13,6 +13,7 @@ from fractal.loaders import (
     BorosMarketLoader,
     LoaderType,
     MorphoMarketLoader,
+    MorphoMarketTransactionsLoader,
     PendleMarketLoader,
     PendleOHLCVLoader,
 )
@@ -63,6 +64,19 @@ def test_morpho_market_info_and_history_live():
     assert history["utilization"].between(0.0, 1.0).all()
     assert (history["borrowing_rate"] > 0).all()
     assert len(loader.read_collateral_price()) >= 40
+
+
+@pytest.mark.integration
+def test_morpho_market_transactions_live(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    end = utcnow()
+    frame = MorphoMarketTransactionsLoader(1, end - timedelta(hours=6), end).read(with_run=True)
+    assert list(frame.columns) == list(MorphoMarketTransactionsLoader.COLUMNS)
+    assert len(frame) > 0
+    assert not frame.duplicated(["transaction_hash", "log_index"]).any()
+    collateral = frame["event_type"].isin(["SupplyCollateral", "WithdrawCollateral"])
+    assert (frame["asset_side"] == "collateral").eq(collateral).all()
+    assert frame["assets"].ge(0).all()
 
 
 @pytest.mark.integration
