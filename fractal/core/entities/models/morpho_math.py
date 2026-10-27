@@ -31,7 +31,9 @@ __all__ = [
     "TARGET_UTILIZATION",
     "WAD",
     "adaptive_curve_borrow_apr",
+    "adaptive_curve_borrow_rate_array",
     "adaptive_curve_error",
+    "adaptive_curve_error_array",
     "borrow_apy_from_per_second_rate",
     "from_wad",
     "horizon_average_supply_apy",
@@ -42,6 +44,7 @@ __all__ = [
     "rate_at_target_drift",
     "static_supply_capacity",
     "supply_apy_curve",
+    "supply_apy_curve_array",
     "supply_apy_from_curve",
     "taylor_compounded",
     "utilization_after_deposit",
@@ -416,3 +419,40 @@ def horizon_supply_capacity(target_apy: float, supply: float, borrow: float, rat
         else:
             high = mid
     return low
+
+
+def adaptive_curve_error_array(utilization):
+    """Vectorised :func:`adaptive_curve_error` over an array of utilizations in ``[0, 1]``."""
+    utilization = np.asarray(utilization, dtype=float)
+    if np.any(~np.isfinite(utilization)) or np.any(utilization < 0.0) or np.any(utilization > 1.0):
+        raise ValueError("utilization values must be in [0, 1]")
+    return np.where(utilization > TARGET_UTILIZATION,
+                    (utilization - TARGET_UTILIZATION) / (1.0 - TARGET_UTILIZATION),
+                    (utilization - TARGET_UTILIZATION) / TARGET_UTILIZATION)
+
+
+def adaptive_curve_borrow_rate_array(utilization, rate_at_target):
+    """Vectorised :func:`adaptive_curve_borrow_apr` with an array ``rate_at_target``.
+
+    Both inputs broadcast; the result shares the unit of ``rate_at_target``
+    (continuous annual in this module).
+    """
+    rate_at_target = np.asarray(rate_at_target, dtype=float)
+    if np.any(~np.isfinite(rate_at_target)) or np.any(rate_at_target < 0.0):
+        raise ValueError("rate_at_target must be finite and >= 0")
+    error = adaptive_curve_error_array(utilization)
+    coeff = np.where(error > 0.0, CURVE_STEEPNESS - 1.0, 1.0 - 1.0 / CURVE_STEEPNESS)
+    return rate_at_target * (1.0 + coeff * error)
+
+
+def supply_apy_curve_array(utilization, rate_at_target, fee=0.0):
+    """Vectorised :func:`supply_apy_from_curve` with array ``rate_at_target`` and ``fee``.
+
+    ``expm1(r(u)) * u * (1 - fee)``; all inputs broadcast. Use it when every
+    market or path step has its own controller rate.
+    """
+    fee = np.asarray(fee, dtype=float)
+    if np.any(~np.isfinite(fee)) or np.any(fee < 0.0) or np.any(fee >= 1.0):
+        raise ValueError("fee must be in [0, 1)")
+    utilization = np.asarray(utilization, dtype=float)
+    return np.expm1(adaptive_curve_borrow_rate_array(utilization, rate_at_target)) * utilization * (1.0 - fee)
