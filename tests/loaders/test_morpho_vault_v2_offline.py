@@ -7,7 +7,14 @@ import pytest
 
 from fractal.loaders import LoaderType, MorphoVaultV2History, MorphoVaultV2Loader
 from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException
-from fractal.loaders.morpho_vault_v2 import _collateral_id, classify_allocations, vault_v2_market_params_id
+from fractal.loaders.morpho_vault_v2 import (
+    _collateral_id,
+    attribute_supply_changes,
+    classify_allocations,
+    hour_end,
+    hourly_supply_changes,
+    vault_v2_market_params_id,
+)
 
 pytestmark = pytest.mark.core
 
@@ -367,6 +374,87 @@ def test_classify_allocations_uses_same_tx_join_then_current_allocators():
     assert without_vaults.tolist().count("allocator") == 0
     empty = classify_allocations(history.allocations.iloc[:0], history.transactions.iloc[:0], history.vaults)
     assert empty.empty and empty.name == "class"
+
+
+def _hour(hours: float) -> pd.Timestamp:
+    return pd.Timestamp(START) + pd.Timedelta(hours=hours)
+
+
+def test_hour_end_labels_the_closing_snapshot():
+    times = pd.Series([_hour(0), _hour(0) + pd.Timedelta(seconds=1), _hour(1) - pd.Timedelta(seconds=1)])
+    assert hour_end(times).tolist() == [_hour(0), _hour(1), _hour(1)]
+
+
+def test_hourly_supply_changes_pairs_consecutive_snapshots_and_drops_gaps():
+    supply = pd.DataFrame(
+        {
+            "chain_id": [1, 1, 1, 1, 1],
+            "market_id": [MARKET_A, MARKET_A, MARKET_A, MARKET_B, MARKET_B],
+            "time": [_hour(0), _hour(1), _hour(3), _hour(0), _hour(1)],
+            "supply_assets": [100.0, 110.0, 50.0, 0.0, 5.0],
+        }
+    )
+    changes = hourly_supply_changes(supply)
+    assert changes[["market_id", "time"]].values.tolist() == [[MARKET_A, _hour(1)], [MARKET_B, _hour(1)]]
+    assert changes["net_change"].tolist() == [10.0, 5.0]
+    assert changes["rel_change"].iloc[0] == pytest.approx(0.1)
+    assert pd.isna(changes["rel_change"].iloc[1])  # previous supply of zero
+
+
+def test_attribute_supply_changes_assigns_the_dominant_same_sign_source():
+    changes = pd.DataFrame(
+        {
+            "chain_id": [1, 1, 1, 1, 1],
+            "market_id": [MARKET_A, MARKET_A, MARKET_A, MARKET_A, MARKET_B],
+            "time": [_hour(1), _hour(2), _hour(3), _hour(4), _hour(1)],
+            "net_change": [10.0, -10.0, 10.0, 0.0, 10.0],
+        }
+    )
+    flows = pd.DataFrame(
+        {
+            "chain_id": 1,
+            "market_id": [MARKET_A, MARKET_A, MARKET_A, MARKET_A, MARKET_A, MARKET_A, None],
+            "time": [
+                _hour(0.5), _hour(0.6),  # hour 1: allocator +8 beats depositor +1
+                _hour(1.5), _hour(2.0),  # hour 2 (2.0 is still hour 2): depositor -9, allocator +2
+                _hour(2.5),  # hour 3: +3 only, below the share threshold
+                _hour(3.5),  # hour 4: no net change
+                _hour(0.5),  # unmapped row is ignored
+            ],
+            "source": ["allocator", "depositor_driven", "depositor_driven", "allocator", "allocator", "allocator",
+                       "allocator"],
+            "assets_delta_native": [8.0, 1.0, -9.0, 2.0, 3.0, 5.0, 100.0],
+        }
+    )
+    out = attribute_supply_changes(changes, flows, min_share=0.5)
+    assert out["source"].tolist() == ["allocator", "depositor_driven", None, None, None]
+    assert out["source_share"].iloc[:2].tolist() == pytest.approx([0.8, 0.9])
+    assert out["source_share"].iloc[2:].isna().all()
+    assert out["flow_allocator"].tolist() == [8.0, 2.0, 3.0, 5.0, 0.0]
+    assert out["flow_depositor_driven"].tolist() == [1.0, -9.0, 0.0, 0.0, 0.0]
+    assert attribute_supply_changes(changes, flows, min_share=0.25)["source"].iloc[2] == "allocator"
+    against = attribute_supply_changes(changes.assign(net_change=-changes["net_change"]), flows, min_share=0.01)
+    assert against["source"].iloc[0] is None  # flows opposite to the change never explain it
+
+
+def test_attribute_supply_changes_without_flows_and_validation():
+    changes = pd.DataFrame({"chain_id": [1], "market_id": [MARKET_A], "time": [_hour(1)], "net_change": [1.0]})
+    empty = pd.DataFrame(columns=["chain_id", "market_id", "time", "source", "assets_delta_native"])
+    out = attribute_supply_changes(changes, empty, min_share=0.5)
+    assert out["source"].tolist() == [None] and out["source_share"].isna().all()
+    with pytest.raises(ValueError, match="min_share"):
+        attribute_supply_changes(changes, empty, min_share=0)
+
+
+def test_classified_allocations_feed_supply_attribution_end_to_end():
+    http = _FakeVaultV2Http(vault_pages={0: [_vault()]}, allocations=_by_skip({0: [_allocation()]}))
+    history = _loader(http).read(with_run=True)
+    flows = history.allocations.assign(
+        source=classify_allocations(history.allocations, history.transactions, history.vaults)
+    )
+    changes = pd.DataFrame({"chain_id": [1], "market_id": [MARKET_A], "time": [_hour(1)], "net_change": [1.5]})
+    out = attribute_supply_changes(changes, flows, min_share=0.5)
+    assert out["source"].tolist() == ["allocator"] and out["source_share"].iloc[0] == pytest.approx(1.0)
 
 
 @pytest.mark.parametrize(

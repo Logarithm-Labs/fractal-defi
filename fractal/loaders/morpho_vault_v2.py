@@ -27,7 +27,9 @@ API's interest-inclusive adapter change without using it as a flow sign.
 :func:`classify_allocations` labels allocation rows by who triggered them:
 ``depositor_driven`` when the same transaction carries a deposit/withdrawal of
 the same vault, ``allocator`` when sent by a current vault allocator, else
-``other``.
+``other``. :func:`hour_end`, :func:`hourly_supply_changes` and
+:func:`attribute_supply_changes` attribute a market's hourly supply change to
+the source (e.g. that label) whose signed flows dominate the hour.
 """
 import hashlib
 from collections.abc import Callable, Hashable, Iterable
@@ -35,6 +37,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, NamedTuple
 
+import numpy as np
 import pandas as pd
 
 from fractal.loaders._dt import to_seconds, to_utc, utcnow
@@ -48,7 +51,10 @@ __all__ = [
     "MorphoVaultV2History",
     "MorphoVaultV2Listing",
     "MorphoVaultV2Loader",
+    "attribute_supply_changes",
     "classify_allocations",
+    "hour_end",
+    "hourly_supply_changes",
     "vault_v2_market_params_id",
 ]
 
@@ -505,6 +511,112 @@ def classify_allocations(
         else:
             labels.append("other")
     return pd.Series(labels, index=allocations.index, name="class", dtype=object)
+
+
+_HOUR = pd.Timedelta(hours=1)
+
+
+def hour_end(times: pd.Series) -> pd.Series:
+    """Label UTC event times with the end of their market hour.
+
+    An event at ``t`` belongs to the hour ``(T - 1h, T]`` labelled ``T``, so
+    it is compared with the change between the snapshots at ``T - 1h`` and
+    ``T``; an event exactly on the hour keeps its own label.
+    """
+    return pd.to_datetime(times, utc=True).dt.as_unit("ns").dt.ceil("h")
+
+
+def hourly_supply_changes(supply: pd.DataFrame) -> pd.DataFrame:
+    """Hour-on-hour supply change per market from on-the-hour snapshots.
+
+    Args:
+        supply: Columns ``chain_id``, ``market_id``, ``time`` (UTC, on the
+            hour) and ``supply_assets`` (any consistent unit).
+
+    Returns:
+        Columns ``chain_id``, ``market_id``, ``time``, ``supply_prev`` (the
+        snapshot at ``time - 1h``), ``net_change`` and ``rel_change``
+        (``net_change / supply_prev``, ``NaN`` when ``supply_prev`` is not
+        positive). Hours whose previous snapshot is missing are dropped,
+        never filled.
+    """
+    base = supply[["chain_id", "market_id", "time", "supply_assets"]].dropna(subset=["supply_assets"])
+    base = base.assign(time=pd.to_datetime(base["time"], utc=True).dt.as_unit("ns"))
+    prev = base.assign(time=base["time"] + _HOUR).rename(columns={"supply_assets": "supply_prev"})
+    out = base.merge(prev, on=["chain_id", "market_id", "time"], how="inner")
+    out["net_change"] = out["supply_assets"] - out["supply_prev"]
+    out["rel_change"] = (out["net_change"] / out["supply_prev"]).where(out["supply_prev"] > 0)
+    columns = ["chain_id", "market_id", "time", "supply_prev", "net_change", "rel_change"]
+    return out[columns].sort_values(["time", "chain_id", "market_id"], kind="stable").reset_index(drop=True)
+
+
+def attribute_supply_changes(
+    changes: pd.DataFrame,
+    flows: pd.DataFrame,
+    *,
+    min_share: float,
+    source_column: str = "source",
+    flow_column: str = "assets_delta_native",
+) -> pd.DataFrame:
+    """Attribute each market-hour supply change to its dominant flow source.
+
+    ``flows`` rows with a ``market_id`` are bucketed with :func:`hour_end`
+    and summed per ``(chain_id, market_id, hour, source)``. For every row of
+    ``changes`` each source's hourly flow is projected on the sign of
+    ``net_change``; the source with the largest projection is assigned when
+    that projection is positive and at least ``min_share * |net_change|``.
+    No threshold is assumed: ``min_share`` must be chosen by the caller (for
+    example ``0.5`` for a strict-majority reading). Selecting which hours
+    count as events (relative-size cut-offs, de-duplication) is left to the
+    caller, e.g. by filtering ``changes`` on ``rel_change`` first.
+
+    Args:
+        changes: Columns ``chain_id``, ``market_id``, ``time`` (hour end)
+            and ``net_change``, e.g. :func:`hourly_supply_changes`.
+        flows: Columns ``chain_id``, ``market_id``, ``time`` (event time),
+            ``source_column`` and ``flow_column`` (signed, in the same unit
+            as ``net_change``), e.g. Vault V2 allocations with
+            :func:`classify_allocations` labels in ``source``.
+        min_share: Minimum projected share of ``|net_change|``; must be > 0.
+        source_column / flow_column: Names of the label and flow columns.
+
+    Returns:
+        ``changes`` plus one ``flow_<source>`` column per source (``0.0``
+        when absent), ``source`` (``None`` when no source qualifies, or when
+        ``net_change`` is zero) and ``source_share`` (the assigned
+        projection over ``|net_change|``, ``NaN`` when unassigned).
+    """
+    if not min_share > 0:
+        raise ValueError(f"min_share must be > 0, got {min_share}")
+    keys = ["chain_id", "market_id", "time"]
+    mapped = flows[flows["market_id"].notna()]
+    hourly = (
+        mapped.assign(time=hour_end(mapped["time"]), _flow=pd.to_numeric(mapped[flow_column], errors="coerce"))
+        .groupby([*keys, source_column])["_flow"]
+        .sum()
+        .unstack(source_column, fill_value=0.0)
+    )
+    sources = sorted(str(name) for name in hourly.columns)
+    hourly = hourly.rename(columns=lambda name: f"flow_{name}").reset_index()
+    out = changes.copy()
+    out["time"] = pd.to_datetime(out["time"], utc=True).dt.as_unit("ns")
+    if sources:
+        out = out.merge(hourly, on=keys, how="left")
+    flow_columns = [f"flow_{name}" for name in sources]
+    for column in flow_columns:
+        out[column] = out[column].astype(float).fillna(0.0)
+    out["source"] = pd.Series([None] * len(out), index=out.index, dtype=object)
+    out["source_share"] = np.nan
+    if not sources or out.empty:
+        return out
+    net = out["net_change"].astype(float).to_numpy()
+    projected = out[flow_columns].to_numpy() * np.sign(net)[:, None]
+    best = projected.argmax(axis=1)
+    best_flow = projected[np.arange(len(out)), best]
+    assigned = (best_flow > 0) & (best_flow >= min_share * np.abs(net))
+    out.loc[assigned, "source"] = np.array(sources, dtype=object)[best[assigned]]
+    out.loc[assigned, "source_share"] = best_flow[assigned] / np.abs(net[assigned])
+    return out
 
 
 def _coverage(allocations: pd.DataFrame) -> MorphoVaultV2Coverage:
