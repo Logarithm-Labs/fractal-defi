@@ -7,7 +7,7 @@ One transport for the three things a backtest reads from a node:
 * event logs over a block range (``eth_getLogs`` with adaptive chunking:
   Uniswap ``Swap``, Aave ``Supply`` / ``Borrow``, Morpho ``Borrow``, ...);
 * block headers for timestamps, and the block at a timestamp;
-* transactions and receipts.
+* transactions and receipts, and the native gas a transaction paid.
 
 No web3 dependency: requests go through :class:`HttpClient` like every
 other transport in the package, and the ABI helpers cover the static
@@ -25,7 +25,7 @@ Example — every ``Supply`` of one Aave V3 pool::
 A keyed endpoint (``https://<host>/v3/<key>``) is kept out of error
 messages and urllib3 log records: see :func:`fractal.loaders._http.url_secrets`.
 """
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from fractal.loaders._http import HttpClient, LoaderHttpError, RedactingTransport, url_secrets
@@ -40,6 +40,7 @@ __all__ = [
     "eth_call",
     "event_topic",
     "function_selector",
+    "gas_cost_wei",
     "hex_to_int",
     "keccak256",
     "topic_to_address",
@@ -170,6 +171,23 @@ def hex_to_int(value: Any) -> int:
     return int(text, 16) if text.startswith(("0x", "0X")) else int(text)
 
 
+def gas_cost_wei(receipt: Mapping[str, Any], gas_price: Any = None) -> int:
+    """Native gas a transaction paid, in wei, from its receipt.
+
+    ``gasUsed × effectiveGasPrice`` plus, when the receipt carries them,
+    the blob fee (``blobGasUsed × blobGasPrice``) and the OP-stack L1 data
+    fee (``l1Fee``). Receipts from before EIP-1559 have no
+    ``effectiveGasPrice``; pass the transaction's ``gasPrice`` then.
+    Divide by ``10**18`` for whole native tokens.
+    """
+    price = receipt.get("effectiveGasPrice") or gas_price
+    if price is None:
+        raise RpcCallError("receipt has no effectiveGasPrice; pass the transaction's gasPrice")
+    wei = hex_to_int(receipt.get("gasUsed")) * hex_to_int(price)
+    wei += hex_to_int(receipt.get("blobGasUsed")) * hex_to_int(receipt.get("blobGasPrice"))
+    return wei + hex_to_int(receipt.get("l1Fee"))
+
+
 # ----------------------------------------------------------------- client
 class JsonRpcClient:
     """Thin JSON-RPC client over :class:`HttpClient`.
@@ -293,6 +311,16 @@ class JsonRpcClient:
         if not isinstance(result, dict):
             raise RpcCallError(f"eth_getTransactionReceipt({tx_hash}) returned {result!r}")
         return result
+
+    def transaction_gas_cost(self, tx_hash: str) -> int:
+        """Native gas ``tx_hash`` paid, in wei (see :func:`gas_cost_wei`).
+
+        Reads the receipt, and the transaction too when the receipt
+        predates ``effectiveGasPrice``.
+        """
+        receipt = self.get_transaction_receipt(tx_hash)
+        gas_price = None if receipt.get("effectiveGasPrice") else self.get_transaction(tx_hash).get("gasPrice")
+        return gas_cost_wei(receipt, gas_price=gas_price)
 
     # ------------------------------------------------------------- calls
     def eth_call(self, to: str, data: str, block: BlockTag = "latest") -> str:
