@@ -5,6 +5,8 @@ import numpy as np
 import pytest
 
 from fractal.core.entities.models.morpho_market_sim import (
+    anchored_deadband_borrow_flow,
+    fit_anchored_deadband,
     fit_knot_means,
     piecewise_utilization_supply_flow,
     simulate_market,
@@ -201,3 +203,55 @@ def test_simulator_rejects_invalid_inputs(kwargs, match):
     call.update(kwargs)
     with pytest.raises(ValueError, match=match):
         simulate_market(**call)
+
+
+def test_deadband_rule_is_flat_inside_and_signed_outside_the_band():
+    rule = anchored_deadband_borrow_flow(0.10, deadband=0.2, kappa_plus=0.01, kappa_minus=0.02, constant=0.001)
+    rates = 0.10 / np.exp(np.array([0.0, 0.15, -0.15, 0.5, -0.5]))   # gaps 0, ±0.15, ±0.5
+    got = rule({"borrow_rate": rates, "step": np.full(5, 1)})
+    assert np.allclose(got[:3], 0.001)
+    assert got[3] == pytest.approx(0.001 + 0.01 * 0.3)
+    assert got[4] == pytest.approx(0.001 - 0.02 * 0.3)
+    assert rule({"borrow_rate": np.array([0.0]), "step": np.array([1])})[0] == pytest.approx(0.001)
+
+
+def test_deadband_rule_reads_an_anchor_path_by_step():
+    anchor = np.array([[0.05, 0.05, 0.20]])
+    rule = anchored_deadband_borrow_flow(anchor, deadband=0.0, kappa_plus=1.0, kappa_minus=1.0)
+    assert rule({"borrow_rate": np.array([0.05]), "step": np.array([1])})[0] == 0.0
+    assert rule({"borrow_rate": np.array([0.05]), "step": np.array([3])})[0] == pytest.approx(math.log(4.0))
+    with pytest.raises(ValueError, match="shorter"):
+        rule({"borrow_rate": np.array([0.05]), "step": np.array([4])})
+    with pytest.raises(ValueError, match="deadband"):
+        anchored_deadband_borrow_flow(0.05, deadband=-0.1, kappa_plus=1.0, kappa_minus=1.0)
+
+
+def test_deadband_rule_drives_borrow_toward_the_anchor_under_a_cap():
+    elapsed = np.full(24 * 5, HOUR)
+    rule = anchored_deadband_borrow_flow(0.20, deadband=0.05, kappa_plus=0.01, kappa_minus=0.01)
+    paths = simulate_market([100.0, 100.0], [60.0, 60.0], 0.05, elapsed, borrow_flow=rule,
+                            borrow_cap=[np.inf, 70.0], accrue_borrow=False)
+    assert paths.borrow[0, -1] > 80.0
+    assert paths.borrow[1, -1] == pytest.approx(70.0)
+
+
+def test_fit_anchored_deadband_recovers_synthetic_parameters():
+    rng = np.random.default_rng(11)
+    gap = rng.uniform(-1.0, 1.0, 4000)
+    groups = rng.choice(["a", "b"], gap.size)
+    constant = np.where(groups == "a", 0.001, -0.002)
+    flow = constant + 0.03 * np.maximum(0.0, gap - 0.2) - 0.05 * np.maximum(0.0, -gap - 0.2)
+    flow = flow + rng.normal(0.0, 1e-4, gap.size)
+    fit = fit_anchored_deadband(gap, flow, [0.0, 0.1, 0.2, 0.3, 0.5], groups=groups)
+    assert fit.deadband == 0.2
+    assert fit.kappa_plus == pytest.approx(0.03, rel=0.02)
+    assert fit.kappa_minus == pytest.approx(0.05, rel=0.02)
+    assert fit.constants["a"] == pytest.approx(0.001, abs=2e-5)
+    assert fit.constants["b"] == pytest.approx(-0.002, abs=2e-5)
+    assert fit.sse == min(fit.sse_by_deadband) and fit.n_obs == 4000
+    pooled = fit_anchored_deadband(np.r_[gap, np.nan], np.r_[flow, 1.0], [0.2], winsor_quantile=0.001)
+    assert set(pooled.constants) == {None} and pooled.n_obs == 4000
+    with pytest.raises(ValueError, match="deadbands"):
+        fit_anchored_deadband(gap, flow, [])
+    with pytest.raises(ValueError, match="same length"):
+        fit_anchored_deadband(gap, flow[:-1], [0.1])
