@@ -7,7 +7,7 @@ from fractal.loaders.bridges.cctp import (
     CctpFeeLoader,
     CctpMessagesLoader,
 )
-from fractal.loaders.bridges.fees import FeeSchedule, comparable_input, fee_bps, fee_stats, fit_fee_schedule
+from fractal.loaders.bridges.fees import comparable_input, fee_bps, fee_stats
 from fractal.loaders.bridges.layerzero_scan import LayerZeroScanLoader
 
 __all__ = [
@@ -16,10 +16,8 @@ __all__ = [
     "CctpFastAllowanceLoader",
     "CctpFeeLoader",
     "CctpMessagesLoader",
-    "FeeSchedule",
     "LayerZeroScanLoader",
     "comparable_input",
     "fee_bps",
     "fee_stats",
-    "fit_fee_schedule",
 ]

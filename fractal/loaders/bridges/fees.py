@@ -1,17 +1,14 @@
 """Pure helpers for realised bridge fees.
 
 ``fee_bps`` turns one transfer's input and output amounts into a realised
-fee, ``fee_stats`` summarises many of them, and ``fit_fee_schedule`` fits the
-affine per-route schedule ``fee = fixed + bps * size / 1e4`` to observed
-transfers.
+fee and ``fee_stats`` summarises many of them. The affine per-route fit
+``fee = fixed + bps * size`` lives in core
+(``fractal.core.entities.models.route_costs.fit_fee_schedule``).
 """
 
 import math
 import statistics
 from collections.abc import Iterable
-from typing import NamedTuple
-
-import numpy as np
 
 _DECIMAL_RESCALES = (1.0, 1e12, 1e-12)
 
@@ -75,47 +72,3 @@ def fee_stats(pairs: Iterable[tuple[float | None, float]]) -> dict[str, float | 
         "p75_bps": _quantile(fees, 0.75),
         "vw_mean_bps": sum(fee * volume for fee, volume in kept) / total_volume if total_volume > 0 else None,
     }
-
-
-class FeeSchedule(NamedTuple):
-    """Affine fee schedule: ``fee = fixed + bps * size / 1e4`` (same units as ``size``)."""
-
-    fixed: float
-    bps: float
-
-    def fee(self, size: float) -> float:
-        """Fee for a transfer of ``size``."""
-        return self.fixed + self.bps * size / 1e4
-
-    def fee_bps_at(self, size: float) -> float:
-        """All-in fee for a transfer of ``size``, in basis points of ``size``."""
-        return self.fee(size) / size * 1e4
-
-
-def fit_fee_schedule(amounts: Iterable[float], fees: Iterable[float]) -> FeeSchedule:
-    """Least-squares ``fee = fixed + bps * amount / 1e4`` with both parts ``>= 0``.
-
-    Pairs with a non-finite value or a non-positive amount are dropped.
-    With no pairs the result is NaN. With a single distinct amount the
-    proportional part is not identified, so the median fee is the fixed part.
-    If the unconstrained fit gives a negative rate, the fit is the median fee
-    as a fixed charge; if it gives a negative fixed part, it is the median
-    proportional rate with no fixed charge.
-    """
-    amount = np.asarray(list(amounts), dtype=float)
-    fee = np.asarray(list(fees), dtype=float)
-    if amount.shape != fee.shape:
-        raise ValueError(f"amounts and fees must have the same length, got {amount.size} and {fee.size}")
-    keep = np.isfinite(amount) & np.isfinite(fee) & (amount > 0)
-    amount, fee = amount[keep], fee[keep]
-    if amount.size == 0:
-        return FeeSchedule(math.nan, math.nan)
-    if np.unique(amount).size < 2:
-        return FeeSchedule(max(float(np.median(fee)), 0.0), 0.0)
-    design = np.column_stack([np.ones_like(amount), amount / 1e4])
-    fixed, bps = np.linalg.lstsq(design, fee, rcond=None)[0]
-    if bps < 0:
-        return FeeSchedule(max(float(np.median(fee)), 0.0), 0.0)
-    if fixed < 0:
-        return FeeSchedule(0.0, max(float(np.median(fee / amount)) * 1e4, 0.0))
-    return FeeSchedule(float(fixed), float(bps))
