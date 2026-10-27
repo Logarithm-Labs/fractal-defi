@@ -7,7 +7,7 @@ import pytest
 
 from fractal.loaders import LoaderType, MorphoVaultV2History, MorphoVaultV2Loader
 from fractal.loaders.morpho import MORPHO_GRAPHQL_URL, MorphoLoaderException
-from fractal.loaders.morpho_vault_v2 import _collateral_id, vault_v2_market_params_id
+from fractal.loaders.morpho_vault_v2 import _collateral_id, classify_allocations, vault_v2_market_params_id
 
 pytestmark = pytest.mark.core
 
@@ -331,6 +331,42 @@ def test_unknown_allocation_type_is_rejected():
     http = _FakeVaultV2Http(vault_pages={0: [_vault()]}, allocations=_by_skip({0: [_allocation("Reallocate")]}))
     with pytest.raises(MorphoLoaderException, match="unsupported Vault V2 allocation type"):
         _loader(http).read(with_run=True)
+
+
+def test_classify_allocations_uses_same_tx_join_then_current_allocators():
+    other_sender = "0x" + "45" * 20
+    shared_tx = _transaction("Withdraw", "500000", 7)
+    depositor = {**_allocation("Deallocate", "500000", 5, ids=[]), "txHash": shared_tx["txHash"],
+                 "sender": other_sender}
+    in_other_vault_tx = {**_allocation("Allocate", "1", 6, ids=[]), "txHash": shared_tx["txHash"],
+                         "sender": other_sender}
+    transfer_tx = _transaction("Transfer", "1", 8)
+    transfer_only = {**_allocation("Allocate", "1", 8, ids=[]), "txHash": transfer_tx["txHash"],
+                     "sender": other_sender}
+    http = _FakeVaultV2Http(
+        vault_pages={0: [_vault(), _vault(VAULT_2)]},
+        allocations=lambda v: (
+            ([_allocation(log_index=1), depositor, transfer_only] if v["vaultAddress"] == VAULT
+             else [in_other_vault_tx]) if v["skip"] == 0 else [],
+            None,
+        ),
+        transactions=_by_skip({0: [shared_tx, transfer_tx, _transaction("Deposit", "1", 9, VAULT_2)]}),
+    )
+    history = _loader(http).read(with_run=True)
+    labels = classify_allocations(history.allocations, history.transactions, history.vaults)
+    assert labels.name == "class" and labels.index.equals(history.allocations.index)
+    by_log = dict(zip(history.allocations["vault_address"] + ":" + history.allocations["log_index"].astype(str),
+                      labels, strict=True))
+    assert by_log == {
+        f"{VAULT}:1": "allocator",  # sent by a current allocator, no depositor tx
+        f"{VAULT}:5": "depositor_driven",  # same tx as a Withdraw of the same vault
+        f"{VAULT}:8": "other",  # same tx only as a share Transfer
+        f"{VAULT_2}:6": "other",  # same tx hash, but the Withdraw belongs to another vault
+    }
+    without_vaults = classify_allocations(history.allocations, history.transactions)
+    assert without_vaults.tolist().count("allocator") == 0
+    empty = classify_allocations(history.allocations.iloc[:0], history.transactions.iloc[:0], history.vaults)
+    assert empty.empty and empty.name == "class"
 
 
 @pytest.mark.parametrize(

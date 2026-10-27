@@ -23,6 +23,11 @@ Amounts are returned in native vault-asset units. ``assets_delta_native`` is
 positive for allocations/deposits, negative for deallocations/withdrawals,
 and zero for share transfers. ``change_native`` preserves the allocation
 API's interest-inclusive adapter change without using it as a flow sign.
+
+:func:`classify_allocations` labels allocation rows by who triggered them:
+``depositor_driven`` when the same transaction carries a deposit/withdrawal of
+the same vault, ``allocator`` when sent by a current vault allocator, else
+``other``.
 """
 import hashlib
 from collections.abc import Callable, Hashable, Iterable
@@ -43,6 +48,7 @@ __all__ = [
     "MorphoVaultV2History",
     "MorphoVaultV2Listing",
     "MorphoVaultV2Loader",
+    "classify_allocations",
     "vault_v2_market_params_id",
 ]
 
@@ -445,6 +451,60 @@ class _MarketIndex:
                 if self._params_ids[cache_key] in seen:
                     hits.add(market_id)
         return hits.pop() if len(hits) == 1 else None
+
+
+def classify_allocations(
+    allocations: pd.DataFrame,
+    transactions: pd.DataFrame,
+    vaults: Iterable[MorphoVaultV2Listing] = (),
+    *,
+    join_types: Iterable[str] = ("Deposit", "Withdraw"),
+) -> pd.Series:
+    """Label each allocation row ``depositor_driven``, ``allocator`` or ``other``.
+
+    A row is ``depositor_driven`` when ``transactions`` holds a row of a
+    ``join_types`` type with the same ``chain_id``, ``vault_address`` and
+    ``tx_hash`` (the vault moved liquidity inside a depositor's own deposit or
+    withdrawal, e.g. through its liquidity adapter). Otherwise it is
+    ``allocator`` when ``sender_address`` is among that vault's
+    :attr:`MorphoVaultV2Listing.allocators` (the *current* allocator set, so
+    a since-removed allocator falls to ``other``), else ``other``.
+
+    Args:
+        allocations: :attr:`MorphoVaultV2History.allocations`.
+        transactions: :attr:`MorphoVaultV2History.transactions`.
+        vaults: Listings providing the allocator sets, normally
+            :attr:`MorphoVaultV2History.vaults`.
+        join_types: Transaction types that mark a depositor transaction.
+
+    Returns:
+        A string series aligned with ``allocations.index``, named ``"class"``.
+    """
+    joined = transactions[transactions["type"].isin(tuple(join_types))]
+    depositor_txs = set(
+        zip(
+            joined["chain_id"].astype(int),
+            joined["vault_address"].map(_lower),
+            joined["tx_hash"].map(_lower),
+            strict=True,
+        )
+    )
+    allocators = {(vault.chain_id, vault.vault_address): set(vault.allocators) for vault in vaults}
+    labels = []
+    for chain_id, vault_address, tx_hash, sender in zip(
+        allocations["chain_id"].astype(int),
+        allocations["vault_address"].map(_lower),
+        allocations["tx_hash"].map(_lower),
+        allocations["sender_address"].map(_lower),
+        strict=True,
+    ):
+        if (chain_id, vault_address, tx_hash) in depositor_txs:
+            labels.append("depositor_driven")
+        elif sender in allocators.get((chain_id, vault_address), set()):
+            labels.append("allocator")
+        else:
+            labels.append("other")
+    return pd.Series(labels, index=allocations.index, name="class", dtype=object)
 
 
 def _coverage(allocations: pd.DataFrame) -> MorphoVaultV2Coverage:
