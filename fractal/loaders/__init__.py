@@ -9,7 +9,14 @@ from fractal.loaders.binance import (
     BinanceSpotPriceLoader,
 )
 from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
-from fractal.loaders.bridges import CCTP_DOMAIN_CHAINS, CCTP_DOMAINS, CctpFeeLoader, LayerZeroScanLoader
+from fractal.loaders.bridges import (
+    CCTP_DOMAIN_CHAINS,
+    CCTP_DOMAINS,
+    CctpFastAllowanceLoader,
+    CctpFeeLoader,
+    CctpMessagesLoader,
+    LayerZeroScanLoader,
+)
 from fractal.loaders.defillama import (
     DefiLlamaDEXLoader,
     DefiLlamaPoolLoader,
@@ -84,7 +91,9 @@ __all__ = [
     "BorosMarketHistory",
     "BorosMarketInfo",
     "BorosMarketLoader",
+    "CctpFastAllowanceLoader",
     "CctpFeeLoader",
+    "CctpMessagesLoader",
     "ConstantFundingsLoader",
     "DEXHistory",
     "DefiLlamaDEXLoader",
