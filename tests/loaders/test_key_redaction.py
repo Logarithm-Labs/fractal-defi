@@ -157,3 +157,34 @@ def test_redactor_scrubs_registered_secrets_only_while_active():
     later = logging.LogRecord("urllib3.connectionpool", logging.DEBUG, __file__, 1, "%s", ("other",), None)
     KEY_REDACTOR.filter(later)
     assert later.getMessage() == "other"
+
+
+class _RecordingTransport:
+    """Records each ``post`` call's keyword names; fails on demand."""
+
+    def __init__(self, fail=None):
+        self.calls, self.fail = [], fail
+
+    def post(self, url, **kwargs):
+        self.calls.append((url, sorted(kwargs)))
+        if self.fail is not None:
+            raise self.fail
+        return {"jsonrpc": "2.0", "id": kwargs["json"]["id"], "result": "0x10"}
+
+
+@pytest.mark.core
+def test_keyless_rpc_url_behaviour_is_unchanged():
+    """Key-less URLs (the existing Uniswap/Morpho/Pendle flows in tests) see the
+    original transport: same call shape, same exception object and chain."""
+    ok = _RecordingTransport()
+    rpc = JsonRpcClient("https://rpc.example", http=ok)
+    assert rpc.block_number() == 16
+    assert ok.calls == [("https://rpc.example", ["json"])]  # no extra timeout/headers kwargs
+
+    cause = ValueError("upstream")
+    error = LoaderHttpError("HTTP 500 for https://rpc.example params={}")
+    error.__cause__ = cause
+    rpc = JsonRpcClient("https://rpc.example", http=_RecordingTransport(fail=error))
+    with pytest.raises(LoaderHttpError) as caught:
+        rpc.block_number()
+    assert caught.value is error and caught.value.__cause__ is cause
