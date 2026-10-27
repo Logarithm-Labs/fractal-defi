@@ -10,6 +10,7 @@ Submodules
    fractal.core.entities.models.boros_math
    fractal.core.entities.models.morpho_math
    fractal.core.entities.models.pendle_math
+   fractal.core.entities.models.route_costs
    fractal.core.entities.models.uniswap_v3_fees
 
 Module contents

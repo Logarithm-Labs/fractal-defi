@@ -23,12 +23,22 @@ from fractal.core.entities.simple.spot import (
     SimpleSpotExchangeGlobalState,
     SimpleSpotExchangeInternalState,
 )
+from fractal.core.entities.simple.transit import (
+    InTransitEntity,
+    InTransitException,
+    InTransitGlobalState,
+    InTransitInternalState,
+    TransitTicket,
+    VenueCashEntity,
+)
 
 __all__ = [
+    "InTransitEntity", "InTransitException", "InTransitGlobalState", "InTransitInternalState",
     "SimpleLendingEntity", "SimpleLendingGlobalState", "SimpleLendingInternalState",
     "SimpleLiquidStakingToken", "SimpleLiquidStakingTokenGlobalState",
     "SimpleLiquidStakingTokenInternalState",
     "SimplePerpEntity", "SimplePerpGlobalState", "SimplePerpInternalState",
     "SimplePoolEntity", "SimplePoolGlobalState", "SimplePoolInternalState",
     "SimpleSpotExchange", "SimpleSpotExchangeGlobalState", "SimpleSpotExchangeInternalState",
+    "TransitTicket", "VenueCashEntity",
 ]

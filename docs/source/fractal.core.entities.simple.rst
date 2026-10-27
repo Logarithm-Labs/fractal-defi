@@ -12,3 +12,4 @@ Submodules
    fractal.core.entities.simple.perp
    fractal.core.entities.simple.pool
    fractal.core.entities.simple.spot
+   fractal.core.entities.simple.transit

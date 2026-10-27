@@ -72,6 +72,9 @@ whole position of a given size would earn here, and
 :meth:`MorphoSupplyEntity.capacity_at` inverts it — the largest position that
 still earns a target APY. Both accept an explicit market state so a strategy
 can size on a lagged or smoothed snapshot instead of the current bar.
+:meth:`MorphoSupplyEntity.horizon_supply_apy` is the multi-bar counterpart: the
+APY a position realises over a holding horizon on a frozen market, with its own
+growth and controller drift replayed bar by bar.
 """
 import math
 import numbers
@@ -82,8 +85,10 @@ import numpy as np
 from fractal.core.base.entity import BaseEntity, EntityException, GlobalState, InternalState
 from fractal.core.entities.models.morpho_math import (
     ADJUSTMENT_SPEED,
+    CURVE_STEEPNESS,
     MAX_RATE_AT_TARGET,
     MIN_RATE_AT_TARGET,
+    TARGET_UTILIZATION,
     adaptive_curve_error,
     supply_apy_curve,
     supply_apy_from_curve,
@@ -409,6 +414,86 @@ class MorphoSupplyEntity(BaseEntity):
         position = np.where(u_star <= alpha, cap, position)   # absorption keeps u above u*: unbounded, take the cap
         position = np.where(lambdas > apy_grid[-1], 0.0, position)  # unreachable even at u = 1
         return np.clip(np.nan_to_num(position, nan=0.0, posinf=cap), 0.0, cap)
+
+    def horizon_supply_apy(self, positions, hold_bars: int, state: MorphoSupplyGlobalState | None = None):
+        """Annual APY whole positions would realise if held ``hold_bars`` bars on a frozen market.
+
+        A vectorised replay of :meth:`update_state` with ``state`` repeated every
+        bar: each bar first accumulates the controller drift the position causes
+        (``irm_feedback``), then accrues ``supplied *= 1 + rate`` at the
+        position's own utilization, so the position grows, dilutes and drifts
+        ``rateAtTarget`` exactly as it would in a backtest whose market totals
+        stood still. The drift starts from this entity's current
+        ``rstar_log_drift``. Returns ``(Π_k (1 + rate_k))^(bars_per_year / hold_bars) − 1``
+        per position.
+
+        Without ``irm_feedback`` the only difference from :meth:`projected_supply_apy`
+        is the position's own growth over the horizon and the discrete
+        compounding of the per-bar rate (``projected_supply_apy`` annualises it
+        continuously). Market totals do not respond to the position beyond
+        ``absorption``: this is a forecast under zero market response.
+
+        Args:
+            positions: whole position sizes in USD (scalar or array, ``>= 0``).
+            hold_bars: holding horizon in bars (``>= 1``).
+            state: market snapshot to hold frozen; the current one by default.
+
+        Returns:
+            ``numpy.ndarray`` of APYs with the shape of ``positions``.
+        """
+        sizes = np.array(positions, dtype=float)
+        if np.any(~np.isfinite(sizes)) or np.any(sizes < 0.0):
+            raise MorphoSupplyException("positions must be finite and >= 0")
+        if isinstance(hold_bars, bool) or not isinstance(hold_bars, numbers.Integral) or hold_bars < 1:
+            raise MorphoSupplyException(f"hold_bars must be an integer >= 1, got {hold_bars!r}")
+        state = self._global_state if state is None else state
+        bars_per_year = self.bars_per_year
+        if not self.own_impact:
+            rate = self._effective_supply_rate(state, 0.0)
+            return np.full(sizes.shape, math.expm1(bars_per_year * math.log1p(rate)))
+        alpha = self._absorbed(state)
+        scale = self._curve_anchor_scale(state)
+        historical_rate = math.log1p(state.rate_at_target)
+        reference_error = adaptive_curve_error(state.utilization)
+        drift = np.full(sizes.shape, self._internal_state.rstar_log_drift)
+        log_growth = np.zeros(sizes.shape)
+        rewarded = self.use_rewards and state.reward_apy > 0.0
+        for _ in range(int(hold_bars)):
+            total_supply = state.supply_assets_usd + sizes
+            positive = total_supply > 0.0
+            utilization = np.where(
+                positive,
+                np.minimum(np.maximum((state.borrow_assets_usd + alpha * sizes)
+                                      / np.where(positive, total_supply, 1.0), 0.0), 1.0),
+                0.0,
+            )
+            above = utilization > TARGET_UTILIZATION
+            error = np.where(above, (utilization - TARGET_UTILIZATION) / (1.0 - TARGET_UTILIZATION),
+                             (utilization - TARGET_UTILIZATION) / TARGET_UTILIZATION)
+            rate_at_target = historical_rate
+            if self.irm_feedback:
+                stepped = drift + ADJUSTMENT_SPEED * (error - reference_error) / bars_per_year
+                if historical_rate > 0.0:
+                    stepped = np.minimum(np.maximum(stepped, math.log(MIN_RATE_AT_TARGET / historical_rate)),
+                                         math.log(MAX_RATE_AT_TARGET / historical_rate))
+                drift = np.where(sizes > 0.0, stepped, drift)
+                rate_at_target = np.where(
+                    drift != 0.0,
+                    np.minimum(np.maximum(historical_rate * np.exp(drift), MIN_RATE_AT_TARGET), MAX_RATE_AT_TARGET),
+                    historical_rate,
+                )
+            if scale is None:
+                apy = np.full(sizes.shape, state.supply_apy)
+            else:
+                coeff = np.where(above, CURVE_STEEPNESS - 1.0, 1.0 - 1.0 / CURVE_STEEPNESS)
+                apy = np.expm1(rate_at_target * (1.0 + coeff * error)) * utilization * (1.0 - state.fee) * scale
+            if rewarded:
+                share = np.where(positive, state.supply_assets_usd / np.where(positive, total_supply, 1.0), 1.0)
+                apy = apy + self.reward_weight * state.reward_apy * share
+            rate = np.log1p(apy) / bars_per_year
+            log_growth += np.log1p(rate)
+            sizes = sizes * (1.0 + rate)
+        return np.expm1(log_growth * bars_per_year / hold_bars)
 
     # --------------------------------------------------------- actions
     def action_deposit(self, amount_in_notional: float) -> None:

@@ -68,6 +68,7 @@ from fractal.core.entities.protocols import (  # Pre-1.3.0 aliases.
 
 # Simple
 from fractal.core.entities.simple import (
+    InTransitEntity,
     SimpleLendingEntity,
     SimpleLendingGlobalState,
     SimpleLendingInternalState,
@@ -83,6 +84,7 @@ from fractal.core.entities.simple import (
     SimpleSpotExchange,
     SimpleSpotExchangeGlobalState,
     SimpleSpotExchangeInternalState,
+    VenueCashEntity,
 )
 
 # Deprecated alias (top-level back-compat)
@@ -115,6 +117,7 @@ __all__ = [
     "HyperliquidGlobalState",
     "HyperliquidInternalState",
     "HyperliquidPosition",
+    "InTransitEntity",
     "MorphoEntity",
     "MorphoException",
     "MorphoGlobalState",
@@ -157,4 +160,5 @@ __all__ = [
     "UniswapV3LPGlobalState",
     "UniswapV3SpotEntity",
     "UniswapV3SpotGlobalState",
+    "VenueCashEntity",
 ]

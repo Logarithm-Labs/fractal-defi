@@ -74,6 +74,21 @@ Two allocation modes (``ALLOCATION_MODE``):
     Off-grid positions consume rounded-up budget units; the unchanged portfolio
     is also considered so rounding alone cannot force a trade. Targets exclude
     execution fees, which reduce the amounts actually supplied.
+
+    Two opt-in options change the grid and the valuation; their defaults
+    reproduce the description above exactly:
+
+    * ``CHUNK_USD`` replaces the ``NAV / ALLOC_CHUNKS`` chunk with a fixed USD
+      chunk, so the grid resolution no longer scales with the book. The grid
+      holds ``floor(NAV / CHUNK_USD)`` chunks, capped at ``MAX_CHUNKS`` (a capped
+      re-solve is flagged in :attr:`MorphoSupplyAllocationStrategy.resolve_log`);
+      the budget left off the grid stays idle.
+    * ``VALUATION = "horizon"`` values a position at the APY it would realise over
+      ``HOLD_HORIZON_BARS`` on the frozen snapshot
+      (:meth:`MorphoSupplyEntity.horizon_supply_apy`: own growth and, with
+      ``IRM_FEEDBACK``, the ``rateAtTarget`` drift it causes) instead of the
+      instant curve. It is a zero-market-response forecast; the dominance filter
+      uses the same valuation at ``P = 0``. ``lambda_apy`` stays on the instant curve.
 """
 import math
 from collections import deque
@@ -196,7 +211,14 @@ class MorphoSupplyAllocationParams(MorphoSupplyBaseParams):
             Illustrative default: six bars. This is a configurable modeling
             horizon, not an estimate of future rate persistence.
         ALLOC_CHUNKS: ``"marginal"`` only — capital grid of the optimiser
-            (100 = 1 % of NAV per chunk).
+            (100 = 1 % of NAV per chunk). Ignored when ``CHUNK_USD`` is set.
+        CHUNK_USD: ``"marginal"`` only — fixed USD chunk of the grid; ``None``
+            (default) keeps the ``NAV / ALLOC_CHUNKS`` chunk.
+        MAX_CHUNKS: ``"marginal"`` with ``CHUNK_USD`` only — cap on the grid's
+            chunk count (solver cost grows with it); budget above the cap stays idle.
+        VALUATION: ``"marginal"`` only — ``"instant"`` (default: the whole-position
+            APY at the snapshot) or ``"horizon"`` (the APY realised over
+            ``HOLD_HORIZON_BARS`` on the frozen snapshot).
     """
     TARGET_APY: float = 0.06
     MAX_POSITIONS: int = 100
@@ -206,6 +228,9 @@ class MorphoSupplyAllocationParams(MorphoSupplyBaseParams):
     ALLOCATION_MODE: str = "average"
     HOLD_HORIZON_BARS: int = 6
     ALLOC_CHUNKS: int = 100
+    CHUNK_USD: float | None = None
+    MAX_CHUNKS: int = 1000
+    VALUATION: str = "instant"
 
 
 class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams]):
@@ -232,6 +257,7 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         self._last_lambda: float | None = None
         self._last_targets: dict[str, float] = {}
         self._deferrals: list[dict] = []
+        self._resolve_log: list[dict] = []
         super().__init__(**kwargs)
 
     # ------------------------------------------------------------- registry
@@ -241,7 +267,13 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         validate_common_params(params)
         if params.ALLOCATION_MODE not in ("average", "marginal"):
             raise ValueError(f"ALLOCATION_MODE must be 'average' or 'marginal', got {params.ALLOCATION_MODE!r}")
-        for field_name in ("ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS", "MAX_POSITIONS"):
+        if params.VALUATION not in ("instant", "horizon"):
+            raise ValueError(f"VALUATION must be 'instant' or 'horizon', got {params.VALUATION!r}")
+        chunk_usd = params.CHUNK_USD
+        if chunk_usd is not None and (isinstance(chunk_usd, bool) or not isinstance(chunk_usd, (int, float))
+                                      or not math.isfinite(chunk_usd) or chunk_usd <= 0.0):
+            raise ValueError(f"CHUNK_USD must be None or a positive USD amount, got {chunk_usd!r}")
+        for field_name in ("ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS", "MAX_POSITIONS", "MAX_CHUNKS"):
             value = getattr(params, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{field_name} must be an integer >= 1, got {value!r}")
@@ -263,6 +295,16 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
     def deferrals(self) -> list[dict]:
         """Rebalance legs the exit gate cut short: ``{market, bar, wanted, allowed}``."""
         return [dict(event) for event in self._deferrals]
+
+    @property
+    def resolve_log(self) -> list[dict]:
+        """One row per ``"marginal"`` re-solve.
+
+        Keys: ``bar``, ``budget`` (USD), ``chunk`` (USD), ``capacity_units`` (grid
+        chunks), ``capped`` (``MAX_CHUNKS`` bound the grid), ``idle_usd`` (budget
+        the solution leaves in cash) and ``idle_chunks`` (the same in chunks).
+        """
+        return [dict(row) for row in self._resolve_log]
 
     def allocation_report(self) -> dict:
         """Last solution, including its mode-specific ``lambda_apy``.
@@ -380,17 +422,18 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
     def _solve_marginal(self, snapshots: dict[str, MorphoSupplyGlobalState], nav: float) -> dict[str, float]:
         """Budget-feasible grid allocation net of expected costs, with an exact hold alternative."""
         params = self._params
-        chunks = params.ALLOC_CHUNKS
-        chunk = nav / chunks
+        chunk, capacity, capped = self._grid(nav)
+        fixed_chunk = params.CHUNK_USD is not None
+        # a fixed chunk can leave budget off the grid: no pool option may exceed the grid itself
+        grid_budget = min(nav, capacity * chunk) if fixed_chunk else nav
         horizon = params.HOLD_HORIZON_BARS / params.BARS_PER_YEAR
         held = {name for name in self._history if self.get_entity(name).balance > 1e-9}
         options: list[tuple[str, np.ndarray, np.ndarray, np.ndarray]] = []   # name, units, amounts, values
         for name in sorted(set(snapshots) | held):
             snap = snapshots.get(name) if name in self._fresh else None    # stale: never re-solved on frozen data
-            option = self._pool_options(name, snap, nav, chunk, horizon, name in held)
+            option = self._pool_options(name, snap, grid_budget, chunk, horizon, name in held)
             if option is not None:
                 options.append(option)
-        capacity = chunks
         best = np.full(capacity + 1, -np.inf)
         best[0] = 0.0
         choices = []
@@ -400,7 +443,11 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
             table = np.where(idx >= 0, best[np.clip(idx, 0, None)], -np.inf) + values[:, None]
             choices.append(table.argmax(axis=0))
             best = table.max(axis=0)
-        idle_value = horizon * params.TARGET_APY * chunk * np.clip(chunks - ks, 0, None)
+        if fixed_chunk:
+            off_grid = max(nav - capacity * chunk, 0.0)
+            idle_value = horizon * params.TARGET_APY * (chunk * np.clip(capacity - ks, 0, None) + off_grid)
+        else:
+            idle_value = horizon * params.TARGET_APY * chunk * np.clip(capacity - ks, 0, None)
         objective = best + idle_value
         k = int(np.argmax(objective))
         # Rounding several locked holdings up can exceed the grid budget even
@@ -424,7 +471,29 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
                 k -= int(units[c])
         self._last_targets = targets
         self._last_lambda = self._marginal_rate(targets, snapshots, chunk)
+        idle = max(nav - sum(targets.values()), 0.0)
+        self._resolve_log.append({
+            "bar": self._bar_index, "budget": nav, "chunk": chunk, "capacity_units": capacity, "capped": capped,
+            "idle_usd": idle, "idle_chunks": idle / chunk,
+        })
         return targets
+
+    def _grid(self, budget: float) -> tuple[float, int, bool]:
+        """``(chunk USD, grid chunks, capped)`` of the marginal grid for ``budget``."""
+        params = self._params
+        if params.CHUNK_USD is None:
+            return budget / params.ALLOC_CHUNKS, params.ALLOC_CHUNKS, False
+        chunk = float(params.CHUNK_USD)
+        needed = max(math.floor(budget / chunk + 1e-9), 0)
+        return chunk, min(needed, params.MAX_CHUNKS), needed > params.MAX_CHUNKS
+
+    def _valued_apy(self, name: str, amounts: np.ndarray, snap: MorphoSupplyGlobalState) -> np.ndarray:
+        """Whole-position APY of each candidate amount under ``VALUATION`` (``0`` for an empty position)."""
+        entity = self.get_entity(name)
+        if self._params.VALUATION == "horizon":
+            rates = entity.horizon_supply_apy(amounts, self._params.HOLD_HORIZON_BARS, snap)
+            return np.where(amounts > 0, rates, 0.0)
+        return np.array([entity.projected_supply_apy(float(a), snap) if a > 0 else 0.0 for a in amounts])
 
     def _pool_options(self, name: str, snap: MorphoSupplyGlobalState | None, nav: float, chunk: float,
                       horizon: float, holding: bool):
@@ -444,18 +513,25 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
             else:
                 amounts = np.array([now])       # fully gated: keep what cannot leave
         else:
-            if not holding and entity.projected_supply_apy(0.0, snap) <= self._params.TARGET_APY:
+            if not holding and self._undiluted_apy(name, snap) <= self._params.TARGET_APY:
                 return None                                            # dominated by idle at any size
             cap = max(min(self._liquidity_cap(name), nav), now)
             grid = np.arange(math.ceil(stuck / chunk - 1e-9), math.floor(cap / chunk + 1e-9) + 1) * chunk
             amounts = np.unique(np.concatenate([grid[(grid >= stuck - 1e-9) & (grid <= cap + 1e-9)], [now]]))
         snap = snap if snap is not None else entity.global_state
-        income = amounts * np.array([entity.projected_supply_apy(float(a), snap) if a > 0 else 0.0 for a in amounts])
+        income = amounts * self._valued_apy(name, amounts, snap)
         moved = np.abs(amounts - now)
         cost = np.where(moved > 1e-9, gas + bps * moved / 1e4, 0.0)
         values = horizon * income - cost + np.where(moved <= 1e-9, 1e-9, 0.0)   # tie-break toward holding
         units = np.ceil(amounts / chunk - 1e-12).astype(int)
         return name, units, amounts, values
+
+    def _undiluted_apy(self, name: str, snap: MorphoSupplyGlobalState) -> float:
+        """APY of the first dollar under ``VALUATION`` (the dominance filter's test)."""
+        entity = self.get_entity(name)
+        if self._params.VALUATION == "horizon":
+            return float(entity.horizon_supply_apy(0.0, self._params.HOLD_HORIZON_BARS, snap))
+        return entity.projected_supply_apy(0.0, snap)
 
     def _marginal_rate(self, targets: dict[str, float], snapshots: dict[str, MorphoSupplyGlobalState],
                        chunk: float) -> float | None:
