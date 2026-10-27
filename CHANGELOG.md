@@ -224,6 +224,7 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Binance kline pagination no longer stops at the first short page.** `BinancePriceLoader.get_klines` (and every price/klines subclass) dropped all later history when one 1,000-candle window held fewer candles, for example after an exchange outage or when the symbol listed after `start_time`; it now requests fixed windows through `end_time`.
 - **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
   the API to the annual APY documented by `LendingHistory`.
 - **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
