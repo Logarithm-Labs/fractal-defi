@@ -77,6 +77,31 @@ class HttpClient:
         )
         return self._check(resp, url, params)
 
+    def get_text(
+        self,
+        url: str,
+        params: dict[str, Any] | None = None,
+        timeout: float | None = None,
+    ) -> str:
+        """GET ``url`` and return the raw response body as text (CSV, plain text).
+
+        Same session, retries and timeout as :meth:`get`, and an HTTP error
+        status raises :class:`LoaderHttpError` with the first 300 characters
+        of the body. Unlike :meth:`get`, the body is returned unparsed.
+        """
+        resp = self.session.get(
+            url,
+            params=params or {},
+            timeout=timeout or self.cfg.timeout,
+        )
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as exc:
+            raise LoaderHttpError(
+                f"HTTP {resp.status_code} for {url} params={params}: {resp.text[:300]}"
+            ) from exc
+        return resp.text
+
     def post(
         self,
         url: str,
