@@ -8,6 +8,7 @@ import pytest
 from fractal.core.entities.models.route_costs import (
     CASH_COMPONENTS,
     ZERO_LEG,
+    FeeSchedule,
     RouteCosts,
     RouteLeg,
     amortise,
@@ -215,8 +216,18 @@ def test_fit_fee_schedule_recovers_fixed_plus_bps_and_clips_negative_parts():
     assert fixed == 0.0 and bps == pytest.approx(np.median((-5.0 + 2.0 * amount / 1e4) / amount) * 1e4)
     assert all(math.isnan(x) for x in fit_fee_schedule([], []))
     assert fit_fee_schedule([1e4, np.nan, 2e4], [1.0, 5.0, 2.0]) == pytest.approx((0.0, 1.0), abs=1e-9)
+    assert fit_fee_schedule([0.0, -1e4, 3e4], [9.0, 9.0, 4.0]) == (4.0, 0.0)          # non-positive amounts dropped
     with pytest.raises(ValueError):
         fit_fee_schedule([1.0, 2.0], [1.0])
+
+
+def test_fee_schedule_evaluates_the_affine_fee():
+    schedule = fit_fee_schedule((a for a in (1e4, 1e6)), iter([3.0, 102.0]))  # any iterables
+    assert isinstance(schedule, FeeSchedule)
+    assert schedule.fee(5e5) == pytest.approx(2.0 + 1.0 * 50.0)
+    assert schedule.fee_bps_at(1e6) == pytest.approx(102.0 / 1e6 * 1e4)
+    fixed, bps = schedule                                                    # still unpacks as a pair
+    assert (fixed, bps) == pytest.approx((2.0, 1.0))
 
 
 def _transfers() -> pd.DataFrame:

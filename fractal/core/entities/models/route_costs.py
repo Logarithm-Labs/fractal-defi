@@ -27,18 +27,22 @@ trip), :func:`amortised_cost_days` (how often a spread series fails to repay its
 amortised cost), :func:`latency_cost` (annual in-transit drag of a turnover),
 :func:`fast_break_even` (the spread above which a faster, dearer transfer pays)
 and :func:`conversion_cost` (the cheaper of a DEX swap and an issuer
-redemption). :func:`fit_fee_schedule` and :func:`friction_table` turn observed
-transfers into ``fixed + bps`` fees and latency quantiles per route, the inputs
-of a :class:`RouteLeg`. :func:`basis_pnl` marks exposure held in non-home assets
-to their price in the holder's unit.
+redemption). :func:`fit_fee_schedule` (a :class:`FeeSchedule`) and
+:func:`friction_table` turn observed transfers into ``fixed + bps`` fees and
+latency quantiles per route, the inputs of a :class:`RouteLeg`. This module is
+the canonical home of the fee fit: ``fractal.core`` never imports from
+``fractal.loaders``, so loaders that fit fees import it from here.
+:func:`basis_pnl` marks exposure held in non-home assets to their price in the
+holder's unit.
 
 Costs are fee-only: price impact (slippage) on a conversion is not modelled.
 No fitted costs, latencies or thresholds ship with this module.
 """
 import math
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, fields, replace
 from itertools import pairwise
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -49,6 +53,7 @@ __all__ = [
     "DAYS_PER_YEAR",
     "HOURS_PER_YEAR",
     "ZERO_LEG",
+    "FeeSchedule",
     "RouteCosts",
     "RouteLeg",
     "Venue",
@@ -348,33 +353,52 @@ def conversion_cost(size_usd, dex_fee_bps, basis_bps, issuer_fee_bps, issuer_lat
     return {"cost_usd": cost, "route": route, "dex_cost_usd": dex, "issuer_cost_usd": issuer}
 
 
-def fit_fee_schedule(amount_usd, fee_usd) -> tuple[float, float]:
-    """``(fixed USD, bps)`` of ``fee = fixed + bps · amount / 1e4`` by least squares, both ``>= 0``.
+class FeeSchedule(NamedTuple):
+    """Affine fee schedule: ``fee = fixed + bps * size / 1e4`` (same units as ``size``).
 
-    One distinct amount cannot separate the parts: the median fee is returned as
-    fixed. A negative slope falls back to a flat median fee; a negative intercept
-    to a pure proportional fee at the median ``fee / amount``. ``(nan, nan)`` for
-    no observations. Non-finite pairs are dropped.
+    The canonical home of the type: loaders that fit observed fees (e.g. bridge
+    transfers) import it from here, since ``fractal.core`` never imports loaders.
     """
-    amount = np.asarray(amount_usd, dtype=float).ravel()
-    fee = np.asarray(fee_usd, dtype=float).ravel()
+
+    fixed: float
+    bps: float
+
+    def fee(self, size: float) -> float:
+        """Fee for a transfer of ``size``."""
+        return self.fixed + self.bps * size / 1e4
+
+    def fee_bps_at(self, size: float) -> float:
+        """All-in fee for a transfer of ``size``, in basis points of ``size``."""
+        return self.fee(size) / size * 1e4
+
+
+def fit_fee_schedule(amounts: Iterable[float], fees: Iterable[float]) -> FeeSchedule:
+    """Least-squares ``fee = fixed + bps * amount / 1e4`` with both parts ``>= 0``.
+
+    Pairs with a non-finite value or a non-positive amount are dropped.
+    With no pairs the result is NaN. With a single distinct amount the
+    proportional part is not identified, so the median fee is the fixed part.
+    If the unconstrained fit gives a negative rate, the fit is the median fee
+    as a fixed charge; if it gives a negative fixed part, it is the median
+    proportional rate with no fixed charge.
+    """
+    amount = np.asarray(list(amounts), dtype=float)
+    fee = np.asarray(list(fees), dtype=float)
     if amount.shape != fee.shape:
-        raise ValueError("amount_usd and fee_usd must have the same length")
-    keep = np.isfinite(amount) & np.isfinite(fee)
+        raise ValueError(f"amounts and fees must have the same length, got {amount.size} and {fee.size}")
+    keep = np.isfinite(amount) & np.isfinite(fee) & (amount > 0)
     amount, fee = amount[keep], fee[keep]
     if amount.size == 0:
-        return float("nan"), float("nan")
+        return FeeSchedule(math.nan, math.nan)
     if np.unique(amount).size < 2:
-        return float(max(np.median(fee), 0.0)), 0.0
+        return FeeSchedule(max(float(np.median(fee)), 0.0), 0.0)
     design = np.column_stack([np.ones_like(amount), amount / 1e4])
     fixed, bps = np.linalg.lstsq(design, fee, rcond=None)[0]
-    if bps < 0.0:
-        return float(max(np.median(fee), 0.0)), 0.0
-    if fixed < 0.0:
-        positive = amount > 0.0
-        ratio = np.median(fee[positive] / amount[positive]) * 1e4 if positive.any() else 0.0
-        return 0.0, float(max(ratio, 0.0))
-    return float(fixed), float(bps)
+    if bps < 0:
+        return FeeSchedule(max(float(np.median(fee)), 0.0), 0.0)
+    if fixed < 0:
+        return FeeSchedule(0.0, max(float(np.median(fee / amount)) * 1e4, 0.0))
+    return FeeSchedule(float(fixed), float(bps))
 
 
 def _size_label(size: float) -> str:
@@ -438,11 +462,11 @@ def friction_table(transfers: pd.DataFrame, sizes_usd: Sequence[float], *,
         latency_h = matched["latency_s"].dropna().to_numpy(dtype=float) / 3600.0
         for q in quantiles:
             row[f"latency_p{round(q * 100)}_h"] = float(np.quantile(latency_h, q)) if latency_h.size else np.nan
-        fixed, bps = fit_fee_schedule(matched["amount_usd"].to_numpy(dtype=float),
-                                      matched["fee_usd"].to_numpy(dtype=float))
-        row.update(fee_fixed_usd=fixed, fee_bps=bps)
+        schedule = fit_fee_schedule(matched["amount_usd"].to_numpy(dtype=float),
+                                    matched["fee_usd"].to_numpy(dtype=float))
+        row.update(fee_fixed_usd=schedule.fixed, fee_bps=schedule.bps)
         for size in sizes:
-            row[f"fee_bps_at_{_size_label(size)}"] = (fixed + bps * size / 1e4) / size * 1e4
+            row[f"fee_bps_at_{_size_label(size)}"] = schedule.fee_bps_at(size)
         if edges is not None:
             gas = matched.dropna(subset=["gas_usd", "amount_usd"])
             gas = gas[gas["amount_usd"] > 0.0]
