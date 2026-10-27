@@ -12,6 +12,13 @@ distinguishable.
 
 Raw amounts arrive as JSON numbers when small and as decimal strings when
 large; both are parsed as exact integers before scaling.
+
+USD values are opt-in (``include_usd=True``) and point-in-time: each event is
+priced at the loan asset's hourly ``historicalPriceUsd`` point at or before its
+timestamp (``loan_price_usd``), and ``assets_usd = assets * loan_price_usd``
+keeps the sign of ``assets``. An event with no price point in the hour up to
+it gets ``NaN``. The loan asset's ``priceUsd`` field is deliberately not used:
+it is the price at retrieval time, not at the event.
 """
 import hashlib
 import math
@@ -39,19 +46,33 @@ _SKIP_CAP = 10_000
 _SLICE_SECONDS = 6 * 60 * 60
 _CACHE_SCHEMA = "v2"
 _EVENT_TYPES = {"ReallocateSupply", "ReallocateWithdraw"}
+_USD_COLUMNS = ("loan_price_usd", "assets_usd")
+_HOUR = 3600
+_PRICE_CHUNK_SECONDS = 30 * 24 * _HOUR
+_PRICE_ASSETS_PER_REQUEST = 50
 
 _REALLOCATIONS_QUERY = """
 query VaultReallocations($first: Int!, $skip: Int!, $where: VaultReallocateFilters) {
   vaultReallocates(first: $first, skip: $skip, orderBy: Timestamp, orderDirection: Asc, where: $where) {
     items {
       id timestamp type assets shares caller hash logIndex
-      market { marketId loanAsset { decimals } }
+      market { marketId loanAsset { address decimals } }
       vault { address chain { id } }
     }
     pageInfo { count countTotal }
   }
 }
 """
+
+
+def _price_query(count: int) -> str:
+    """Aliased ``assetByAddress`` hourly USD price series for ``count`` addresses."""
+    params = ", ".join(f"$a{i}: String!" for i in range(count))
+    fields = "\n".join(
+        f"  p{i}: assetByAddress(address: $a{i}, chainId: $chain) {{ historicalPriceUsd(options: $o) {{ x y }} }}"
+        for i in range(count)
+    )
+    return f"query LoanPrices($chain: Int!, $o: TimeseriesOptions, {params}) {{\n{fields}\n}}\n"
 
 
 def _event_key(item: Mapping[str, Any]) -> Hashable:
@@ -96,6 +117,8 @@ def _empty_frame(columns: tuple[str, ...]) -> pd.DataFrame:
         "transaction_hash": pd.Series(dtype="object"),
         "log_index": pd.Series(dtype="int64"),
         "is_public_allocator": pd.Series(dtype=bool),
+        "loan_price_usd": pd.Series(dtype="float64"),
+        "assets_usd": pd.Series(dtype="float64"),
     })[list(columns)]
 
 
@@ -120,6 +143,8 @@ class MorphoReallocationsLoader(Loader):
         public_allocators: chain-to-address mapping used for
             ``is_public_allocator``; defaults to the verified Ethereum and
             Base PublicAllocator contracts.
+        include_usd: add the point-in-time ``loan_price_usd`` and
+            ``assets_usd`` columns (extra price requests per loan asset).
         loader_type: on-disk cache format.
         http: injectable client for offline tests.
     """
@@ -146,6 +171,7 @@ class MorphoReallocationsLoader(Loader):
         *,
         page_size: int = _PAGE_SIZE_MAX,
         public_allocators: Mapping[int, str] | None = None,
+        include_usd: bool = False,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
@@ -160,7 +186,14 @@ class MorphoReallocationsLoader(Loader):
         self.page_size = int(page_size)
         allocators = PUBLIC_ALLOCATORS if public_allocators is None else public_allocators
         self.public_allocators = {int(chain): str(address).lower() for chain, address in allocators.items()}
+        self.include_usd = bool(include_usd)
+        self._loan_prices: pd.DataFrame | None = None
         self._http = http or HttpClient()
+
+    @property
+    def columns(self) -> tuple[str, ...]:
+        """Output columns: :attr:`COLUMNS`, plus the USD columns when ``include_usd``."""
+        return self.COLUMNS + _USD_COLUMNS if self.include_usd else self.COLUMNS
 
     def _cache_key(self) -> str:
         allocator_config = ";".join(
@@ -170,7 +203,7 @@ class MorphoReallocationsLoader(Loader):
         return (
             f"schema-{_CACHE_SCHEMA}-chain-{self.chain_id}-"
             f"{_epoch_ceil(self.start_time)}-{_epoch_ceil(self.end_time)}-"
-            f"page-{self.page_size}-allocators-{allocator_hash}"
+            f"page-{self.page_size}-allocators-{allocator_hash}{'-usd' if self.include_usd else ''}"
         )
 
     def _page(self, lower: int, upper: int, skip: int) -> tuple[list[dict[str, Any]], int | None]:
@@ -239,6 +272,50 @@ class MorphoReallocationsLoader(Loader):
             upper = min(lower + _SLICE_SECONDS, end) - 1
             items.extend(self._extract_slice(lower, upper))
         self._data = items
+        if self.include_usd:
+            assets = sorted({
+                str(((item.get("market") or {}).get("loanAsset") or {}).get("address") or "").lower()
+                for item in items
+            } - {""})
+            self._loan_prices = self._fetch_loan_prices(assets, start, end - 1)
+
+    def _fetch_loan_prices(self, assets: list[str], lower: int, upper: int) -> pd.DataFrame:
+        """Hourly USD price points of ``assets`` covering ``[floor_hour(lower), upper]``."""
+        rows: list[dict[str, Any]] = []
+        first_hour = lower - lower % _HOUR
+        for offset in range(0, len(assets), _PRICE_ASSETS_PER_REQUEST):
+            batch = assets[offset:offset + _PRICE_ASSETS_PER_REQUEST]
+            for chunk_lower in range(first_hour, upper + 1, _PRICE_CHUNK_SECONDS):
+                chunk_upper = min(chunk_lower + _PRICE_CHUNK_SECONDS - _HOUR, upper)
+                variables: dict[str, Any] = {
+                    "chain": self.chain_id,
+                    "o": {"startTimestamp": chunk_lower, "endTimestamp": chunk_upper, "interval": "HOUR"},
+                }
+                variables.update({f"a{i}": address for i, address in enumerate(batch)})
+                data = graphql_query(self._http, _price_query(len(batch)), variables)
+                for i, address in enumerate(batch):
+                    points = (data.get(f"p{i}") or {}).get("historicalPriceUsd") or []
+                    rows.extend(
+                        {"_loan_asset": address, "timestamp": int(point["x"]), "loan_price_usd": float(point["y"])}
+                        for point in points
+                        if point.get("x") is not None and point.get("y") is not None
+                    )
+        prices = pd.DataFrame(rows, columns=["_loan_asset", "timestamp", "loan_price_usd"])
+        # Only interval boundaries are snapshots; a non-aligned point is the live value.
+        prices = prices[prices["timestamp"] % _HOUR == 0]
+        return prices.drop_duplicates(["_loan_asset", "timestamp"], keep="last").reset_index(drop=True)
+
+    def _attach_usd(self, frame: pd.DataFrame) -> pd.DataFrame:
+        prices = self._loan_prices
+        if prices is None or prices.empty:
+            return frame.assign(loan_price_usd=float("nan"), assets_usd=float("nan"))
+        prices = prices.astype({"timestamp": "int64", "loan_price_usd": "float64"}).sort_values("timestamp")
+        order = frame.assign(_order=range(len(frame))).sort_values("timestamp", kind="stable")
+        merged = pd.merge_asof(
+            order, prices, on="timestamp", by="_loan_asset", direction="backward", tolerance=_HOUR - 1,
+        ).sort_values("_order", kind="stable").drop(columns="_order")
+        merged["assets_usd"] = merged["assets"] * merged["loan_price_usd"]
+        return merged.reset_index(drop=True)
 
     def _row(self, item: Mapping[str, Any]) -> dict[str, Any]:
         event_type = str(item.get("type"))
@@ -268,11 +345,12 @@ class MorphoReallocationsLoader(Loader):
             "log_index": int(item.get("logIndex") or 0),
             "is_public_allocator": bool(caller) and caller == self.public_allocators.get(chain_id),
             "_event_key": _event_key(item),
+            "_loan_asset": str(loan_asset.get("address") or "").lower(),
         }
 
     def _normalise_frame(self, frame: pd.DataFrame) -> pd.DataFrame:
         if frame.empty:
-            return _empty_frame(self.COLUMNS)
+            return _empty_frame(self.columns)
         frame = frame.copy()
         frame["timestamp"] = frame["timestamp"].astype("int64")
         frame["chain_id"] = frame["chain_id"].astype("int64")
@@ -286,11 +364,14 @@ class MorphoReallocationsLoader(Loader):
                 lambda value: str(value).lower() == "true"
             )
         frame["is_public_allocator"] = frame["is_public_allocator"].astype(bool)
-        return frame[list(self.COLUMNS)]
+        if self.include_usd:
+            for column in _USD_COLUMNS:
+                frame[column] = frame[column].astype("float64")
+        return frame[list(self.columns)]
 
     def transform(self) -> None:
         if self._data is None or len(self._data) == 0:
-            self._data = _empty_frame(self.COLUMNS)
+            self._data = _empty_frame(self.columns)
             return
         items = self._data.to_dict("records") if isinstance(self._data, pd.DataFrame) else self._data
         rows = [self._row(item) for item in items]
@@ -299,6 +380,8 @@ class MorphoReallocationsLoader(Loader):
         frame = frame.sort_values(
             ["timestamp", "chain_id", "transaction_hash", "log_index"], kind="stable"
         ).reset_index(drop=True)
+        if self.include_usd:
+            frame = self._attach_usd(frame)
         self._data = self._normalise_frame(frame)
 
     def read(self, with_run: bool = False) -> pd.DataFrame:
