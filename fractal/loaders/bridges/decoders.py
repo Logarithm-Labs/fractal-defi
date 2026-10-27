@@ -7,8 +7,10 @@ addresses as lower-case ``0x`` hex. Nothing here reads a chain; pair the
 output with the log's transaction hash and index at the call site.
 
 Covered events: Across V3 ``FilledRelay``, deBridge DLN ``FulfilledOrder``
-(documented and deployed variants), LayerZero OFT ``OFTReceived``, CCTP V1
-``MintAndWithdraw`` and Circle Gateway ``AttestationUsed``.
+(documented and deployed variants), LayerZero OFT ``OFTReceived`` and
+``OFTSent``, CCTP V1 ``MintAndWithdraw``, CCTP V2 ``DepositForBurn``,
+``MessageReceived`` (with the ``BurnMessageV2`` body) and ``MintAndWithdraw``,
+and Circle Gateway ``AttestationUsed``.
 """
 
 from collections.abc import Iterator, Sequence
@@ -19,6 +21,12 @@ from fractal.loaders.rpc import event_topic, topic_to_address, topic_to_int
 _WORD = 32
 
 SIG_OFT_RECEIVED = "OFTReceived(bytes32,uint32,address,uint256)"
+SIG_OFT_SENT = "OFTSent(bytes32,uint32,address,uint256,uint256)"
+SIG_CCTP_V2_DEPOSIT_FOR_BURN = (
+    "DepositForBurn(address,uint256,address,bytes32,uint32,bytes32,bytes32,uint256,uint32,bytes)"
+)
+SIG_CCTP_V2_MESSAGE_RECEIVED = "MessageReceived(address,uint32,bytes32,bytes32,uint32,bytes)"
+SIG_CCTP_V2_MINT_AND_WITHDRAW = "MintAndWithdraw(address,uint256,address,uint256)"
 SIG_CCTP_V1_MINT_AND_WITHDRAW = "MintAndWithdraw(address,uint256,address)"
 SIG_ACROSS_FILLED_RELAY = (
     "FilledRelay(bytes32,bytes32,uint256,uint256,uint256,uint256,uint256,uint32,uint32,bytes32,bytes32,bytes32,"
@@ -31,6 +39,11 @@ SIG_DLN_FULFILLED_ORDER_V2 = f"FulfilledOrder({DLN_ORDER},bytes32,uint256,addres
 SIG_GATEWAY_ATTESTATION_USED = "AttestationUsed(address,address,bytes32,uint32,bytes32,bytes32,uint256)"
 
 TOPIC_OFT_RECEIVED = event_topic(SIG_OFT_RECEIVED)
+TOPIC_OFT_SENT = event_topic(SIG_OFT_SENT)
+TOPIC_CCTP_V2_DEPOSIT_FOR_BURN = event_topic(SIG_CCTP_V2_DEPOSIT_FOR_BURN)
+TOPIC_CCTP_V2_MESSAGE_RECEIVED = event_topic(SIG_CCTP_V2_MESSAGE_RECEIVED)
+TOPIC_CCTP_V2_MINT_AND_WITHDRAW = event_topic(SIG_CCTP_V2_MINT_AND_WITHDRAW)
+CCTP_V2_BURN_BODY_MIN_BYTES = 228  # BurnMessageV2 up to and including expirationBlock
 TOPIC_CCTP_V1_MINT_AND_WITHDRAW = event_topic(SIG_CCTP_V1_MINT_AND_WITHDRAW)
 TOPIC_ACROSS_FILLED_RELAY = event_topic(SIG_ACROSS_FILLED_RELAY)
 TOPIC_DLN_FULFILLED_ORDER = event_topic(SIG_DLN_FULFILLED_ORDER)
@@ -258,4 +271,93 @@ def decode_gateway_attestation_used(topics: Sequence[str], data: str) -> dict[st
         "source_depositor": _address32(source_depositor),
         "source_signer": _address32(source_signer),
         "amount": value,
+    }
+
+
+def decode_oft_sent(topics: Sequence[str], data: str) -> dict[str, Any]:
+    """LayerZero OFT ``OFTSent``: GUID, destination EID, sender and the amounts sent/received (local decimals).
+
+    ``amount_sent_ld - amount_received_ld`` is the OFT-level fee (dust removal and any fee the OFT charges).
+    """
+    topics = _topics(topics, (TOPIC_OFT_SENT,), 3, "OFTSent")
+    dst_eid, sent, received = abi_decode(["uint32", "uint256", "uint256"], data)
+    return {
+        "guid": topics[1],
+        "dst_eid": dst_eid,
+        "from_address": topic_to_address(topics[2]),
+        "amount_sent_ld": sent,
+        "amount_received_ld": received,
+    }
+
+
+def decode_cctp_v2_deposit_for_burn(topics: Sequence[str], data: str) -> dict[str, Any]:
+    """CCTP V2 ``DepositForBurn`` (TokenMessengerV2).
+
+    ``mint_recipient`` / ``destination_*`` stay full ``bytes32`` hex (non-EVM
+    destinations); ``min_finality`` is ``minFinalityThreshold`` (<= 1000 Fast,
+    >= 2000 Standard).
+    """
+    topics = _topics(topics, (TOPIC_CCTP_V2_DEPOSIT_FOR_BURN,), 4, "CCTP V2 DepositForBurn")
+    amount, recipient, dst_domain, dst_messenger, dst_caller, max_fee, hook = abi_decode(
+        ["uint256", "bytes32", "uint32", "bytes32", "bytes32", "uint256", "bytes"], data
+    )
+    return {
+        "burn_token": topic_to_address(topics[1]),
+        "depositor": topic_to_address(topics[2]),
+        "min_finality": topic_to_int(topics[3]),
+        "amount": amount,
+        "mint_recipient": "0x" + recipient.hex(),
+        "dst_domain": dst_domain,
+        "destination_token_messenger": "0x" + dst_messenger.hex(),
+        "destination_caller": "0x" + dst_caller.hex(),
+        "max_fee": max_fee,
+        "hook_data": "0x" + hook.hex(),
+    }
+
+
+def decode_cctp_v2_burn_message_body(body: bytes) -> dict[str, Any]:
+    """``BurnMessageV2`` body: a 4-byte version, then packed 32-byte burnToken, mintRecipient,
+    amount, messageSender, maxFee, feeExecuted, expirationBlock, then hookData."""
+    if len(body) < CCTP_V2_BURN_BODY_MIN_BYTES:
+        raise ValueError(f"burn message body has {len(body)} bytes, expected at least {CCTP_V2_BURN_BODY_MIN_BYTES}")
+    return {
+        "version": int.from_bytes(body[:4], "big"),
+        "burn_token": "0x" + body[16:36].hex(),
+        "mint_recipient": "0x" + body[36:68].hex(),
+        "amount": _uint(body, 68),
+        "message_sender": "0x" + body[112:132].hex(),
+        "max_fee": _uint(body, 132),
+        "fee_executed": _uint(body, 164),
+        "expiration_block": _uint(body, 196),
+        "hook_data": "0x" + body[CCTP_V2_BURN_BODY_MIN_BYTES:].hex(),
+    }
+
+
+def decode_cctp_v2_message_received(topics: Sequence[str], data: str) -> dict[str, Any]:
+    """CCTP V2 ``MessageReceived`` (MessageTransmitterV2).
+
+    ``body`` is the decoded burn message, or ``None`` when the message body is
+    not a ``BurnMessageV2`` (too short).
+    """
+    topics = _topics(topics, (TOPIC_CCTP_V2_MESSAGE_RECEIVED,), 4, "CCTP V2 MessageReceived")
+    src_domain, sender, body = abi_decode(["uint32", "bytes32", "bytes"], data)
+    return {
+        "caller": topic_to_address(topics[1]),
+        "nonce": topics[2],
+        "finality_executed": topic_to_int(topics[3]),
+        "src_domain": src_domain,
+        "sender": "0x" + sender.hex(),
+        "body": decode_cctp_v2_burn_message_body(body) if len(body) >= CCTP_V2_BURN_BODY_MIN_BYTES else None,
+    }
+
+
+def decode_cctp_v2_mint_and_withdraw(topics: Sequence[str], data: str) -> dict[str, Any]:
+    """CCTP V2 ``MintAndWithdraw``: recipient, minted token, amount minted to the recipient and fee collected."""
+    topics = _topics(topics, (TOPIC_CCTP_V2_MINT_AND_WITHDRAW,), 3, "CCTP V2 MintAndWithdraw")
+    amount, fee = abi_decode(["uint256", "uint256"], data)
+    return {
+        "mint_recipient": topic_to_address(topics[1]),
+        "mint_token": topic_to_address(topics[2]),
+        "amount": amount,
+        "fee_collected": fee,
     }

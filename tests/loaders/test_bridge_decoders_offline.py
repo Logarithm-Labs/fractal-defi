@@ -7,16 +7,25 @@ from fractal.loaders.bridges.decoders import (
     DLN_ORDER,
     TOPIC_ACROSS_FILLED_RELAY,
     TOPIC_CCTP_V1_MINT_AND_WITHDRAW,
+    TOPIC_CCTP_V2_DEPOSIT_FOR_BURN,
+    TOPIC_CCTP_V2_MESSAGE_RECEIVED,
+    TOPIC_CCTP_V2_MINT_AND_WITHDRAW,
     TOPIC_DLN_FULFILLED_ORDER,
     TOPIC_DLN_FULFILLED_ORDER_V2,
     TOPIC_GATEWAY_ATTESTATION_USED,
     TOPIC_OFT_RECEIVED,
+    TOPIC_OFT_SENT,
     abi_decode,
     decode_across_filled_relay,
     decode_cctp_v1_mint_and_withdraw,
+    decode_cctp_v2_burn_message_body,
+    decode_cctp_v2_deposit_for_burn,
+    decode_cctp_v2_message_received,
+    decode_cctp_v2_mint_and_withdraw,
     decode_dln_fulfilled_order,
     decode_gateway_attestation_used,
     decode_oft_received,
+    decode_oft_sent,
 )
 
 ADDRESS_A = "0x" + "a1" * 20
@@ -217,9 +226,74 @@ def test_decode_gateway_attestation_used():
 @pytest.mark.core
 def test_event_topics_are_distinct_keccak_hashes():
     topics = [getattr(decoders, name) for name in dir(decoders) if name.startswith("TOPIC_")]
-    assert len(topics) == len(set(topics)) == 6
+    assert len(topics) == len(set(topics)) == 10
     assert all(topic.startswith("0x") and len(topic) == 66 for topic in topics)
     # Keccak-256 of the ERC-20 Transfer signature, a well-known public constant.
     assert decoders.event_topic("Transfer(address,address,uint256)") == (
         "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"
     )
+
+
+# --------------------------------------------------------------- CCTP V2 and OFTSent
+RECIPIENT32 = bytes(12) + bytes.fromhex(ADDRESS_B[2:])
+
+
+def _burn_body(fee_executed: int, hook: bytes = b"") -> bytes:
+    """BurnMessageV2: uint32 version, then packed 32-byte fields, then hookData."""
+    return (
+        (1).to_bytes(4, "big") + _b32(ADDRESS_A) + RECIPIENT32 + (2_000_000).to_bytes(32, "big")
+        + _b32(ADDRESS_C) + (5_000).to_bytes(32, "big") + fee_executed.to_bytes(32, "big")
+        + (123).to_bytes(32, "big") + hook
+    )
+
+
+@pytest.mark.core
+def test_decode_oft_sent():
+    topics = [TOPIC_OFT_SENT, GUID, _topic_address(ADDRESS_A)]
+    row = decode_oft_sent(topics, _hex(["uint32", "uint256", "uint256"], [30110, 1_000_123, 1_000_000]))
+    assert row == {"guid": GUID, "dst_eid": 30110, "from_address": ADDRESS_A, "amount_sent_ld": 1_000_123,
+                   "amount_received_ld": 1_000_000}
+    with pytest.raises(ValueError, match="not a OFTSent"):
+        decode_oft_sent([TOPIC_OFT_RECEIVED, GUID, _topic_address(ADDRESS_A)], "0x")
+
+
+@pytest.mark.core
+def test_decode_cctp_v2_deposit_for_burn():
+    topics = [TOPIC_CCTP_V2_DEPOSIT_FOR_BURN, _topic_address(ADDRESS_A), _topic_address(ADDRESS_C), _word(1000)]
+    data = _hex(["uint256", "bytes32", "uint32", "bytes32", "bytes32", "uint256", "bytes"],
+                [2_000_000, RECIPIENT32, 6, b"\x22" * 32, bytes(32), 5_000, b"\x01\x02"])
+    row = decode_cctp_v2_deposit_for_burn(topics, data)
+    assert row == {
+        "burn_token": ADDRESS_A, "depositor": ADDRESS_C, "min_finality": 1000, "amount": 2_000_000,
+        "mint_recipient": "0x" + RECIPIENT32.hex(), "dst_domain": 6, "destination_token_messenger": "0x" + "22" * 32,
+        "destination_caller": "0x" + "00" * 32, "max_fee": 5_000, "hook_data": "0x0102",
+    }
+
+
+@pytest.mark.core
+def test_decode_cctp_v2_message_received_with_and_without_a_burn_body():
+    nonce = "0x" + "9a" * 32
+    topics = [TOPIC_CCTP_V2_MESSAGE_RECEIVED, _topic_address(ADDRESS_B), nonce, _word(2000)]
+    row = decode_cctp_v2_message_received(topics, _hex(["uint32", "bytes32", "bytes"],
+                                                       [0, b"\x33" * 32, _burn_body(4_000, b"\xff")]))
+    assert (row["caller"], row["nonce"], row["finality_executed"], row["src_domain"]) == (ADDRESS_B, nonce, 2000, 0)
+    assert row["sender"] == "0x" + "33" * 32
+    assert row["body"] == {
+        "version": 1, "burn_token": ADDRESS_A, "mint_recipient": "0x" + RECIPIENT32.hex(), "amount": 2_000_000,
+        "message_sender": ADDRESS_C, "max_fee": 5_000, "fee_executed": 4_000, "expiration_block": 123,
+        "hook_data": "0xff",
+    }
+    short = decode_cctp_v2_message_received(topics, _hex(["uint32", "bytes32", "bytes"], [0, bytes(32), b"\x01" * 50]))
+    assert short["body"] is None
+    with pytest.raises(ValueError, match="at least 228"):
+        decode_cctp_v2_burn_message_body(b"\x00" * 227)
+
+
+@pytest.mark.core
+def test_decode_cctp_v2_mint_and_withdraw_differs_from_v1():
+    topics = [TOPIC_CCTP_V2_MINT_AND_WITHDRAW, _topic_address(ADDRESS_B), _topic_address(ADDRESS_A)]
+    row = decode_cctp_v2_mint_and_withdraw(topics, _hex(["uint256", "uint256"], [1_996_000, 4_000]))
+    assert row == {"mint_recipient": ADDRESS_B, "mint_token": ADDRESS_A, "amount": 1_996_000, "fee_collected": 4_000}
+    assert TOPIC_CCTP_V2_MINT_AND_WITHDRAW != TOPIC_CCTP_V1_MINT_AND_WITHDRAW
+    with pytest.raises(ValueError, match="V2 MintAndWithdraw"):
+        decode_cctp_v2_mint_and_withdraw([TOPIC_CCTP_V1_MINT_AND_WITHDRAW, *topics[1:]], "0x")
