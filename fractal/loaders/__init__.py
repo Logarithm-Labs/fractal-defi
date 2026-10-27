@@ -11,6 +11,7 @@ from fractal.loaders.binance import (
 from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
 from fractal.loaders.cex_stable_mid import DEFAULT_CEX_VENUES, StablecoinMidLoader
 from fractal.loaders.defillama import (
+    DefiLlamaDexFeeTierLoader,
     DefiLlamaDEXLoader,
     DefiLlamaPoolLoader,
     DefiLlamaProLoader,
@@ -86,6 +87,7 @@ __all__ = [
     "ConstantFundingsLoader",
     "DEXHistory",
     "DefiLlamaDEXLoader",
+    "DefiLlamaDexFeeTierLoader",
     "DefiLlamaPoolLoader",
     "DefiLlamaProLoader",
     "DefiLlamaTVLLoader",
