@@ -219,16 +219,21 @@ def test_collateral_price_series_and_cache_round_trip(monkeypatch, tmp_path):
 
 
 class _MarketTotalsHttp(_FakeMorphoHttp):
-    def __init__(self, series):
+    def __init__(self, series, loan_asset=None):
         super().__init__()
         self.series = series
+        self.loan_asset = {"decimals": 6} if loan_asset is None else loan_asset
 
     def post(self, url, json=None, timeout=None, headers=None):
         payload = super().post(url, json=json, timeout=timeout, headers=headers)
         market = payload["data"]["marketById"]
-        market["loanAsset"] = {"decimals": 6}
+        market["loanAsset"] = self.loan_asset
         market["historicalState"].update(self.series)
         return payload
+
+
+def _at(hour, value, minutes=0):
+    return {"x": int((START + timedelta(hours=hour, minutes=minutes)).timestamp()), "y": value}
 
 
 class _EmptyMarketTotalsHttp(_MarketTotalsHttp):
@@ -285,7 +290,7 @@ def test_market_totals_scale_raw_values_and_preserve_the_rate_spine():
     assert history[total_columns].notna().sum().tolist() == [1, 1, 1, 1]
     query = http.calls[-1]["query"]
     assert all(field in query for field in ("supplyAssets", "supplyShares", "borrowAssets", "borrowShares"))
-    assert "loanAsset { decimals }" in query
+    assert "loanAsset { decimals" in query
 
 
 @pytest.mark.core
@@ -304,10 +309,100 @@ def test_empty_market_totals_return_the_opt_in_schema():
 
 
 @pytest.mark.core
-def test_cache_schema_bump_changes_the_legacy_key():
-    loader = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
-    legacy_key = loader._cache_key().removesuffix("-0-v4marketstate") + "-v3rewards"
-    assert loader._cache_key() != legacy_key
+def test_default_query_does_not_request_market_totals():
+    http = _FakeMorphoHttp()
+    MorphoMarketLoader(MARKET_ID, 1, START, END, http=http).read(with_run=True)
+    query = http.calls[-1]["query"]
+    assert not any(field in query for field in ("supplyAssets(", "supplyShares", "borrowAssets(", "borrowShares"))
+    assert "supplyAssetsUsd" in query and "borrowAssetsUsd" in query
+
+
+@pytest.mark.core
+def test_market_totals_parse_every_bigint_encoding_exactly():
+    big_shares = 123_456_789_012_345_678_901_234  # > 2**53: a float round trip of the raw value would lose digits
+    series = {
+        "supplyAssets": [_at(0, 123_456_789), _at(1, "0x75bcd15"), _at(2, "1.23456789e8"), _at(3, None),
+                         _at(4, " 123456789 ")],
+        "supplyShares": [_at(0, str(big_shares)), _at(1, big_shares)],
+        "borrowAssets": [{"x": None, "y": "1"}, _at(0, "-5000000")],
+    }
+    history = MorphoMarketLoader(
+        MARKET_ID, 1, START, END, include_market_totals=True, http=_MarketTotalsHttp(series),
+    ).read(with_run=True)
+    assert history["supply_assets"].iloc[:3].tolist() == pytest.approx([123.456789] * 3, rel=1e-15)
+    assert math.isnan(history["supply_assets"].iloc[3])  # a null point is NaN, not a crash
+    assert history["supply_assets"].iloc[4] == pytest.approx(123.456789, rel=1e-15)
+    assert history["supply_shares"].iloc[0] == big_shares / 10**12  # correctly rounded int / int
+    assert history["supply_shares"].iloc[1] == big_shares / 10**12
+    assert history["borrow_assets"].iloc[0] == pytest.approx(-5.0)  # a point without ``x`` is skipped
+    assert len(history) == 6
+
+
+@pytest.mark.core
+def test_market_totals_reject_malformed_bigints_and_missing_decimals():
+    with pytest.raises(MorphoLoaderException, match="supply_assets"):
+        MorphoMarketLoader(
+            MARKET_ID, 1, START, END, include_market_totals=True,
+            http=_MarketTotalsHttp({"supplyAssets": [_at(0, "not-a-number")]}),
+        ).read(with_run=True)
+    with pytest.raises(MorphoLoaderException, match="supply_shares"):
+        MorphoMarketLoader(
+            MARKET_ID, 1, START, END, include_market_totals=True,
+            http=_MarketTotalsHttp({"supplyShares": [_at(0, True)]}),
+        ).read(with_run=True)
+    with pytest.raises(MorphoLoaderException, match="decimals missing"):
+        MorphoMarketLoader(
+            MARKET_ID, 1, START, END, include_market_totals=True,
+            http=_MarketTotalsHttp({}, loan_asset={"symbol": "USDC"}),
+        ).read(with_run=True)
+    # the default loader never needs the loan decimals
+    MorphoMarketLoader(MARKET_ID, 1, START, END, http=_MarketTotalsHttp({}, loan_asset={})).read(with_run=True)
+
+
+@pytest.mark.core
+def test_share_price_is_one_at_the_virtual_share_offset():
+    # Morpho Blue mints 1e6 shares per asset unit at creation: 1e6 USDC (6 dp) ↔ 1e18 raw shares.
+    series = {"supplyAssets": [_at(0, 10**12)], "supplyShares": [_at(0, 10**18)]}
+    history = MorphoMarketLoader(
+        MARKET_ID, 1, START, END, include_market_totals=True, http=_MarketTotalsHttp(series),
+    ).read(with_run=True)
+    assert history["supply_assets"].iloc[0] == pytest.approx(1_000_000.0)
+    assert history["supply_assets"].iloc[0] / history["supply_shares"].iloc[0] == pytest.approx(1.0)
+
+
+@pytest.mark.core
+def test_loan_price_is_left_joined_onto_the_bars():
+    prices = [_at(h, 0.999 + h / 10_000) for h in range(3)] + [_at(1, 1.5, minutes=30)]
+    http = _MarketTotalsHttp({}, loan_asset={"decimals": 6, "historicalPriceUsd": prices})
+    loader = MorphoMarketLoader(MARKET_ID, 1, START, END, http=http)
+    history = loader.read(with_run=True)
+    assert len(history) == 6  # an off-grid price point never adds a bar
+    assert "loan_price_usd" not in history.columns  # LendingHistory columns are unchanged
+    price = loader.read_loan_price()
+    assert price["price"].tolist() == pytest.approx([0.999, 0.9991, 0.9992])
+    assert price.index[0] == pd.Timestamp(START)
+    assert "historicalPriceUsd" in http.calls[-1]["query"].split("loanAsset", 1)[1].split("}", 1)[0]
+    # markets without a loan price (the base fake) read an empty series
+    no_price = MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp())
+    no_price.read(with_run=True)
+    assert no_price.read_loan_price().empty
+
+
+@pytest.mark.core
+def test_market_totals_cache_is_isolated_from_the_default_cache(monkeypatch, tmp_path):
+    monkeypatch.setenv("DATA_PATH", str(tmp_path))
+    series = {"supplyAssets": [_at(h, str(10**12 + h)) for h in range(6)],
+              "supplyShares": [_at(h, str(10**18)) for h in range(6)]}
+    MorphoMarketLoader(MARKET_ID, 1, START, END, http=_FakeMorphoHttp()).read(with_run=True)
+    totals = MorphoMarketLoader(MARKET_ID, 1, START, END, include_market_totals=True,
+                                http=_MarketTotalsHttp(series))
+    with pytest.raises(FileNotFoundError):  # the default CSV is never read back as a totals history
+        totals.read(with_run=False)
+    first = totals.read(with_run=True)
+    cached = MorphoMarketLoader(MARKET_ID, 1, START, END, include_market_totals=True,
+                                http=_MarketTotalsHttp(series)).read(with_run=False)
+    pd.testing.assert_frame_equal(first, cached)
+    assert cached["supply_assets"].iloc[5] == pytest.approx(1_000_000.000005, rel=1e-15)
 
 
 @pytest.mark.core

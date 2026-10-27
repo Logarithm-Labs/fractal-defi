@@ -24,9 +24,13 @@ liquidityAssetsUsd }`` come as USD notional and ``liquidityAssetsUsd`` is
 the withdrawable amount the exit gate is measured against. With
 ``include_market_totals=True``, raw supply/borrow assets are converted by
 the loan token's decimals and shares by ``decimals + 6`` (Morpho Blue's
-virtual-share offset). ``netSupplyApy`` (supply APY including the market's
-reward campaigns) is carried as an optional column; the reward rate is
-``net_supply_apy − supply_apy``. ``fee`` is **not** exposed by the API's
+virtual-share offset), so ``supply_assets / supply_shares`` is the supply
+share price (about 1 at market creation). BigInts are parsed as exact
+integers from JSON numbers or decimal/hex strings; a null point is NaN.
+``loanAsset.historicalPriceUsd`` is left-joined onto the bars and read
+with :meth:`MorphoMarketLoader.read_loan_price`. ``netSupplyApy`` (supply
+APY including the market's reward campaigns) is carried as an optional
+column; the reward rate is ``net_supply_apy − supply_apy``. ``fee`` is **not** exposed by the API's
 ``MarketHistory`` type (verified live 2026-10-12: schema validation
 error), so it is not a column here — read the current value from
 :func:`get_market_info` and pass it to the entity. ``rateAtTarget`` is
@@ -80,17 +84,18 @@ query MarketHistory($id: String!, $cid: Int!, $o: TimeseriesOptions) {
       supplyAssetsUsd(options: $o) { x y }
       borrowAssetsUsd(options: $o) { x y }
       liquidityAssetsUsd(options: $o) { x y }
-      netSupplyApy(options: $o) { x y }
-      supplyAssets(options: $o) { x y }
-      supplyShares(options: $o) { x y }
-      borrowAssets(options: $o) { x y }
-      borrowShares(options: $o) { x y }
+      netSupplyApy(options: $o) { x y }%s
     }
-    loanAsset { decimals }
+    loanAsset { decimals historicalPriceUsd(options: $o) { x y } }
     collateralAsset { historicalPriceUsd(options: $o) { x y } }
   }
 }
 """
+# Raw BigInt market totals, requested only with ``include_market_totals=True``.
+_MARKET_TOTALS_FIELDS = ("supplyAssets", "supplyShares", "borrowAssets", "borrowShares")
+_MARKET_TOTALS_QUERY = "".join(f"\n      {field}(options: $o) {{ x y }}" for field in _MARKET_TOTALS_FIELDS)
+# Morpho Blue mints ``VIRTUAL_SHARES = 1e6`` shares per asset unit at creation.
+_VIRTUAL_SHARES_DECIMALS = 6
 
 __all__ = [
     "MORPHO_GRAPHQL_URL",
@@ -203,17 +208,37 @@ def _series_to_df(points: list[dict[str, Any]] | None, col: str) -> pd.DataFrame
     return pd.DataFrame({"x": df["x"].astype("int64"), col: df["y"].astype(float)})
 
 
+def _scaled_bigint(value: Any, decimals: int, col: str) -> float:
+    """``value / 10**decimals`` from a GraphQL BigInt (JSON number, decimal/hex string); ``None`` → NaN."""
+    if value is None:
+        return float("nan")
+    if isinstance(value, bool) or not isinstance(value, int | float | str):
+        raise MorphoLoaderException(f"{col}: expected a BigInt, got {value!r}")
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            value = int(text, 16) if text.lower().startswith(("0x", "-0x")) else int(text)
+        except ValueError:
+            try:
+                value = float(text)  # scientific notation such as "1.2e+21"
+            except ValueError as exc:
+                raise MorphoLoaderException(f"{col}: expected a BigInt, got {text!r}") from exc
+    # int / int is correctly rounded in Python, so exact raw integers lose no
+    # precision beyond the final float.
+    return value / 10 ** int(decimals)
+
+
 def _scaled_bigint_series_to_df(
     points: list[dict[str, Any]] | None,
     col: str,
     decimals: int,
 ) -> pd.DataFrame:
+    points = [point for point in points or [] if point.get("x") is not None]
     if not points:
         return pd.DataFrame({"x": pd.Series(dtype="int64"), col: pd.Series(dtype=float)})
-    scale = 10 ** int(decimals)
     return pd.DataFrame({
         "x": pd.Series((int(point["x"]) for point in points), dtype="int64"),
-        col: pd.Series((int(point["y"]) / scale for point in points), dtype=float),
+        col: pd.Series((_scaled_bigint(point.get("y"), decimals, col) for point in points), dtype=float),
     })
 
 
@@ -275,7 +300,8 @@ class MorphoMarketLoader(Loader):
         )
 
     def extract(self) -> None:
-        data = graphql_query(self._http, _HISTORY_QUERY, {
+        query = _HISTORY_QUERY % (_MARKET_TOTALS_QUERY if self.include_market_totals else "")
+        data = graphql_query(self._http, query, {
             "id": self.market_id, "cid": self.chain_id,
             "o": {"startTimestamp": to_seconds(self.start_time), "endTimestamp": to_seconds(self.end_time),
                   "interval": self.interval},
@@ -301,18 +327,21 @@ class MorphoMarketLoader(Loader):
             _series_to_df(hist.get("borrowAssetsUsd"), "borrow_assets_usd"),
             _series_to_df(hist.get("liquidityAssetsUsd"), "liquidity_assets_usd"),
             _series_to_df(hist.get("netSupplyApy"), "net_supply_apy"),
+            _series_to_df((market.get("loanAsset") or {}).get("historicalPriceUsd"), "loan_price_usd"),
         ]
         if self.include_market_totals:
-            decimals = (market.get("loanAsset") or {}).get("decimals")
-            if decimals is None:
+            raw_decimals = (market.get("loanAsset") or {}).get("decimals")
+            if raw_decimals is None:
                 raise MorphoLoaderException(
                     f"market {self.market_id} on chain {self.chain_id}: loanAsset.decimals missing"
                 )
+            decimals = int(raw_decimals)
+            share_decimals = decimals + _VIRTUAL_SHARES_DECIMALS
             optional_frames.extend((
                 _scaled_bigint_series_to_df(hist.get("supplyAssets"), "supply_assets", decimals),
-                _scaled_bigint_series_to_df(hist.get("supplyShares"), "supply_shares", int(decimals) + 6),
+                _scaled_bigint_series_to_df(hist.get("supplyShares"), "supply_shares", share_decimals),
                 _scaled_bigint_series_to_df(hist.get("borrowAssets"), "borrow_assets", decimals),
-                _scaled_bigint_series_to_df(hist.get("borrowShares"), "borrow_shares", int(decimals) + 6),
+                _scaled_bigint_series_to_df(hist.get("borrowShares"), "borrow_shares", share_decimals),
             ))
         for frame in optional_frames:
             if not frame.empty:
@@ -322,7 +351,7 @@ class MorphoMarketLoader(Loader):
     def transform(self) -> None:
         cols = ["time", "lending_rate", "borrowing_rate", "utilization", "borrow_apy", "supply_apy",
                 "rate_at_target", "collateral_price_usd", "supply_rate", "supply_assets_usd",
-                "borrow_assets_usd", "liquidity_assets_usd", "net_supply_apy"]
+                "borrow_assets_usd", "liquidity_assets_usd", "net_supply_apy", "loan_price_usd"]
         if self.include_market_totals:
             cols.extend(("supply_assets", "supply_shares", "borrow_assets", "borrow_shares"))
         if self._data is None or self._data.empty:
@@ -401,12 +430,23 @@ class MorphoMarketLoader(Loader):
                            if self.include_market_totals else None),
         )
 
-    def read_collateral_price(self) -> PriceHistory:
-        """The API's USD price of the collateral asset over the same window (from the current ``_data``)."""
+    def _price_history(self, col: str) -> PriceHistory:
         if self._data is None or self._data.empty:
             return PriceHistory(prices=[], time=[])
-        series = self._data[["time", "collateral_price_usd"]].dropna()
+        series = self._data[["time", col]].dropna()
         return PriceHistory(
-            prices=series["collateral_price_usd"].astype(float).values,
+            prices=series[col].astype(float).values,
             time=pd.to_datetime(series["time"].astype("int64"), unit="s", utc=True),
         )
+
+    def read_collateral_price(self) -> PriceHistory:
+        """The API's USD price of the collateral asset over the same window (from the current ``_data``)."""
+        return self._price_history("collateral_price_usd")
+
+    def read_loan_price(self) -> PriceHistory:
+        """The API's USD price of the loan asset on the market's own bars (from the current ``_data``).
+
+        Converts the token-unit ``supply_assets`` / ``borrow_assets`` totals to
+        USD; a loan-price point never adds a bar to the rate grid.
+        """
+        return self._price_history("loan_price_usd")
