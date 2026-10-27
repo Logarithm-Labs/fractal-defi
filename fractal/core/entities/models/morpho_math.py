@@ -40,8 +40,10 @@ __all__ = [
     "horizon_supply_capacity",
     "liquidation_incentive_factor",
     "max_borrow",
+    "monotone_response",
     "per_bar_borrow_rate",
     "rate_at_target_drift",
+    "rate_at_target_transition_years",
     "static_supply_capacity",
     "supply_apy_curve",
     "supply_apy_curve_array",
@@ -353,7 +355,8 @@ def horizon_supply_capacity(target_apy: float, supply: float, borrow: float, rat
     infinite-deposit response still clears it. The bisection assumes the
     horizon APY does not rise again with the deposit once it has fallen below
     the target; a response path that raises utilization with the deposit in
-    some steps and lowers it in others can break that.
+    some steps and lowers it in others can break that. :func:`monotone_response`
+    checks that the deposit never raises utilization, which guarantees it.
 
     ``drift_basis`` selects the controller error: ``"absolute"`` steers on
     ``err(u)``, ``"deposit"`` on ``err(u) - err(borrow / supply)`` (only the
@@ -456,3 +459,36 @@ def supply_apy_curve_array(utilization, rate_at_target, fee=0.0):
         raise ValueError("fee must be in [0, 1)")
     utilization = np.asarray(utilization, dtype=float)
     return np.expm1(adaptive_curve_borrow_rate_array(utilization, rate_at_target)) * utilization * (1.0 - fee)
+
+
+def monotone_response(utilization: float, alpha=0.0, beta=0.0) -> bool:
+    """True when our deposit never raises utilization under the response ``(alpha, beta)``.
+
+    ``u'(P) = (B + alpha * P) / (S + (1 - beta) * P)`` is non-increasing in
+    ``P`` iff ``alpha <= u * (1 - beta)`` with ``u = B / S``. ``alpha`` and
+    ``beta`` may be scalars or response paths; the check holds when every
+    step satisfies it. The supplier APY and its horizon average are then
+    non-increasing in the deposit, so the static and horizon capacities are
+    single crossings.
+    """
+    if not 0.0 <= utilization <= 1.0:
+        raise ValueError(f"utilization must be in [0, 1], got {utilization}")
+    alpha_values, beta_values = np.broadcast_arrays(np.asarray(alpha, dtype=float), np.asarray(beta, dtype=float))
+    if not (np.all(np.isfinite(alpha_values)) and np.all(np.isfinite(beta_values))):
+        raise ValueError("alpha and beta must be finite")
+    if np.any(alpha_values < 0.0) or np.any(alpha_values > 1.0) or np.any(beta_values > 1.0):
+        raise ValueError("alpha must be in [0, 1] and beta <= 1")
+    return bool(np.all(alpha_values <= utilization * (1.0 - beta_values)))
+
+
+def rate_at_target_transition_years(delta_error: float) -> float:
+    """Time scale in years of a ``rateAtTarget`` move after a step change ``delta_error`` in ``err(u)``.
+
+    The controller drifts as ``exp(ADJUSTMENT_SPEED * err * t)``, so a change
+    of ``delta_error`` moves ``ln rateAtTarget`` by one unit in
+    ``1 / (ADJUSTMENT_SPEED * |delta_error|)`` years (``inf`` for no change).
+    At ``|delta_error| = 1`` that is 1/50 year, about 7.3 days.
+    """
+    if math.isnan(delta_error):
+        raise ValueError("delta_error must not be NaN")
+    return math.inf if delta_error == 0.0 else 1.0 / (ADJUSTMENT_SPEED * abs(delta_error))

@@ -10,6 +10,9 @@ from fractal.core.entities.models.morpho_math import (
     TARGET_UTILIZATION,
     horizon_average_supply_apy,
     horizon_supply_capacity,
+    monotone_response,
+    rate_at_target_drift,
+    rate_at_target_transition_years,
     static_supply_capacity,
     supply_apy_from_curve,
     utilization_after_deposit,
@@ -285,3 +288,39 @@ def test_utilization_helpers_reject_out_of_range_inputs():
         horizon_average_supply_apy(0.9, 0.05, 1.0, drift_reference_utilization=1.2)
     assert utilization_after_deposit(0.0, 0.0, 10.0, beta=1.0) == 0.0
     assert utilization_after_deposit(100.0, 90.0, 10.0, alpha=1.0, beta=1.0) == 1.0
+
+
+def test_monotone_response_matches_the_sign_of_the_utilization_slope():
+    supply, borrow = 100.0, 80.0
+    u = borrow / supply
+    cases = [(0.0, 0.0), (0.8, 0.0), (0.81, 0.0), (0.5, 0.3), (0.6, 0.3), (0.0, -0.5), (0.1, 1.0)]
+    for alpha, beta in cases:
+        rising = utilization_after_deposit(supply, borrow, 1e3, alpha, beta) > u + 1e-12
+        assert monotone_response(u, alpha, beta) is (not rising)
+    path_alpha = np.array([0.0, 0.2, 0.7])
+    assert monotone_response(u, path_alpha, 0.1)
+    assert not monotone_response(u, np.r_[path_alpha, 0.75], 0.1)
+    with pytest.raises(ValueError):
+        monotone_response(1.2)
+    with pytest.raises(ValueError):
+        monotone_response(0.5, alpha=1.5)
+
+
+def test_monotone_response_makes_horizon_apy_non_increasing_in_the_deposit():
+    elapsed = np.full(72, 1.0 / (365.0 * 24.0))
+    alpha, beta = np.linspace(0.0, 0.5, 72), np.linspace(0.0, 0.3, 72)
+    assert monotone_response(0.9, alpha, beta)
+    deposits = np.geomspace(1e-2, 1e4, 60)
+    apys = [horizon_average_supply_apy(utilization_after_deposit(100.0, 90.0, p, alpha, beta), 0.05, elapsed)
+            for p in deposits]
+    assert np.all(np.diff(apys) <= 1e-15)
+
+
+def test_rate_at_target_transition_years():
+    assert rate_at_target_transition_years(1.0) == pytest.approx(1.0 / 50.0)
+    assert rate_at_target_transition_years(-0.5) == pytest.approx(1.0 / 25.0)
+    assert math.isinf(rate_at_target_transition_years(0.0))
+    years = rate_at_target_transition_years(0.4)
+    assert math.log(rate_at_target_drift(0.9 + 0.4 * 0.1, years)) == pytest.approx(1.0)
+    with pytest.raises(ValueError):
+        rate_at_target_transition_years(math.nan)
