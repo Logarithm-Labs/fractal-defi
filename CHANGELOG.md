@@ -15,6 +15,10 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`GasPriceHistoryLoader`** (`fractal.loaders.onchain`) / **`GasPriceHistory`** — per-bar (`freq="1h"`, `"1D"`, ...) gas prices of one network in gwei from `eth_feeHistory` at the last block at or before each bar (no look-ahead): mean base fee, median priority fee at configurable percentiles (empty blocks excluded), `gas_price_gwei`, block fullness, and the cost of a reference transaction in native tokens and, with a caller-supplied `native_price(t)`, in USD. Sampled window, node requirements and L2 caveats (OP Stack L1 data fee, Arbitrum tips) are documented. Adds `JsonRpcClient.fee_history`.
+- **`LogReader`** (`fractal.loaders.onchain`) — protocol-agnostic event-log reader: any emitter (one, a list or `None`) and `eth_getLogs` topic filters with OR-lists, over a block range or a time range (`get_logs_between` / `block_range`, no look-ahead at the end), returning raw JSON-RPC shaped logs de-duplicated and sorted, with an optional integer `timeStamp`. Node reads go in chunks; a range the node rejects as too large (range/limit, 413, timeout) is halved, transient failures (5xx/429, overload, dropped connections) are retried with backoff, and what still fails is read from Etherscan (OR-lists expanded per combination); `prefer="etherscan"` reverses the order. The error classes are public as `fractal.loaders.rpc.is_transient_error` / `is_range_limit_error` / `is_splittable_error`.
+- **`EtherscanClient`** (`fractal.loaders.etherscan`) — throttled Etherscan V2 (multichain) client for block-by-time and filtered event logs in the JSON-RPC log shape (paged, with the 10 000-row window split by block range); body-level rate-limit answers are retried; the key comes from `api_key=` or `ETHERSCAN_API_KEY` and is scrubbed from errors.
+- **`JsonRpcClient.block_at_timestamp`** — interpolation-guided search over cached block headers (`closest="after"|"before"`, optional `low`/`high` bracket), plus a `hex_to_int` helper for provider quantity encodings.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
 - **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
@@ -224,6 +228,7 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Keyed RPC URLs no longer leak into errors or logs.** `JsonRpcClient` routes requests to an endpoint with a path or query (`https://<host>/v3/<key>`) through a shared `_http` redaction (generalised from the DefiLlama Pro loaders): failures are re-raised as scrubbed copies with no key-bearing `__cause__`/`__context__`, and urllib3 log records are scrubbed while a request runs. Key-less URLs keep the original transport; `HttpClient` itself is unchanged.
 - **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
   the API to the annual APY documented by `LendingHistory`.
 - **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
