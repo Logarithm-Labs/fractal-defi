@@ -11,10 +11,8 @@ Flow rules are callables ``rule(state) -> per-step relative change`` (an
 array broadcastable to the number of markets). :func:`piecewise_utilization_supply_flow`
 and :func:`utilization_reset_supply_flow` build supplier rules;
 :func:`fit_knot_means` estimates knot values from observed
-``(utilization, ΔS/S)`` samples. :func:`anchored_deadband_borrow_flow` builds
-a borrower rule around a caller-chosen anchor rate and
-:func:`fit_anchored_deadband` estimates it. The module ships no fitted values
-or default anchors: callers supply their own parameters.
+``(utilization, ΔS/S)`` samples. The module ships no fitted values: callers
+supply their own knots and values.
 """
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -31,12 +29,9 @@ from fractal.core.entities.models.morpho_math import (
 
 __all__ = [
     "DRIFT_TIMINGS",
-    "DeadbandFit",
     "FlowRule",
     "KnotMeans",
     "MarketPaths",
-    "anchored_deadband_borrow_flow",
-    "fit_anchored_deadband",
     "fit_knot_means",
     "piecewise_utilization_supply_flow",
     "simulate_market",
@@ -341,122 +336,3 @@ def fit_knot_means(utilization, flow, knots, winsor_quantile: float = 0.0) -> Kn
     sums = np.bincount(cells, weights=flow, minlength=knots.size)
     values = np.divide(sums, counts, out=np.full(knots.size, np.nan), where=counts > 0)
     return KnotMeans(knots.copy(), values, counts)
-
-
-def anchored_deadband_borrow_flow(anchor_rate, deadband: float, kappa_plus: float, kappa_minus: float,
-                                  constant=0.0) -> FlowRule:
-    """Borrower rule: demand responds to the gap between an anchor rate and the borrow rate.
-
-    ``f_B = constant + kappa_plus * max(0, g - deadband) - kappa_minus * max(0, -g - deadband)``
-    with ``g = ln(anchor_rate / borrow_rate)``, a relative borrow change per
-    step net of interest. Borrowers add debt when the market is cheaper than
-    the anchor by more than the deadband and repay when it is dearer; inside
-    the deadband only ``constant`` applies. ``g`` is ``0`` when either rate is
-    not positive.
-
-    ``anchor_rate`` is a continuous annual rate: a scalar, one per market, or
-    a ``(markets or 1, steps + 1)`` path read at the pre-step column. Choosing
-    the anchor (a trailing median of ``rateAtTarget``, a funding rate, a
-    competing venue's borrow rate, ...) is the caller's modelling decision.
-    ``constant`` is a scalar or one value per market. Cap total borrow with
-    ``borrow_cap`` in :func:`simulate_market` (for example a multiple of a
-    recent maximum borrow).
-
-    Caveat: in the research this rule comes from, the borrower block was not
-    validated out of sample; treat it as a scenario device, not a forecast.
-    """
-    if not (np.isfinite(deadband) and deadband >= 0.0):
-        raise ValueError(f"deadband must be finite and >= 0, got {deadband}")
-    if not (np.isfinite(kappa_plus) and np.isfinite(kappa_minus)):
-        raise ValueError("kappa_plus and kappa_minus must be finite")
-    anchor = np.asarray(anchor_rate, dtype=float)
-    constants = np.asarray(constant, dtype=float)
-    if anchor.ndim > 2 or constants.ndim > 1:
-        raise ValueError("anchor_rate must have at most 2 dimensions and constant at most 1")
-    if np.any(np.isnan(anchor)) or not np.all(np.isfinite(constants)):
-        raise ValueError("anchor_rate must not be NaN and constant must be finite")
-
-    def rule(state: Mapping[str, np.ndarray]) -> np.ndarray:
-        borrow_rate = np.asarray(state["borrow_rate"], dtype=float)
-        if anchor.ndim == 2:
-            column = int(np.asarray(state["step"]).ravel()[0]) - 1
-            if column >= anchor.shape[1]:
-                raise ValueError("anchor_rate path is shorter than the simulation")
-            current = anchor[:, column]
-        else:
-            current = anchor
-        current = np.broadcast_to(current, borrow_rate.shape)
-        valid = (current > 0.0) & (borrow_rate > 0.0) & np.isfinite(current)
-        gap = np.zeros(borrow_rate.shape)
-        np.log(np.divide(current, borrow_rate, out=np.ones(borrow_rate.shape), where=valid), out=gap, where=valid)
-        return (constants + kappa_plus * np.maximum(0.0, gap - deadband)
-                - kappa_minus * np.maximum(0.0, -gap - deadband))
-
-    return rule
-
-
-@dataclass(frozen=True)
-class DeadbandFit:
-    """Least-squares fit of :func:`anchored_deadband_borrow_flow`.
-
-    ``constants`` maps each group label (``None`` without groups) to its
-    constant; ``sse_by_deadband``
-    lists the in-sample SSE for each candidate in ``deadbands``.
-    """
-
-    deadband: float
-    kappa_plus: float
-    kappa_minus: float
-    constants: dict
-    sse: float
-    deadbands: np.ndarray
-    sse_by_deadband: np.ndarray
-    n_obs: int
-
-
-def _winsorise(values: np.ndarray, quantile: float) -> np.ndarray:
-    if quantile <= 0.0 or values.size == 0:
-        return values
-    low, high = np.quantile(values, [quantile, 1.0 - quantile])
-    return np.clip(values, low, high)
-
-
-def fit_anchored_deadband(gap, flow, deadbands, groups=None, winsor_quantile: float = 0.0) -> DeadbandFit:
-    """Fit the anchored deadband borrower rule on observed samples.
-
-    ``gap`` is ``ln(anchor / borrow_rate)`` and ``flow`` the per-step relative
-    borrow change net of interest, sample by sample. For each candidate
-    deadband ``c`` the constants (one per ``groups`` label, or one overall)
-    and ``kappa_plus``, ``kappa_minus`` are estimated by least squares; the
-    candidate with the smallest SSE wins. With ``winsor_quantile > 0`` both
-    ``gap`` and ``flow`` are clipped to their ``[q, 1 - q]`` quantiles first.
-    The candidate grid is the caller's choice.
-    """
-    gap = np.asarray(gap, dtype=float).ravel()
-    flow = np.asarray(flow, dtype=float).ravel()
-    deadbands = np.asarray(deadbands, dtype=float).ravel()
-    labels = np.full(gap.size, None, dtype=object) if groups is None else np.asarray(groups, dtype=object).ravel()
-    if gap.shape != flow.shape or labels.shape != gap.shape:
-        raise ValueError("gap, flow and groups must have the same length")
-    if deadbands.size == 0 or not np.all(np.isfinite(deadbands)) or np.any(deadbands < 0.0):
-        raise ValueError("deadbands must be a non-empty array of finite values >= 0")
-    if not 0.0 <= winsor_quantile < 0.5:
-        raise ValueError(f"winsor_quantile must be in [0, 0.5), got {winsor_quantile}")
-    keep = np.isfinite(gap) & np.isfinite(flow)
-    gap, flow, labels = gap[keep], flow[keep], labels[keep]
-    flow, gap = _winsorise(flow, winsor_quantile), _winsorise(gap, winsor_quantile)
-    levels = sorted(set(labels.tolist()), key=str)
-    if gap.size < len(levels) + 2:
-        raise ValueError("not enough finite samples to fit the rule")
-    dummies = np.column_stack([(labels == level).astype(float) for level in levels])
-    coefs, sses = [], []
-    for deadband in deadbands:
-        design = np.column_stack([dummies, np.maximum(0.0, gap - deadband), -np.maximum(0.0, -gap - deadband)])
-        coef, *_ = np.linalg.lstsq(design, flow, rcond=None)
-        coefs.append(coef)
-        sses.append(float(np.sum((flow - design @ coef) ** 2)))
-    best = int(np.argmin(sses))
-    deadband, sse, coef = float(deadbands[best]), sses[best], coefs[best]
-    constants = {level: float(value) for level, value in zip(levels, coef[:-2], strict=True)}
-    return DeadbandFit(deadband, float(coef[-2]), float(coef[-1]), constants, sse, deadbands.copy(),
-                       np.asarray(sses), int(gap.size))
