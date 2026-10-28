@@ -310,6 +310,54 @@ class BorosMarketHistory(pd.DataFrame):
         super().__init__(data=data, index=_to_utc_index(time))
 
 
+class GasPriceHistory(pd.DataFrame):
+    """Network gas prices per bar indexed by UTC timestamps, in **gwei**.
+
+    Columns:
+        ``base_fee_gwei`` — mean EIP-1559 base fee over the sampled blocks.
+        ``priority_fee_gwei`` — the effective priority fee (tip) used for
+            cost, at the loader's ``cost_percentile``.
+        ``gas_price_gwei`` — ``base_fee_gwei + priority_fee_gwei``, the
+            price per gas unit a typical transaction paid.
+        ``gas_used_ratio`` — mean ``gasUsed / gasLimit`` of the sampled blocks.
+        ``block`` — the newest sampled block of the bar.
+        ``priority_fee_p<q>_gwei`` — one column per sampled percentile.
+        Optional, appended only when passed (never NaN-filled):
+        ``tx_cost_native`` — ``gas_units × gas_price`` in native tokens;
+        ``native_price_usd`` / ``tx_cost_usd`` — the caller's native price
+            and the same cost in USD.
+    """
+
+    def __init__(  # pylint: disable=too-many-arguments
+        self,
+        time: TimeLike,
+        base_fee_gwei: ArrayLike,
+        priority_fee_gwei: ArrayLike,
+        gas_used_ratio: ArrayLike,
+        block: ArrayLike,
+        priority_fee_percentiles: dict[str, ArrayLike] | None = None,
+        tx_cost_native: ArrayLike | None = None,
+        native_price_usd: ArrayLike | None = None,
+        tx_cost_usd: ArrayLike | None = None,
+    ):
+        base = np.asarray(base_fee_gwei, dtype=float)
+        tip = np.asarray(priority_fee_gwei, dtype=float)
+        data = {
+            "base_fee_gwei": base,
+            "priority_fee_gwei": tip,
+            "gas_price_gwei": base + tip,
+            "gas_used_ratio": np.asarray(gas_used_ratio, dtype=float),
+            "block": np.asarray(block, dtype="int64"),
+        }
+        for name, values in (priority_fee_percentiles or {}).items():
+            data[name] = np.asarray(values, dtype=float)
+        for name, values in (("tx_cost_native", tx_cost_native), ("native_price_usd", native_price_usd),
+                             ("tx_cost_usd", tx_cost_usd)):
+            if values is not None:
+                data[name] = np.asarray(values, dtype=float)
+        super().__init__(data=data, index=_to_utc_index(time))
+
+
 class KlinesHistory(pd.DataFrame):
     """
     OHLCV klines. Columns: ``open``, ``high``, ``low``, ``close``, ``volume``.

@@ -26,7 +26,7 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
 )
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
-from fractal.loaders.onchain import LogReader, RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.onchain import GasPriceHistoryLoader, LogReader, RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
@@ -34,6 +34,7 @@ from fractal.loaders.structs import (
     BorosMarketHistory,
     DEXHistory,
     FundingHistory,
+    GasPriceHistory,
     KlinesHistory,
     LendingHistory,
     PendleMarketHistory,
@@ -94,6 +95,8 @@ __all__ = [
     "EtherscanError",
     "FundingHistory",
     "GMXV1FundingLoader",
+    "GasPriceHistory",
+    "GasPriceHistoryLoader",
     "GraphLoaderException",
     # Pre-1.3.0 alias (deprecated; will be removed in a future major release).
     "HyperLiquidPerpsPricesLoader",

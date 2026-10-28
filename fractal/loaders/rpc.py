@@ -321,6 +321,27 @@ class JsonRpcClient:
             return hi
         return self._first_block_at_or_after(ts + 1, lo, hi) - 1
 
+    # --------------------------------------------------------------- fees
+    def fee_history(
+        self,
+        block_count: int,
+        newest_block: BlockTag,
+        reward_percentiles: Sequence[float] = (),
+    ) -> dict[str, Any]:
+        """``eth_feeHistory`` over ``block_count`` blocks ending at ``newest_block``.
+
+        Returns the node's answer: ``oldestBlock``, ``baseFeePerGas``
+        (``block_count + 1`` entries, the last one being the next block's
+        base fee), ``gasUsedRatio`` and, when percentiles are given,
+        ``reward`` (per block, the effective priority fee at each
+        percentile of gas used). Values are hex quantities in wei.
+        """
+        result = self.call("eth_feeHistory", [hex(int(block_count)), _hex_block(newest_block),
+                                              [float(p) for p in reward_percentiles]])
+        if not isinstance(result, dict) or "baseFeePerGas" not in result:
+            raise RpcCallError(f"eth_feeHistory({block_count}, {newest_block!r}) returned {result!r}"[:300])
+        return result
+
     # ------------------------------------------------------------- calls
     def eth_call(self, to: str, data: str, block: BlockTag = "latest") -> str:
         """``eth_call`` and return the raw ``0x…`` hex result."""
