@@ -13,7 +13,7 @@
 # The /mlflow directory is bind-mounted from the host as ``mlflow-data/``
 # so the sqlite DB and artifact tree survive container restarts and can
 # be inspected from the host.
-FROM python:3.11-slim
+FROM python:3.15-slim
 
 # MLflow 2.14.1 imports FallbackAsyncAdaptedQueuePool, removed in SQLAlchemy 2.1.
 RUN pip install --no-cache-dir \
