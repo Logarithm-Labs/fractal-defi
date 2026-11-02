@@ -17,7 +17,7 @@ when the observations carry `fee_growth0/1`.
 
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
-- **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
+- **`MorphoSupplyAllocationStrategy`** — multi-market, budget-constrained marginal-income grid allocation with switching costs and an idle-capital hurdle (`TARGET_APY`); reports the lowest last-chunk marginal APY as `lambda_apy`, holds stale feeds and exits ineligible holdings.
 - **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
 - **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
 - **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
@@ -195,6 +195,17 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
+- **`MorphoSupplyAllocationStrategy` is marginal-only (breaking)**: the
+  `ALLOCATION_MODE` parameter and its `"average"` water-filling mode are
+  removed, together with the average-only `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` parameters and the public `water_fill` helper.
+  Average mode deployed the largest position whose *whole-position* APY
+  cleared the target (a break-even rule), over-deploying into steeply
+  diluting pools relative to the income optimum, which equalises marginal
+  revenue. Migration: drop `ALLOCATION_MODE`, `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` from the params (they now raise `TypeError`);
+  `TARGET_APY` is the hurdle on marginal revenue. `examples/morpho_supply`
+  drops `--mode` / `--min-rebalance-fraction`.
 - **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
   parity including E501 at 120 columns and the whitespace / blank-line
   rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
