@@ -5,8 +5,8 @@ The library provides two strategies:
 
 - `MorphoSupplyRotationStrategy`: one primary position, ranked on a lagged
   trailing signal; liquidity-blocked balances may remain in other markets.
-- `MorphoSupplyAllocationStrategy`: multiple positions using equal-average-rate
-  allocation or a marginal-income grid objective with switching costs.
+- `MorphoSupplyAllocationStrategy`: multiple positions sized by a
+  marginal-income grid objective with switching costs.
 
 ## Run the example
 
@@ -21,7 +21,7 @@ venv/bin/python examples/morpho_supply/validate_formulas.py 100
 
 # Only after reviewing registry/<chain_id>.csv:
 venv/bin/python examples/morpho_supply/backtest.py --chains 1 --days 30 --top 8
-venv/bin/python examples/morpho_supply/backtest.py --strategy allocation --mode marginal \
+venv/bin/python examples/morpho_supply/backtest.py --strategy allocation \
     --chains 1,8453 --days 30 --top 20 --target-apy 0 --hold-horizon-bars 24
 
 # Replication of Baude, Danos & El Khalloufi (arXiv:2608.24206).
@@ -36,16 +36,14 @@ test suite. Registries and generated `results/` stay gitignored.
 
 `--strategy rotation` (default) runs the single-position rotation strategy.
 `--strategy allocation` runs the allocator on the same listings and observation
-stream:
-
-- `--mode average` equalizes the whole-position rate across funded markets
-  above `--target-apy`; `--min-rebalance-fraction` skips small resizes.
-- `--mode marginal` maximizes income net of costs over `--hold-horizon-bars`.
+stream. It maximizes expected income net of costs over `--hold-horizon-bars`,
+which equalizes marginal revenue (not average rates) across funded markets;
+`--target-apy` is the opportunity cost of idle capital, so a chunk is placed
+only if its marginal revenue beats it.
 
 The allocator's report prints the last solution: position count, cash share,
-gated legs, the largest targets and `lambda_apy`. That value is the common
-whole-position APY in average mode and the lowest last-chunk marginal APY among
-funded pools in marginal mode. Default flag values illustrate the interface, not
+gated legs, the largest targets and `lambda_apy`, the lowest last-chunk marginal
+APY among funded pools. Default flag values illustrate the interface, not
 recommended allocations.
 
 Costs: Morpho supply and withdraw carry no protocol fee or slippage, so the
@@ -101,9 +99,8 @@ of returns.
   Controller feedback is optional; borrower response is not estimated.
 - Rewards are optional, diluted by added supply, and credited as yield rather than
   separate claimable tokens. Missing reward observations contribute zero.
-- Average mode equalizes average rates, not marginal income. Marginal mode uses
-  a finite capital grid and a fixed-horizon objective; it is not a continuous
-  global optimum. `MAX_POSITIONS` applies only to average mode.
+- The allocator uses a finite capital grid and a fixed-horizon objective; it is
+  not a continuous global optimum.
 - The printed static reference is an unweighted mean of market APYs, not a
   compounded, executable portfolio or a vault benchmark.
 

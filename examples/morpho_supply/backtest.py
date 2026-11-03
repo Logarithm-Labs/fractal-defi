@@ -1,8 +1,8 @@
 """Backtest Morpho Blue supply strategies on provider-backed hourly data.
 
 ``--strategy rotation`` (default) holds one position and rotates on a rate edge;
-``--strategy allocation`` spreads capital across markets in ``average`` or
-``marginal`` mode.
+``--strategy allocation`` spreads capital across markets, maximising expected
+income net of switching costs (marginal revenue equalised across funded markets).
 
 Reads a human-reviewed registry and writes local results. Universe selection
 uses current liquidity and is applied retrospectively;
@@ -14,7 +14,7 @@ Usage::
     python backtest.py --chains 1 --days 30 --top 8
     python backtest.py --end 2026-04-01 --days 30
     python backtest.py --no-own-impact --gas-usd-per-leg 1.0
-    python backtest.py --strategy allocation --mode marginal --target-apy 0 --hold-horizon-bars 24
+    python backtest.py --strategy allocation --target-apy 0 --hold-horizon-bars 24
 
 Costs: Morpho supply and withdraw carry no protocol fee or slippage, so the
 default cost is gas only, a fixed USD amount per leg from the illustrative
@@ -77,13 +77,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     rotation.add_argument("--min-edge-bps", type=float, default=10.0)
     rotation.add_argument("--max-hold-bars", type=int, default=0)
     allocation = parser.add_argument_group("allocation")
-    allocation.add_argument("--mode", choices=("average", "marginal"), default="average")
     allocation.add_argument("--target-apy", type=float, default=0.06,
-                            help="hurdle APY below which capital stays in cash")
+                            help="hurdle on marginal revenue: capital that cannot earn it stays in cash")
     allocation.add_argument("--rebalance-bars", type=int, default=1)
-    allocation.add_argument("--min-rebalance-fraction", type=float, default=0.05,
-                            help="average mode: smallest resize, as a fraction of NAV")
-    allocation.add_argument("--hold-horizon-bars", type=int, default=6, help="marginal mode: income horizon")
+    allocation.add_argument("--hold-horizon-bars", type=int, default=6,
+                            help="income horizon over which a reallocation must repay its legs")
     return parser.parse_args(argv)
 
 
@@ -102,8 +100,8 @@ def build_strategy(args: argparse.Namespace, markets: list) -> MorphoSupplyRotat
     cash = SimpleSpotExchange(trading_fee=0.0)
     if args.strategy == "allocation":
         params = MorphoSupplyAllocationParams(
-            ALLOCATION_MODE=args.mode, TARGET_APY=args.target_apy, REBALANCE_BARS=args.rebalance_bars,
-            MIN_REBALANCE_FRACTION=args.min_rebalance_fraction, HOLD_HORIZON_BARS=args.hold_horizon_bars, **shared,
+            TARGET_APY=args.target_apy, REBALANCE_BARS=args.rebalance_bars,
+            HOLD_HORIZON_BARS=args.hold_horizon_bars, **shared,
         )
         return MorphoSupplyAllocationStrategy(markets=markets, cash_entity=cash, params=params)
     params = MorphoSupplyRotationParams(
@@ -132,7 +130,7 @@ def print_rotation_report(strategy: MorphoSupplyRotationStrategy, args: argparse
 def print_allocation_report(strategy: MorphoSupplyAllocationStrategy, args: argparse.Namespace) -> dict:
     report = strategy.allocation_report()
     lam = report["lambda_apy"]
-    print(f"  mode               {args.mode}   target APY {args.target_apy:.2%}   "
+    print(f"  target APY         {args.target_apy:.2%}   hold horizon {args.hold_horizon_bars:d} bars   "
           f"own impact {'on' if args.own_impact else 'off'} (absorption {args.absorption:.2f})")
     print("\n-- last allocation ----------------------------------")
     print(f"  positions          {report['positions']:d}   cash {report['cash_fraction']:6.2%}   "

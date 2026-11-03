@@ -23,6 +23,7 @@ Submodules
    fractal.loaders.base_loader
    fractal.loaders.boros
    fractal.loaders.etherscan
+   fractal.loaders.fred
    fractal.loaders.gmx_v1
    fractal.loaders.hyperliquid
    fractal.loaders.morpho

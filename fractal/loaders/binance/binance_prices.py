@@ -108,33 +108,22 @@ class BinancePriceLoader(Loader):
         if start_ms >= end_ms:
             return []
 
+        # Fixed windows of ``_MAX_LIMIT`` candle lengths: Binance filters on
+        # open time, so each window holds at most ``_MAX_LIMIT`` candles and
+        # one request never truncates it. A short or empty page (an outage
+        # or a listing inside the window) does not end the walk.
         rows: list[dict[str, Any]] = []
-        cursor = start_ms
-        while cursor < end_ms:
-            window_end = min(end_ms, cursor + step_ms - 1)
+        for cursor in range(start_ms, end_ms, step_ms):
             params = {
                 "symbol": self.ticker,
                 "interval": self.interval,
                 "limit": self._MAX_LIMIT,
                 "startTime": cursor,
-                "endTime": window_end,
+                "endTime": min(end_ms, cursor + step_ms - 1),
             }
             data = self.http.get(self._SECTION, self._KLINES_ENDPOINT, params)
-            if not data:
-                # No data in this window — advance one step and try again.
-                cursor += step_ms
-                continue
-
-            rows.extend(self._parse_klines(data))
-            last_open = max(int(item[0]) for item in data)
-            next_cursor = last_open + candle_ms
-            if next_cursor <= cursor:
-                # Should not happen, but guard against an infinite loop.
-                break
-            cursor = next_cursor
-            if len(data) < self._MAX_LIMIT:
-                # Reached the last page for this window.
-                break
+            if data:
+                rows.extend(self._parse_klines(data))
             if _REQUEST_SLEEP_SECONDS > 0:
                 time.sleep(_REQUEST_SLEEP_SECONDS)
 

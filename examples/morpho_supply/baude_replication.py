@@ -67,7 +67,6 @@ PRIME = ("cbBTC", "WBTC", "wstETH")
 PAPER_APY = {("cbBTC", 1e5): 3.3, ("prime", 1e5): 3.3, ("core", 1e5): 5.5,
              ("cbBTC", 1e8): 2.2, ("prime", 1e8): 2.4, ("core", 1e8): 2.8}
 BUDGETS = (1e5, 1e8)
-MODES = ("marginal", "average")
 CHAINLINK = ("ChainlinkOracle", "ChainlinkOracleV2")
 
 
@@ -81,13 +80,13 @@ def paper_listings() -> list[MorphoMarketListing]:
     ]
 
 
-def allocation_params(mode: str, daily: bool, gas: bool, paper_filters: bool = False) -> MorphoSupplyAllocationParams:
+def allocation_params(daily: bool, gas: bool, paper_filters: bool = False) -> MorphoSupplyAllocationParams:
     """The paper's protocol (``daily``, no gas) or ours (hourly, per-chain gas), always without a target floor."""
     filters = {"MAX_LLTV": 1.0, "MIN_LIQUIDITY_MULTIPLE": 0.0} if paper_filters else {}
     return MorphoSupplyAllocationParams(
-        TARGET_APY=0.0, ALLOCATION_MODE=mode, OWN_IMPACT=True, ABSORPTION=0.0, MIN_POOL_SIZE_USD=0.0,
+        TARGET_APY=0.0, OWN_IMPACT=True, ABSORPTION=0.0, MIN_POOL_SIZE_USD=0.0,
         REBALANCE_BARS=24 if daily else 1, SIGNAL_WINDOW_BARS=24 if daily else 1, SIGNAL_LAG_BARS=1,
-        MIN_REBALANCE_FRACTION=0.0 if daily else 0.05, HOLD_HORIZON_BARS=24 if daily else 6,
+        HOLD_HORIZON_BARS=24 if daily else 6,
         GAS_USD_PER_LEG=DEFAULT_GAS_USD_PER_LEG if gas else 0.0, GAS_USD_BY_CHAIN=dict(GAS_USD_BY_CHAIN) if gas else {},
         **filters,
     )
@@ -125,18 +124,17 @@ def run_paper() -> pd.DataFrame:
             continue
         stream = observations(set_panels)
         for budget in BUDGETS:
-            for mode in MODES:
-                for daily, gas, protocol in ((True, False, "paper: daily, no gas"),
-                                             (False, True, "ours: hourly, gas by chain")):
-                    if name == "cbBTC" and (mode == "average" or not daily):
-                        continue  # one market: the benchmark has a single protocol and allocation
-                    params = allocation_params(mode, daily, gas, paper_filters=True)
-                    apy, fees = run_allocation(set_panels, stream, budget, params)
-                    paper = PAPER_APY.get((name, budget)) if daily else None
-                    rows.append({"set": name, "markets": len(set_panels), "budget": budget, "mode": mode,
-                                 "protocol": protocol, "apy_pct": apy * 100, "fees": fees, "paper_apy_pct": paper})
-                    print(f"  {name:6s} n={len(set_panels):2d} ${budget:>13,.0f} {mode:8s} {protocol:27s} "
-                          f"apy={apy:7.2%} paper={'-' if paper is None else f'{paper:.1f}%'}", flush=True)
+            for daily, gas, protocol in ((True, False, "paper: daily, no gas"),
+                                         (False, True, "ours: hourly, gas by chain")):
+                if name == "cbBTC" and not daily:
+                    continue  # one market: the benchmark has a single protocol
+                params = allocation_params(daily, gas, paper_filters=True)
+                apy, fees = run_allocation(set_panels, stream, budget, params)
+                paper = PAPER_APY.get((name, budget)) if daily else None
+                rows.append({"set": name, "markets": len(set_panels), "budget": budget,
+                             "protocol": protocol, "apy_pct": apy * 100, "fees": fees, "paper_apy_pct": paper})
+                print(f"  {name:6s} n={len(set_panels):2d} ${budget:>13,.0f} {protocol:27s} "
+                      f"apy={apy:7.2%} paper={'-' if paper is None else f'{paper:.1f}%'}", flush=True)
     return pd.DataFrame(rows)
 
 
@@ -176,12 +174,11 @@ def run_ladder(days: int, end: datetime) -> pd.DataFrame:
             print(f"  {label}: no usable markets in the registry, skipped")
             continue
         for budget in BUDGETS:
-            for mode in MODES:
-                apy, fees = run_allocation(panels, stream, budget, allocation_params(mode, daily, gas))
-                rows.append({"variant": label, "markets": len(panels), "budget": budget, "mode": mode,
-                             "apy_pct": apy * 100, "fees": fees})
-                print(f"  {label:48s} n={len(panels):3d} ${budget:>13,.0f} {mode:8s} apy={apy:7.2%} "
-                      f"fees=${fees:9,.0f}", flush=True)
+            apy, fees = run_allocation(panels, stream, budget, allocation_params(daily, gas))
+            rows.append({"variant": label, "markets": len(panels), "budget": budget,
+                         "apy_pct": apy * 100, "fees": fees})
+            print(f"  {label:48s} n={len(panels):3d} ${budget:>13,.0f} apy={apy:7.2%} "
+                  f"fees=${fees:9,.0f}", flush=True)
     return pd.DataFrame(rows)
 
 

@@ -41,12 +41,19 @@ def test_fractal_core_base_strategy_exports():
         ActionToTake,
         BaseStrategy,
         BaseStrategyParams,
+        BootstrapCI,
         NamedEntity,
         StrategyMetrics,
         StrategyResult,
+        block_bootstrap,
+        block_bootstrap_indices,
+        percentile_ci,
+        widest_block_ci,
     )
     assert ActionToTake and BaseStrategy and BaseStrategyParams
     assert NamedEntity and StrategyMetrics and StrategyResult
+    assert BootstrapCI and block_bootstrap and block_bootstrap_indices
+    assert percentile_ci and widest_block_ci
 
 
 # --------------------------------------------------------- entities
