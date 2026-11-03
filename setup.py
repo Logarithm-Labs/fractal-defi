@@ -4,7 +4,7 @@ from setuptools import find_packages, setup
 
 # Runtime deps installed for end users; dev/lint/test tooling lives in the [dev] extra.
 RUNTIME_REQUIRES = [
-    "mlflow>=3.16.0",
+    "mlflow>=3.17.2",
     "pandas>=2.3.3",
     "numpy>=2.2.6",
     "loguru>=0.7.3",
@@ -13,13 +13,13 @@ RUNTIME_REQUIRES = [
 ]
 
 DEV_REQUIRES = [
-    "pytest>=9.1.1",
+    "pytest>=9.2.0",
     "pytest-timeout>=2.4.0",
     "pytest-cov>=7.1.0",
     "pytest-benchmark>=5.3.0",
     "snakeviz>=2.2.2",
-    "pylint>=4.0.9",
-    "ruff>=0.16.10",
+    "pylint>=4.1.3",
+    "ruff>=0.17.3",
     "pre-commit>=4.6.2",
     "sphinx>=8.1.3",
     "sphinx-rtd-theme>=3.1.0",
@@ -60,7 +60,7 @@ setup(
     install_requires=RUNTIME_REQUIRES,
     extras_require={
         "dev": DEV_REQUIRES,
-        "test": ["pytest>=9.1.1", "pytest-timeout>=2.4.0"],
+        "test": ["pytest>=9.2.0", "pytest-timeout>=2.4.0"],
     },
     classifiers=[
         'Development Status :: 5 - Production/Stable',
