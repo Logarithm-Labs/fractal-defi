@@ -1,8 +1,9 @@
-"""Synthetic tests for :class:`MorphoSupplyAllocationStrategy` and :func:`water_fill`.
+"""Synthetic tests for :class:`MorphoSupplyAllocationStrategy`.
 
-Pins the allocator's three promises: a common whole-position APY across funded
-markets in average mode, the target-rate floor leaving excess capital idle, and rebalancing
-that respects the exit gate and pays only for deltas that matter.
+Pins the marginal allocator's promises: income-maximising sizing that does not
+overfill a steeply diluting pool, the ``TARGET_APY`` hurdle applied to the
+marginal dollar leaving excess capital idle, and rebalancing that respects the
+exit gate and trades only when the expected gain pays for the legs.
 """
 import math
 from dataclasses import asdict
@@ -19,7 +20,6 @@ from fractal.loaders.morpho_markets import MorphoMarketListing
 from fractal.strategies.morpho_supply_allocation import (
     MorphoSupplyAllocationParams,
     MorphoSupplyAllocationStrategy,
-    water_fill,
 )
 from fractal.strategies.morpho_supply_common import MorphoSupplyBaseParams
 from fractal.strategies.morpho_supply_rotation import market_entity_name
@@ -64,63 +64,7 @@ def run(strategy, states, bars: int, start: int = 0) -> None:
         strategy.step(Observation(timestamp=START + timedelta(hours=bar), states=obs))
 
 
-# ------------------------------------------------------------- water_fill
-def test_water_fill_equalises_marginal_rates_and_sums_to_capital():
-    # linear "take" curves: market i absorbs k_i * (ceiling_i - rate) above the rate
-    take = {"a": lambda r: max(0.0, (0.10 - r) * 10e6), "b": lambda r: max(0.0, (0.07 - r) * 20e6)}
-    lam, amounts = water_fill(200_000.0, take, lambda_floor=0.0, lambda_ceiling=0.10)
-    assert sum(amounts.values()) == pytest.approx(200_000.0, rel=1e-9)
-    assert amounts["a"] == pytest.approx(take["a"](lam)) and amounts["b"] == pytest.approx(take["b"](lam))
-    assert 0.07 < lam < 0.10 and amounts["b"] == 0.0          # too little capital to reach market b
-    # more capital: both funded at one marginal rate, 10e6*(0.10-l) + 20e6*(0.07-l) = 500k -> l = 0.0633
-    lam, amounts = water_fill(500_000.0, take, lambda_floor=0.0, lambda_ceiling=0.10)
-    assert lam == pytest.approx(0.063333, rel=1e-4)
-    assert amounts["a"] == pytest.approx(take["a"](lam), rel=1e-6)
-    assert amounts["b"] == pytest.approx(take["b"](lam), rel=1e-6)
-
-
-def test_water_fill_splits_leftover_across_step_and_unbounded_takes():
-    # exogenous-style step takes: all-or-nothing above a rate; one of them capped, one unbounded
-    take = {"a": lambda r: 1.6e6 if r <= 0.08 else 0.0, "b": lambda r: float("inf") if r <= 0.05 else 0.0}
-    lam, amounts = water_fill(30e6, take, lambda_floor=0.0, lambda_ceiling=0.08)
-    assert amounts["a"] == pytest.approx(1.6e6) and amounts["b"] == pytest.approx(28.4e6)
-    assert lam == pytest.approx(0.05, abs=1e-6)
-
-
-def test_water_fill_floor_leaves_capital_idle():
-    take = {"a": lambda r: max(0.0, (0.10 - r) * 10e6)}
-    lam, amounts = water_fill(5_000_000.0, take, lambda_floor=0.06, lambda_ceiling=0.10)
-    assert lam == 0.06
-    assert amounts["a"] == pytest.approx(400_000.0)            # the rest (4.6M) stays unplaced
-    assert water_fill(0.0, take, 0.06, 0.10) == (0.06, {"a": 0.0})
-
-
 # -------------------------------------------------------------- allocation
-def test_average_mode_churn_guard_does_not_block_first_entries():
-    markets = [listing(f"{index:02x}") for index in range(25)]
-    states = [market(100e6, 0.90, 0.10) for _ in markets]
-    strategy, names, obs = build(markets, states, 25e6)
-    run(strategy, obs, 3)
-    assert sum(strategy.get_entity(name).balance > 1.0 for name in names) == 25
-    assert strategy.allocation_report()["cash_fraction"] < 0.01
-
-
-def test_average_mode_churn_guard_does_not_block_full_exit():
-    markets = [listing("a"), listing("b")]
-    eligible = [market(2e6, 0.80, 0.05), market(50e6, 0.80, 0.05)]
-    for state in eligible:
-        state.supply_apy = 0.10
-    strategy, names, first = build(markets, eligible, 1e6, OWN_IMPACT=False, TARGET_APY=0.0)
-    strategy.get_entity("CASH").action_withdraw(30_000.0)
-    strategy.get_entity(names[0]).action_deposit(30_000.0)
-    run(strategy, first, 1)
-
-    ineligible = market(500_000.0, 0.80, 0.05)
-    ineligible.supply_apy = 0.10
-    run(strategy, {**first, names[0]: ineligible}, 1, start=1)
-    assert strategy.get_entity(names[0]).balance == pytest.approx(0.0)
-
-
 def test_small_capital_goes_to_the_best_market_only():
     markets = [listing("a"), listing("b")]
     states = [market(50e6, 0.92, 0.08), market(50e6, 0.80, 0.08)]   # a pays more at every size
@@ -139,44 +83,37 @@ def test_large_capital_is_split_until_marginal_rates_match():
     a, b = (strategy.get_entity(name) for name in names)
     assert a.balance > 0.0 and b.balance > 0.0
     assert a.balance + b.balance == pytest.approx(30e6, rel=1e-4)
-    assert a.effective_supply_apy == pytest.approx(b.effective_supply_apy, rel=1e-4)   # one average rate
-    assert strategy.allocation_report()["lambda_apy"] == pytest.approx(a.effective_supply_apy, rel=1e-3)
+    # marginal revenue, not the average rate, is equalised: the steeper small pool keeps a higher average rate
+    assert a.effective_supply_apy > b.effective_supply_apy
+    # discrete optimality: moving one chunk either way between the pools does not raise income
+    targets, chunk = strategy.allocation_report()["targets"], 30e6 / MorphoSupplyAllocationParams.ALLOC_CHUNKS
+
+    def book_income(p_a: float, p_b: float) -> float:
+        return p_a * a.projected_supply_apy(p_a, obs[names[0]]) + p_b * b.projected_supply_apy(p_b, obs[names[1]])
+    best = book_income(targets[names[0]], targets[names[1]])
+    assert book_income(targets[names[0]] + chunk, targets[names[1]] - chunk) <= best
+    assert book_income(targets[names[0]] - chunk, targets[names[1]] + chunk) <= best
+    assert strategy.allocation_report()["lambda_apy"] > 0.0
 
 
 def test_target_apy_floor_keeps_the_rest_in_cash():
     markets = [listing("a"), listing("b")]
     states = [market(20e6, 0.92, 0.08), market(200e6, 0.80, 0.08)]
-    strategy, names, obs = build(markets, states, 300e6, TARGET_APY=0.06)
+    strategy, names, obs = build(markets, states, 300e6, TARGET_APY=0.06, ALLOC_CHUNKS=1000)
     run(strategy, obs, 3)
     deployed = sum(strategy.get_entity(name).balance for name in names)
     cash = strategy.get_entity("CASH").balance
-    assert cash > 0.0 and deployed + cash == pytest.approx(300e6, rel=1e-4)
-    for name in names:                                      # every funded market still pays the target
+    assert deployed > 0.0 and cash > 0.0 and deployed + cash == pytest.approx(300e6, rel=1e-4)
+    for name in names:                                      # every funded market pays above the hurdle
         entity = strategy.get_entity(name)
         if entity.balance > 1.0:
-            assert entity.effective_supply_apy == pytest.approx(0.06, rel=1e-3)
+            assert entity.effective_supply_apy > 0.06
+    assert strategy.allocation_report()["lambda_apy"] >= 0.06 - 0.005   # the last chunk earns about the hurdle
     assert strategy.allocation_report()["cash_fraction"] > 0.5
 
 
-def test_average_mode_tracks_the_water_fill_oracle_on_a_spike_pool():
-    """A5: one pool spiking next to deep pools: funded rates within 1 bp of the reference water-filling."""
-    markets = [listing("a"), listing("b"), listing("c")]
-    states = [market(2e6, 0.999, 2.0), market(300e6, 0.85, 0.06), market(150e6, 0.80, 0.05)]
-    strategy, names, obs = build(markets, states, 40e6, TARGET_APY=0.0)
-    run(strategy, obs, 3)
-    take = {name: (lambda rate, name=name: strategy.get_entity(name).capacity_at(rate, obs[name]))
-            for name in names}
-    ceiling = max(strategy.get_entity(name).projected_supply_apy(0.0, obs[name]) for name in names)
-    lam, _ = water_fill(40e6, take, lambda_floor=0.0, lambda_ceiling=ceiling)
-    assert lam > 0.0                                   # the spike pool binds the common rate
-    funded = [name for name in names if strategy.get_entity(name).balance > 1.0]
-    assert len(funded) >= 2                            # the spike pool plus at least one deep pool
-    for name in funded:
-        assert strategy.get_entity(name).effective_supply_apy == pytest.approx(lam, abs=1e-4)
-
-
 def test_ceiling_ties_split_symmetrically_within_the_budget():
-    """A6: three pools tied at the ceiling: non-negative targets, budget-feasible, symmetric."""
+    """A6: three pools tied at the ceiling: non-negative targets, budget-feasible, symmetric up to one chunk."""
     markets = [listing("a"), listing("b"), listing("c")]
     states = [market(300e6, 0.85, 0.06) for _ in markets]
     strategy, names, obs = build(markets, states, 30e6, TARGET_APY=0.0)
@@ -185,18 +122,21 @@ def test_ceiling_ties_split_symmetrically_within_the_budget():
     assert sum(targets.values()) <= strategy.total_balance + 1e-9
     amounts = [targets[name] for name in names]
     assert all(amount >= 0.0 for amount in amounts)
-    assert max(amounts) == pytest.approx(min(amounts), rel=1e-6)
+    chunk = strategy.total_balance / MorphoSupplyAllocationParams.ALLOC_CHUNKS     # NAV includes accrual
+    assert max(amounts) - min(amounts) <= chunk * (1 + 1e-4)
 
 
 def test_liquidity_cap_bounds_a_position_on_the_current_bar():
     markets = [listing("a"), listing("b")]
     states = [market(2e6, 0.95, 0.20), market(200e6, 0.80, 0.08)]      # a: 100k liquidity, juicy rate
-    strategy, names, obs = build(markets, states, 10e6, TARGET_APY=0.0, MIN_LIQUIDITY_MULTIPLE=1.0, ABSORPTION=1.0)
+    strategy, names, obs = build(markets, states, 10e6, TARGET_APY=0.0, MIN_LIQUIDITY_MULTIPLE=1.0, ABSORPTION=1.0,
+                                 ALLOC_CHUNKS=1000)
     run(strategy, obs, 3)
     a = strategy.get_entity(names[0])
     # with full absorption our supply adds (1−u)=5% of itself to liquidity: cap = L / (1 − 0.05)
-    # the entry lands at the cap; the few dollars above it are the later bars' curve accrual
-    assert a.balance == pytest.approx(100_000.0 / 0.95, rel=1e-4)
+    # the entry lands on the last grid chunk under the cap; the later bars' curve accrual adds a few dollars
+    cap, chunk = 100_000.0 / 0.95, 10e6 / 1000
+    assert cap - chunk <= a.balance <= cap * (1 + 1e-4)
     assert strategy.get_entity(names[1]).balance > 9e6
 
 
@@ -212,8 +152,10 @@ def test_rebalance_respects_the_exit_gate_and_records_the_shortfall():
     run(strategy, {**obs, names[0]: dried}, 3, start=3)
     a_after = strategy.get_entity(names[0]).balance
     assert a_after < a_before and a_after > a_before - 3 * 50_000.0 * 1.2
-    assert strategy.deferrals and strategy.deferrals[0]["market"] == names[0]
-    assert strategy.deferrals[0]["allowed"] < strategy.deferrals[0]["wanted"]
+    # the solver already plans within the gate; a leg asking for more than it releases is recorded
+    strategy._rebalance({names[0]: 0.0})  # pylint: disable=protected-access
+    assert strategy.deferrals and strategy.deferrals[-1]["market"] == names[0]
+    assert strategy.deferrals[-1]["allowed"] < strategy.deferrals[-1]["wanted"]
 
 
 def test_small_deltas_are_not_traded_and_costs_flow_through_fees_paid():
@@ -222,7 +164,7 @@ def test_small_deltas_are_not_traded_and_costs_flow_through_fees_paid():
     for state, apy in zip(states, (0.08, 0.05), strict=True):
         state.supply_apy = apy                              # exogenous ranking; supply_rate stays 0 -> no accrual
     strategy, _, obs = build(markets, states, 30e6, TARGET_APY=0.0, COST_BPS_PER_LEG=1.0,
-                                 MIN_REBALANCE_FRACTION=0.05, OWN_IMPACT=False, MIN_LIQUIDITY_MULTIPLE=1.0)
+                                 OWN_IMPACT=False, MIN_LIQUIDITY_MULTIPLE=1.0, HOLD_HORIZON_BARS=720)
     run(strategy, obs, 2)
     legs_after_first = len(strategy.execution_ledger.records)
     assert legs_after_first >= 2
@@ -253,32 +195,30 @@ def test_decision_uses_the_lagged_window_not_the_current_bar():
 
 
 def test_stale_markets_are_not_entered():
-    """A market whose feed stopped is never re-entered on its frozen snapshot, in either mode."""
-    for mode in ("average", "marginal"):
-        markets = [listing("a"), listing("b")]
-        states = [market(50e6, 0.85, 0.10), market(50e6, 0.85, 0.08)]    # a is funded as the better market
-        strategy, names, obs = build(markets, states, 1e6, TARGET_APY=0.0, ALLOCATION_MODE=mode)
-        run(strategy, obs, 2)                                    # both fresh: a takes the capital
-        assert strategy.get_entity(names[0]).balance == pytest.approx(1e6, rel=1e-4)
-        # a's rate drops below b's frozen snapshot and b's feed stops: b still looks better, but is stale
-        run(strategy, {names[0]: market(50e6, 0.85, 0.05)}, 2, start=2)
-        assert strategy.get_entity(names[1]).balance == pytest.approx(0.0, abs=1e-6)   # never entered while stale
-        assert strategy.get_entity(names[0]).balance > 0.9e6
+    """A market whose feed stopped is never re-entered on its frozen snapshot."""
+    markets = [listing("a"), listing("b")]
+    states = [market(50e6, 0.85, 0.10), market(50e6, 0.85, 0.08)]    # a is funded as the better market
+    strategy, names, obs = build(markets, states, 1e6, TARGET_APY=0.0)
+    run(strategy, obs, 2)                                    # both fresh: a takes the capital
+    assert strategy.get_entity(names[0]).balance == pytest.approx(1e6, rel=1e-4)
+    # a's rate drops below b's frozen snapshot and b's feed stops: b still looks better, but is stale
+    run(strategy, {names[0]: market(50e6, 0.85, 0.05)}, 2, start=2)
+    assert strategy.get_entity(names[1]).balance == pytest.approx(0.0, abs=1e-6)   # never entered while stale
+    assert strategy.get_entity(names[0]).balance > 0.9e6
 
 
 def test_stale_holdings_are_held_not_rebalanced():
     """An existing position in a market whose feed stopped is held, never traded on stale data."""
-    for mode in ("average", "marginal"):
-        markets = [listing("a"), listing("b")]
-        states = [market(50e6, 0.85, 0.06), market(50e6, 0.90, 0.08)]    # b is funded as the better market
-        strategy, names, obs = build(markets, states, 1e6, TARGET_APY=0.0, ALLOCATION_MODE=mode)
-        run(strategy, obs, 3)
-        held = strategy.get_entity(names[1]).balance
-        assert held > 0.5e6
-        juiced = market(50e6, 0.99, 0.50)                        # a stays fresh and jumps far above b
-        run(strategy, {names[0]: juiced}, 2, start=3)            # b's feed stops
-        assert strategy.get_entity(names[1]).balance >= held * (1 - 1e-9)   # held: no stale-data exit
-        assert strategy.get_entity("CASH").balance == pytest.approx(0.0, abs=1e-6)
+    markets = [listing("a"), listing("b")]
+    states = [market(50e6, 0.85, 0.06), market(50e6, 0.90, 0.08)]    # b is funded as the better market
+    strategy, names, obs = build(markets, states, 1e6, TARGET_APY=0.0)
+    run(strategy, obs, 3)
+    held = strategy.get_entity(names[1]).balance
+    assert held > 0.5e6
+    juiced = market(50e6, 0.99, 0.50)                        # a stays fresh and jumps far above b
+    run(strategy, {names[0]: juiced}, 2, start=3)            # b's feed stops
+    assert strategy.get_entity(names[1]).balance >= held * (1 - 1e-9)   # held: no stale-data exit
+    assert strategy.get_entity("CASH").balance == pytest.approx(0.0, abs=1e-6)
 
 
 def test_loan_symbol_and_pool_size_filters():
@@ -296,9 +236,9 @@ def test_loan_symbol_and_pool_size_filters():
     assert strategy.get_entity(names[2]).balance == pytest.approx(1e6, rel=1e-4)
 
 
-def test_defaults_are_fast_reacting_and_uncapped():
+def test_defaults_are_fast_reacting():
     params = MorphoSupplyAllocationParams()
-    assert params.REBALANCE_BARS == 1 and params.SIGNAL_WINDOW_BARS == 1 and params.MAX_POSITIONS == 100
+    assert params.REBALANCE_BARS == 1 and params.SIGNAL_WINDOW_BARS == 1
     assert params.OWN_IMPACT is True
 
 
@@ -312,7 +252,7 @@ def test_both_parameter_blocks_share_one_base_and_day_count():
     assert MorphoSupplyBaseParams().SIGNAL_WINDOW_BARS == 24          # the rotation's steady default
 
 
-# ------------------------------------------------------------ marginal mode
+# ------------------------------------------------------- marginal optimum
 def hot_and_deep():
     """Synthetic small high-utilization pool and a deep lower-utilization pool."""
     return [market(10e6, 0.95, 0.08), market(200e6, 0.85, 0.06)]
@@ -322,31 +262,36 @@ def income(strategy, names) -> float:
     return sum(strategy.get_entity(n).balance * strategy.get_entity(n).effective_supply_apy for n in names)
 
 
-def test_marginal_mode_maximises_income_where_average_mode_overfills_the_hot_pool():
+def test_marginal_allocator_does_not_overfill_the_hot_pool():
+    """Equalising *average* rates would put the whole $1M into the hot pool; equalising marginal revenue
+    keeps only a slice of the spike and earns more than that all-in-hot allocation."""
     markets = [listing("a"), listing("b")]
-    avg, names, obs = build(markets, hot_and_deep(), 1e6, TARGET_APY=0.0)
-    mrg, _, _ = build(markets, hot_and_deep(), 1e6, TARGET_APY=0.0, ALLOCATION_MODE="marginal")
-    run(avg, obs, 3)
-    run(mrg, obs, 3)
-    assert avg.get_entity(names[0]).balance > 0.95e6                 # equal average rates: all into the hot pool
-    hot = mrg.get_entity(names[0]).balance
+    strategy, names, obs = build(markets, hot_and_deep(), 1e6, TARGET_APY=0.0)
+    hot_entity = strategy.get_entity(names[0])
+    deep_rate = strategy.get_entity(names[1]).projected_supply_apy(0.0, obs[names[1]])
+    assert hot_entity.projected_supply_apy(1e6, obs[names[0]]) > deep_rate   # the average-rate rule's choice
+    all_in_hot = 1e6 * hot_entity.projected_supply_apy(1e6, obs[names[0]])
+    run(strategy, obs, 3)
+    hot = hot_entity.balance
     assert 0.2e6 < hot < 0.45e6                                      # income-optimal: a small slice of the spike
-    assert income(mrg, names) > income(avg, names) + 3_000.0          # ≈ +$5k/yr on $1M in the worked example
+    assert income(strategy, names) > all_in_hot + 3_000.0             # ≈ +$5k/yr on $1M in the worked example
 
 
 def test_marginal_floor_applies_to_the_marginal_dollar():
-    """TARGET 10 %: average mode fills the hot pool until its *average* rate is 10 %, marginal mode until the
-    *last dollar* earns 10 % — less capital deployed, more idle, every deployed dollar clears the target."""
+    """TARGET 10 %: the hot pool is filled until the *last dollar* earns 10 %, not until its *average* rate
+    falls to 10 % (the break-even size ``capacity_at``) — less capital deployed, more idle, and the position's
+    average rate stays above the target."""
     markets = [listing("a")]
     states = [market(10e6, 0.95, 0.08)]
-    avg, names, obs = build(markets, states, 1e6, TARGET_APY=0.10)
-    mrg, _, _ = build(markets, states, 1e6, TARGET_APY=0.10, ALLOCATION_MODE="marginal")
-    run(avg, obs, 3)
-    run(mrg, obs, 3)
-    placed_avg, placed_mrg = avg.get_entity(names[0]).balance, mrg.get_entity(names[0]).balance
-    assert 0.0 < placed_mrg < placed_avg
-    assert mrg.get_entity("CASH").balance > avg.get_entity("CASH").balance
-    assert mrg.allocation_report()["lambda_apy"] >= 0.10 - 0.01   # last chunk still earns about the target
+    strategy, names, obs = build(markets, states, 1e6, TARGET_APY=0.10)
+    break_even = strategy.get_entity(names[0]).capacity_at(0.10, obs[names[0]])
+    assert 0.0 < break_even < 1e6
+    run(strategy, obs, 3)
+    placed = strategy.get_entity(names[0]).balance
+    assert 0.0 < placed < break_even
+    assert strategy.get_entity("CASH").balance > 1e6 - break_even
+    assert strategy.get_entity(names[0]).effective_supply_apy > 0.10
+    assert strategy.allocation_report()["lambda_apy"] >= 0.10 - 0.01   # last chunk still earns about the target
 
 
 def test_expected_gas_turns_off_rebalances_that_do_not_pay():
@@ -356,7 +301,7 @@ def test_expected_gas_turns_off_rebalances_that_do_not_pay():
     panel = [{0: hi, 1: lo}, {0: lo, 1: hi}] * 6
 
     def legs(gas):
-        strategy, names, _ = build(markets, [hi, lo], 2e6, TARGET_APY=0.0, ALLOCATION_MODE="marginal",
+        strategy, names, _ = build(markets, [hi, lo], 2e6, TARGET_APY=0.0,
                                      GAS_USD_PER_LEG=gas, HOLD_HORIZON_BARS=24)
         for bar, states in enumerate(panel):
             run(strategy, {names[0]: states[0], names[1]: states[1]}, 1, start=bar)
@@ -370,7 +315,7 @@ def test_expected_gas_turns_off_rebalances_that_do_not_pay():
 def test_marginal_mode_respects_the_exit_gate():
     markets = [listing("a"), listing("b")]
     strategy, names, obs = build(markets, [market(20e6, 0.88, 0.06), market(200e6, 0.85, 0.06)], 5e6,
-                                 TARGET_APY=0.0, ALLOCATION_MODE="marginal", ABSORPTION=1.0)
+                                 TARGET_APY=0.0, ABSORPTION=1.0)
     run(strategy, obs, 3)
     held = strategy.get_entity(names[0]).balance
     assert held > 0.0
@@ -381,9 +326,11 @@ def test_marginal_mode_respects_the_exit_gate():
     assert after < held - 50_000.0                                   # but leaves as fast as it can
 
 
-def test_marginal_mode_is_validated():
-    with pytest.raises(ValueError, match="ALLOCATION_MODE"):
-        build([listing("a")], [market(50e6, 0.9, 0.05)], 1e6, ALLOCATION_MODE="greedy")
+@pytest.mark.parametrize("field", ["ALLOCATION_MODE", "MAX_POSITIONS", "MIN_REBALANCE_FRACTION"])
+def test_removed_average_mode_parameters_are_rejected(field):
+    """The allocator is marginal-only: the dropped average-mode knobs fail loudly, never silently."""
+    with pytest.raises(TypeError, match=field):
+        MorphoSupplyAllocationParams(**{field: "marginal" if field == "ALLOCATION_MODE" else 1})
 
 
 def test_gas_is_priced_per_chain():
@@ -393,7 +340,8 @@ def test_gas_is_priced_per_chain():
         collateral_address="0xcoll", collateral_symbol="PT", collateral_decimals=18,
         lltv=0.86, oracle_type="ChainlinkOracleV2", listed=True, creation_timestamp=1,
     )
-    strategy, names, obs = build([eth, base], [market(50e6, 0.85, 0.05), market(50e6, 0.85, 0.05)], 1e6,
+    # small pools: self-dilution makes splitting the book across both chains pay for the legs
+    strategy, names, obs = build([eth, base], [market(5e6, 0.85, 0.05), market(5e6, 0.85, 0.05)], 1e6,
                                  TARGET_APY=0.0, GAS_USD_PER_LEG=2.0, GAS_USD_BY_CHAIN={8453: 0.02})
     assert strategy.get_entity(names[0]).leg_cost_model[0] == pytest.approx(2.0)     # Ethereum: the default
     assert strategy.get_entity(names[1]).leg_cost_model[0] == pytest.approx(0.02)    # Base: per-chain override
@@ -408,14 +356,13 @@ def test_rewards_mode_moves_capital_to_the_rewarded_pool():
     markets = [listing("a"), listing("b")]
     plain, rewarded = market(50e6, 0.85, 0.06), market(50e6, 0.80, 0.05)
     rewarded.reward_apy = 0.04                                         # lower base, +4 % campaign
-    for mode in ("average", "marginal"):
-        off, names, obs = build(markets, [plain, rewarded], 1e6, TARGET_APY=0.0, ALLOCATION_MODE=mode)
-        on, _, _ = build(markets, [plain, rewarded], 1e6, TARGET_APY=0.0, ALLOCATION_MODE=mode, USE_REWARDS=True)
-        run(off, obs, 3)
-        run(on, obs, 3)
-        assert off.get_entity(names[0]).balance > 0.9e6                # base only: the plain pool wins
-        assert on.get_entity(names[1]).balance > 0.9e6                 # with rewards: the rewarded pool wins
-        assert on.get_entity(names[1]).use_rewards and not off.get_entity(names[1]).use_rewards
+    off, names, obs = build(markets, [plain, rewarded], 1e6, TARGET_APY=0.0)
+    on, _, _ = build(markets, [plain, rewarded], 1e6, TARGET_APY=0.0, USE_REWARDS=True)
+    run(off, obs, 3)
+    run(on, obs, 3)
+    assert off.get_entity(names[0]).balance > 0.9e6                # base only: the plain pool wins
+    assert on.get_entity(names[1]).balance > 0.9e6                 # with rewards: the rewarded pool wins
+    assert on.get_entity(names[1]).use_rewards and not off.get_entity(names[1]).use_rewards
 
 
 @pytest.mark.parametrize("capital", [100_000.0, 1_000_000.0])
@@ -423,7 +370,7 @@ def test_marginal_targets_never_exceed_available_capital(capital):
     """Lock-in: DP budget slack used to allocate more notional than the portfolio owned."""
     strategy, _, obs = build(
         [listing("a"), listing("b")], hot_and_deep(), capital,
-        TARGET_APY=0.0, ALLOCATION_MODE="marginal",
+        TARGET_APY=0.0,
     )
     run(strategy, obs, 2)
     assert sum(strategy.allocation_report()["targets"].values()) <= capital * (1.0 + 1e-12)
@@ -437,7 +384,7 @@ def test_marginal_keeps_locked_off_grid_holdings_without_inventing_capital():
         state.liquidity_assets_usd = 0.0
     strategy, names, obs = build(
         [listing("a"), listing("b")], states, 1e6,
-        OWN_IMPACT=False, TARGET_APY=0.0, ALLOCATION_MODE="marginal",
+        OWN_IMPACT=False, TARGET_APY=0.0,
     )
     strategy.get_entity("CASH").action_withdraw(1e6)
     positions = dict(zip(names, [333_333.0, 666_667.0], strict=True))
@@ -449,12 +396,11 @@ def test_marginal_keeps_locked_off_grid_holdings_without_inventing_capital():
     assert [strategy.get_entity(name).balance for name in names] == pytest.approx(list(positions.values()))
 
 
-@pytest.mark.parametrize("mode", ["average", "marginal"])
-def test_synthetic_run_has_finite_metrics_and_conserves_net_of_fees(mode):
-    """Both allocation modes run end to end without creating notional capital."""
+def test_synthetic_run_has_finite_metrics_and_conserves_net_of_fees():
+    """The allocator runs end to end without creating notional capital."""
     strategy, _, states = build(
         [listing("a"), listing("b")], hot_and_deep(), 1e6,
-        TARGET_APY=0.0, ALLOCATION_MODE=mode, OWN_IMPACT=False, GAS_USD_PER_LEG=1.0,
+        TARGET_APY=0.0, OWN_IMPACT=False, GAS_USD_PER_LEG=1.0,
     )
     for state in states.values():
         state.supply_apy = 0.08
@@ -470,15 +416,14 @@ def test_synthetic_run_has_finite_metrics_and_conserves_net_of_fees(mode):
 
 
 @pytest.mark.parametrize(
-    "field", ["ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS", "MAX_POSITIONS",
-              "SIGNAL_LAG_BARS", "SIGNAL_WINDOW_BARS"],
+    "field", ["ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS", "SIGNAL_LAG_BARS", "SIGNAL_WINDOW_BARS"],
 )
 def test_positive_integer_parameters_are_validated(field):
     with pytest.raises(ValueError, match=field):
         build([listing("a")], [market(20e6, 0.8, 0.05)], 1e6, **{field: 0})
 
 
-@pytest.mark.parametrize("field,value", [("TARGET_APY", -0.01), ("MIN_REBALANCE_FRACTION", 1.0)])
+@pytest.mark.parametrize("field,value", [("TARGET_APY", -0.01), ("TARGET_APY", float("nan"))])
 def test_allocation_scalars_are_validated(field, value):
     with pytest.raises(ValueError, match=field):
         build([listing("a")], [market(20e6, 0.8, 0.05)], 1e6, **{field: value})
@@ -512,19 +457,6 @@ def test_rebalance_cadence_skips_intermediate_bars():
     assert strategy.get_entity(names[1]).balance == pytest.approx(1e6)
 
 
-def test_max_positions_truncates_the_eligible_universe():
-    markets = [listing("a"), listing("b"), listing("c")]
-    states = [market(50e6, 0.8, 0.05) for _ in markets]
-    for snapshot, apy in zip(states, [0.10, 0.08, 0.06], strict=True):
-        snapshot.supply_apy = apy
-    strategy, names, obs = build(
-        markets, states, 1e6, OWN_IMPACT=False, TARGET_APY=0.0, MAX_POSITIONS=2,
-    )
-    run(strategy, obs, 3)
-    assert len(strategy.allocation_report()["targets"]) == 2
-    assert strategy.get_entity(names[2]).balance == pytest.approx(0.0)
-
-
 def test_fee_bearing_liquid_exit_hits_target_without_a_false_deferral():
     strategy, names, states = build(
         [listing("a")], [market(20e6, 0.5, 0.08)], 1_000.0,
@@ -536,7 +468,7 @@ def test_fee_bearing_liquid_exit_hits_target_without_a_false_deferral():
     cash.action_withdraw(1_000.0)
     position.action_deposit(1_000.0)
 
-    actions = strategy._rebalance({name: 495.0}, 0.0)  # pylint: disable=protected-access
+    actions = strategy._rebalance({name: 495.0})  # pylint: disable=protected-access
     assert strategy.deferrals == []
     amount = actions[0].action.args["amount_in_notional"](strategy)
     assert amount == pytest.approx(495.0)
@@ -549,7 +481,7 @@ def test_marginal_mode_forces_exits_from_ineligible_fresh_holdings():
     """A4: a fresh holding that left the eligible universe is forced out to what the gate allows."""
     markets = [listing("a"), listing("b")]
     states = [market(50e6, 0.85, 0.06), market(50e6, 0.90, 0.08)]    # b is funded as the better market
-    strategy, names, obs = build(markets, states, 500e3, TARGET_APY=0.0, ALLOCATION_MODE="marginal")
+    strategy, names, obs = build(markets, states, 500e3, TARGET_APY=0.0)
     run(strategy, obs, 2)
     held = strategy.get_entity(names[1]).balance
     assert held > 0.4e6
@@ -565,7 +497,7 @@ def test_marginal_hold_alternative_still_exits_an_ineligible_fresh_holding(gas):
     """When holding ties or beats re-solving, the hold alternative must not keep an ineligible holding."""
     markets = [listing("a"), listing("b"), listing("c")]
     states = [market(50e6, 0.8, 0.08), market(50e6, 0.8, 0.08), market(500e3, 0.8, 0.08)]   # c: below pool size
-    strategy, names, obs = build(markets, states, 0.0, TARGET_APY=0.0, ALLOCATION_MODE="marginal",
+    strategy, names, obs = build(markets, states, 0.0, TARGET_APY=0.0,
                                  OWN_IMPACT=False, GAS_USD_PER_LEG=gas)
     for name, amount in zip(names, (494_500.0, 494_500.0, 11_000.0), strict=True):
         strategy.get_entity(name).action_deposit(amount)

@@ -16,14 +16,22 @@ when the observations carry `fee_growth0/1`.
 ### Added
 
 - **`GasPriceHistoryLoader`** (`fractal.loaders.onchain`) / **`GasPriceHistory`** — per-bar (`freq="1h"`, `"1D"`, ...) gas prices of one network in gwei from `eth_feeHistory` at the last block at or before each bar (no look-ahead): mean base fee, median priority fee at configurable percentiles (empty blocks excluded), `gas_price_gwei`, block fullness, and the cost of a reference transaction in native tokens and, with a caller-supplied `native_price(t)`, in USD. Sampled window, node requirements and L2 caveats (OP Stack L1 data fee, Arbitrum tips) are documented. Adds `JsonRpcClient.fee_history`.
+- **`FredSeriesLoader`** (`fractal.loaders.fred`) — one daily FRED series (default `DGS3MO`) from the keyless `fredgraph.csv` download as a `RateHistory`; published percent is converted to a decimal (`percent_to_decimal`), each row is indexed by when it becomes known (`availability_lag_days`, default 1: the value for day d is usable from d + 1 00:00 UTC), missing days are dropped, and the window keeps the value already known at `start_time`.
+- **`HttpClient.get_text`** — GET returning the raw body for CSV/text endpoints, with the same retries and HTTP error reporting as `get`; existing methods are unchanged.
+- **`block_bootstrap`** (`fractal.core.base.strategy.bootstrap`) — moving-block bootstrap percentile CIs for daily series such as backtest P&L or returns: several block lengths driven by one seeded draw (common random numbers), the widest per-length interval as the headline CI, and joint resampling of aligned columns; `block_bootstrap_indices`, `percentile_ci` and `widest_block_ci` for custom statistics.
 - **`LogReader`** (`fractal.loaders.onchain`) — protocol-agnostic event-log reader: any emitter (one, a list or `None`) and `eth_getLogs` topic filters with OR-lists, over a block range or a time range (`get_logs_between` / `block_range`, no look-ahead at the end), returning raw JSON-RPC shaped logs de-duplicated and sorted, with an optional integer `timeStamp`. Node reads go in chunks; a range the node rejects as too large (range/limit, 413, timeout) is halved, transient failures (5xx/429, overload, dropped connections) are retried with backoff, and what still fails is read from Etherscan (OR-lists expanded per combination); `prefer="etherscan"` reverses the order. The error classes are public as `fractal.loaders.rpc.is_transient_error` / `is_range_limit_error` / `is_splittable_error`.
 - **`EtherscanClient`** (`fractal.loaders.etherscan`) — throttled Etherscan V2 (multichain) client for block-by-time and filtered event logs in the JSON-RPC log shape (paged, with the 10 000-row window split by block range); body-level rate-limit answers are retried; the key comes from `api_key=` or `ETHERSCAN_API_KEY` and is scrubbed from errors.
 - **`JsonRpcClient.block_at_timestamp`** — interpolation-guided search over cached block headers (`closest="after"|"before"`, optional `low`/`high` bracket), plus a `hex_to_int` helper for provider quantity encodings.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
-- **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
+- **`MorphoSupplyAllocationStrategy`** — multi-market, budget-constrained marginal-income grid allocation with switching costs and an idle-capital hurdle (`TARGET_APY`); reports the lowest last-chunk marginal APY as `lambda_apy`, holds stale feeds and exits ineligible holdings.
 - **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
+- **Two-sided Morpho capacity helpers** — deterministic post-deposit utilization, closed-form static supply capacity, horizon-average supplier APY and drift-aware horizon capacity (absolute, deposit-relative or frozen controller drift), a monotone-response check and the controller transition time scale, and realised supplier APY from share-price growth (`realised_supply_apy`) under borrower absorption and supplier offset or crowding-in responses.
+- **`morpho_market_sim`** — vectorised AdaptiveCurve forward simulator (`simulate_market`: borrower/supplier flow rules, borrow interest credited to supply, borrow cap, deposit paths, same-step or lagged drift timing, optional increment-anchored utilization and APY scale, an explicit `undefined_anchor` policy, compounded or arithmetic horizon means), array-rate curve helpers in `morpho_math`, piecewise and reset-to-target supplier utilization rules, and a knot-mean fitting helper. No fitted values ship with the library.
+- **`allocation_math`** — income-optimal spread across markets via the upper concave hull of `P·Y(P)` (`concave_income_frontier`), per-market allocations, and average or marginal capacity at an outside rate (`capacity_at_rate`).
 - **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
+- **`market_sizes_as_of`** — point-in-time USD supply/borrow sizes for many Morpho markets (aliased, batched `historicalState` reads) so a universe can be ranked without survivorship bias; the snapshot rule is explicit (`"at_or_before"` with a staleness bound, or `"end_of_day"`, which looks up to one day ahead).
+- **`MorphoMarketLoader` / `LendingHistory` market totals** — opt-in token-unit supply/borrow assets and normalized supply/borrow shares for realized share-price yield and utilization calculations (requested only when enabled; BigInts parsed exactly from JSON numbers or decimal/hex strings, null points kept as NaN); `read_loan_price()` returns the loan asset's USD price on the market's bars; opt-in `max_window_days` request chunking for long windows (one request by default); opt-in `allow_gaps` keeps bars the API omits absent instead of raising (separate cache key); `missing_bars()` lists the absent bars of a regular grid; the cache schema is versioned separately from older histories.
 - **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
 - **`examples/morpho_supply/`** — discovery, formula checks, a provider-backed backtest for both strategies (`--strategy rotation|allocation`) and a replication of Baude, Danos & El Khalloufi (arXiv:2608.24206); local registries and results stay gitignored.
 - **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
@@ -199,6 +207,17 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
+- **`MorphoSupplyAllocationStrategy` is marginal-only (breaking)**: the
+  `ALLOCATION_MODE` parameter and its `"average"` water-filling mode are
+  removed, together with the average-only `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` parameters and the public `water_fill` helper.
+  Average mode deployed the largest position whose *whole-position* APY
+  cleared the target (a break-even rule), over-deploying into steeply
+  diluting pools relative to the income optimum, which equalises marginal
+  revenue. Migration: drop `ALLOCATION_MODE`, `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` from the params (they now raise `TypeError`);
+  `TARGET_APY` is the hurdle on marginal revenue. `examples/morpho_supply`
+  drops `--mode` / `--min-rebalance-fraction`.
 - **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
   parity including E501 at 120 columns and the whitespace / blank-line
   rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
@@ -228,6 +247,9 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **Binance kline pagination no longer stops at the first short page.** `BinancePriceLoader.get_klines` (and every price/klines subclass) dropped all later history when one 1,000-candle window held fewer candles, for example after an exchange outage or when the symbol listed after `start_time`; it now requests fixed windows through `end_time`.
+- **`MorphoMarketLoader` collateral price join** — the collateral price is left-joined onto the rate bars, so a
+  price point on an hour without rates no longer adds a NaN-rate row that made `read` raise.
 - **Keyed RPC URLs no longer leak into errors or logs.** `JsonRpcClient` routes requests to an endpoint with a path or query (`https://<host>/v3/<key>`) through a shared `_http` redaction (generalised from the DefiLlama Pro loaders): failures are re-raised as scrubbed copies with no key-bearing `__cause__`/`__context__`, and urllib3 log records are scrubbed while a request runs. Key-less URLs keep the original transport; `HttpClient` itself is unchanged.
 - **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
   the API to the annual APY documented by `LendingHistory`.

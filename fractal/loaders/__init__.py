@@ -17,6 +17,7 @@ from fractal.loaders.defillama import (
     DefiLlamaYieldsLoader,
 )
 from fractal.loaders.etherscan import EtherscanClient, EtherscanError
+from fractal.loaders.fred import FredSeriesLoader
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
@@ -25,7 +26,12 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidPerpsPricesLoader,
 )
 from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
-from fractal.loaders.morpho_markets import MorphoMarketListing, MorphoMarketsLoader, discover_chains
+from fractal.loaders.morpho_markets import (
+    MorphoMarketListing,
+    MorphoMarketsLoader,
+    discover_chains,
+    market_sizes_as_of,
+)
 from fractal.loaders.onchain import GasPriceHistoryLoader, LogReader, RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
@@ -44,6 +50,7 @@ from fractal.loaders.structs import (
     SwapsHistory,
     TrajectoryBundle,
     TVLHistory,
+    missing_bars,
 )
 from fractal.loaders.thegraph import (
     AerodromeLoader,
@@ -93,6 +100,7 @@ __all__ = [
     "EthereumUniswapV2PoolDataLoader",
     "EtherscanClient",
     "EtherscanError",
+    "FredSeriesLoader",
     "FundingHistory",
     "GMXV1FundingLoader",
     "GasPriceHistory",
@@ -139,4 +147,6 @@ __all__ = [
     "UniswapV3EthereumPricesLoader",
     "UniswapV3SwapsLoader",
     "discover_chains",
+    "market_sizes_as_of",
+    "missing_bars",
 ]
