@@ -3,7 +3,7 @@ the positions.json registry, on-chain ground truth (un-floored
 ``feeGrowthInside`` accrual via web3.py, head-state reads only), and
 observation building with the mint-block correction of the first bar.
 
-RPC: ``BASE_RPC_URL`` (default https://mainnet.base.org); an archive
+RPC: ``BASE_RPC_URL`` (default https://base.gateway.tenderly.co, a keyless public gateway); an archive
 node is only needed for the exact mint-edge correction, otherwise it
 degrades to time-proration. Requires ``pip install web3``.
 """
@@ -49,7 +49,7 @@ def get_w3() -> Web3:
     from web3.providers.rpc.utils import ExceptionRetryConfiguration
 
     provider = Web3.HTTPProvider(
-        os.getenv("BASE_RPC_URL", "https://mainnet.base.org"),
+        os.getenv("BASE_RPC_URL", "https://base.gateway.tenderly.co"),
         exception_retry_configuration=ExceptionRetryConfiguration(
             errors=(RequestsConnectionError, HTTPError, Timeout),
             retries=8,

@@ -14,7 +14,7 @@ Data loading is split from the run (``load_replication_data`` /
 fee models; positions with no post-mint bars yet are skipped.
 
 Usage: ``python backtest.py`` — requires ``THE_GRAPH_API_KEY`` in the
-environment (optional ``BASE_RPC_URL``, default mainnet.base.org).
+environment (optional ``BASE_RPC_URL``, default the keyless base.gateway.tenderly.co).
 """
 import os
 import time

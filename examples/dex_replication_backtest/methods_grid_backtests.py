@@ -73,7 +73,7 @@ def per_event_position(position: dict, rpc_url: str) -> dict:
 
 def main() -> None:
     api_key = os.environ["THE_GRAPH_API_KEY"]
-    rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+    rpc_url = os.getenv("BASE_RPC_URL", "https://base.gateway.tenderly.co")
     w3 = get_w3()
 
     rows = []
