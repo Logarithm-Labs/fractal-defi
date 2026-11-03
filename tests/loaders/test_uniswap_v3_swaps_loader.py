@@ -96,7 +96,7 @@ def test_decode_log_signed_fields():
 @pytest.mark.slow
 def test_swaps_loader_real_range():
     """Small real range on Base WETH/USDC 0.05% — the pool trades every block."""
-    rpc_url = os.getenv("BASE_RPC_URL", "https://mainnet.base.org")
+    rpc_url = os.getenv("BASE_RPC_URL", "https://base.gateway.tenderly.co")
     loader = UniswapV3SwapsLoader(
         rpc_url=rpc_url,
         pool=BASE_WETH_USDC_500,
