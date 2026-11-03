@@ -18,9 +18,14 @@ from fractal.loaders.structs import FundingHistory, KlinesHistory, PriceHistory
 UTC = timezone.utc
 
 
+def _is_utc_datetime(dtype) -> bool:
+    """tz-aware UTC datetimes at any resolution (pandas 3 parses to ``us``, pandas 2 to ``ns``)."""
+    return isinstance(dtype, pd.DatetimeTZDtype) and str(dtype.tz) == "UTC"
+
+
 def _assert_time_bounds(df: pd.DataFrame, time_col: str, start: datetime, end: datetime):
     assert not df.empty, "DataFrame is empty — expected data in the requested range"
-    assert pd.api.types.is_datetime64tz_dtype(df[time_col].dtype)
+    assert _is_utc_datetime(df[time_col].dtype)
     tmin = df[time_col].min()
     tmax = df[time_col].max()
     assert tmin >= start, f"Earliest {time_col} {tmin} < requested start {start}"
@@ -38,7 +43,7 @@ def test_binance_funding_loader():
     assert isinstance(data, FundingHistory)
     assert len(data) > 0
     assert data["rate"].dtype == "float64"
-    assert data.index.dtype == "datetime64[ns, UTC]"
+    assert _is_utc_datetime(data.index.dtype)
     # Cache round-trip via fresh instance with same window.
     fresh = BinanceFundingLoader(ticker="BTCUSDT", start_time=start, end_time=end)
     cached: FundingHistory = fresh.read()
@@ -66,7 +71,7 @@ def test_binance_price_loader():
     data: PriceHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["price"].dtype == "float64"
-    assert data.index.dtype == "datetime64[ns, UTC]"
+    assert _is_utc_datetime(data.index.dtype)
     fresh = BinanceDayPriceLoader(ticker="BTCUSDT", start_time=start, end_time=end)
     cached: PriceHistory = fresh.read()
     assert len(cached) == len(data)
@@ -83,7 +88,7 @@ def test_binance_klines_loader():
     for col in ["open", "high", "low", "close", "volume"]:
         assert col in data.columns, f"{col} not found in data"
         assert data[col].dtype == "float64", f"{col} is not of type float64"
-    assert data.index.dtype == "datetime64[ns, UTC]"
+    assert _is_utc_datetime(data.index.dtype)
     fresh = BinanceKlinesLoader(ticker="BTCUSDT", interval="1d", start_time=start, end_time=end)
     cached: KlinesHistory = fresh.read()
     assert len(cached) == len(data)
@@ -185,7 +190,7 @@ def test_binance_spot_price_loader():
     data: PriceHistory = loader.read(with_run=True)
     assert len(data) > 0
     assert data["price"].dtype == "float64"
-    assert data.index.dtype == "datetime64[ns, UTC]"
+    assert _is_utc_datetime(data.index.dtype)
     # Cache round-trip — fresh instance against the same window must read
     # the same series back without going to network.
     fresh = BinanceSpotPriceLoader(ticker="BTCUSDT", start_time=start, end_time=end)
