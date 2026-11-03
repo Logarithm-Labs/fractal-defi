@@ -44,7 +44,7 @@ class _FakeMorphoHttp:
         if "MarketInfo" in json["query"]:
             market = {
                 "marketId": MARKET_ID, "lltv": "915000000000000000", "irmAddress": "0xirm",
-                "oracleAddress": "0xoracle", "oracle": {"address": "0xoracle", "type": "MorphoChainlinkOracleV2"},
+                "oracle": {"address": "0xoracle", "type": "MorphoChainlinkOracleV2"},
                 "loanAsset": {"address": "0xUSDC", "symbol": "USDC", "decimals": 6},
                 "collateralAsset": {"address": "0xPT", "symbol": "PT-reUSD-10DEC2026", "decimals": 6},
                 "state": {"price": "974400000000000000000000000000000000", "fee": 0, "borrowApy": 0.09,
@@ -74,7 +74,10 @@ class _FakeMorphoHttp:
 
 @pytest.mark.core
 def test_market_info_parses_lltv_assets_and_scaled_price():
-    info = get_market_info(MARKET_ID, 1, http=_FakeMorphoHttp())
+    http = _FakeMorphoHttp()
+    info = get_market_info(MARKET_ID, 1, http=http)
+    assert "oracleAddress" not in http.calls[0]["query"]    # removed from the API's Market type
+    assert info.oracle_address == "0xoracle"
     assert info.lltv == pytest.approx(0.915)
     assert info.loan_symbol == "USDC" and info.collateral_decimals == 6
     assert info.price_scale == pytest.approx(1e36)

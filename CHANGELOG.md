@@ -247,6 +247,9 @@ when the observations carry `fee_growth0/1`.
 
 ### Fixed
 
+- **`get_market_info` (Morpho) works against the current API** — the `MarketInfo` query no longer
+  requests `Market.oracleAddress`, which the Morpho GraphQL API removed (every call failed with HTTP 400);
+  the oracle address comes from `oracle.address`.
 - **Binance kline pagination no longer stops at the first short page.** `BinancePriceLoader.get_klines` (and every price/klines subclass) dropped all later history when one 1,000-candle window held fewer candles, for example after an exchange outage or when the symbol listed after `start_time`; it now requests fixed windows through `end_time`.
 - **`MorphoMarketLoader` collateral price join** — the collateral price is left-joined onto the rate bars, so a
   price point on an hour without rates no longer adds a NaN-rate row that made `read` raise.
