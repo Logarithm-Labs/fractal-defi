@@ -68,7 +68,7 @@ _BASE_DISCOUNT_SELECTOR = function_selector("baseDiscountPerYear()")
 _INFO_QUERY = """
 query MarketInfo($id: String!, $cid: Int!) {
   marketById(marketId: $id, chainId: $cid) {
-    marketId lltv irmAddress oracleAddress
+    marketId lltv irmAddress
     oracle { address type }
     loanAsset { address symbol decimals }
     collateralAsset { address symbol decimals }
@@ -184,7 +184,7 @@ def get_market_info(market_id: str, chain_id: int, http: HttpClient | None = Non
         chain_id=int(chain_id), market_id=market["marketId"].lower(), lltv=_wad(market["lltv"]),
         loan_asset=loan["address"].lower(), loan_symbol=loan["symbol"], loan_decimals=loan_dec,
         collateral_asset=coll["address"].lower(), collateral_symbol=coll["symbol"], collateral_decimals=coll_dec,
-        oracle_address=(oracle.get("address") or market.get("oracleAddress") or None),
+        oracle_address=oracle.get("address") or None,
         oracle_type=oracle.get("type"), irm_address=market.get("irmAddress"),
         fee=_wad(state.get("fee") or 0.0),
         borrow_apy=state.get("borrowApy"), supply_apy=state.get("supplyApy"),
