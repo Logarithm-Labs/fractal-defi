@@ -19,7 +19,7 @@ when the observations carry `fee_growth0/1`.
 - **`HttpClient.get_text`** — GET returning the raw body for CSV/text endpoints, with the same retries and HTTP error reporting as `get`; existing methods are unchanged.
 - **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
 - **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
-- **`MorphoSupplyAllocationStrategy`** — multi-market average-rate allocation (refined λ search) or budget-constrained marginal-income grid allocation with switching costs and an idle-capital threshold; reports its mode-specific `lambda_apy`, holds stale feeds, exits ineligible holdings and applies the churn guard to resizes only.
+- **`MorphoSupplyAllocationStrategy`** — multi-market, budget-constrained marginal-income grid allocation with switching costs and an idle-capital hurdle (`TARGET_APY`); reports the lowest last-chunk marginal APY as `lambda_apy`, holds stale feeds and exits ineligible holdings.
 - **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
 - **Two-sided Morpho capacity helpers** — deterministic post-deposit utilization, closed-form static supply capacity, horizon-average supplier APY and drift-aware horizon capacity (absolute, deposit-relative or frozen controller drift), a monotone-response check and the controller transition time scale, and realised supplier APY from share-price growth (`realised_supply_apy`) under borrower absorption and supplier offset or crowding-in responses.
 - **`morpho_market_sim`** — vectorised AdaptiveCurve forward simulator (`simulate_market`: borrower/supplier flow rules, borrow interest credited to supply, borrow cap, deposit paths, same-step or lagged drift timing, optional increment-anchored utilization and APY scale, an explicit `undefined_anchor` policy, compounded or arithmetic horizon means), array-rate curve helpers in `morpho_math`, piecewise and reset-to-target supplier utilization rules, and a knot-mean fitting helper. No fitted values ship with the library.
@@ -200,6 +200,17 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
+- **`MorphoSupplyAllocationStrategy` is marginal-only (breaking)**: the
+  `ALLOCATION_MODE` parameter and its `"average"` water-filling mode are
+  removed, together with the average-only `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` parameters and the public `water_fill` helper.
+  Average mode deployed the largest position whose *whole-position* APY
+  cleared the target (a break-even rule), over-deploying into steeply
+  diluting pools relative to the income optimum, which equalises marginal
+  revenue. Migration: drop `ALLOCATION_MODE`, `MAX_POSITIONS` and
+  `MIN_REBALANCE_FRACTION` from the params (they now raise `TypeError`);
+  `TARGET_APY` is the hurdle on marginal revenue. `examples/morpho_supply`
+  drops `--mode` / `--min-rebalance-fraction`.
 - **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
   parity including E501 at 120 columns and the whitespace / blank-line
   rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
