@@ -73,7 +73,7 @@ def test_uniswap_v3_data_types(THE_GRAPH_API_KEY: str):
     assert data["tvl"].dtype == "float64"
     assert data["volume"].dtype == "float64"
     assert data["fees"].dtype == "float64"
-    assert data.index.dtype == "datetime64[ns, UTC]"
+    assert isinstance(data.index.dtype, pd.DatetimeTZDtype) and str(data.index.dtype.tz) == "UTC"
     cached = loader.read(with_run=False)
     assert len(cached) == len(data)
 
