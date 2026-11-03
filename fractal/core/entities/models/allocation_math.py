@@ -121,17 +121,16 @@ def concave_income_frontier(positions, yields) -> IncomeFrontier:
     return IncomeFrontier(total, average, slope, np.asarray(markets, dtype=int)[order], size, yields.shape[0])
 
 
-def capacity_at_rate(frontier: IncomeFrontier, rate: float, marginal: bool = False) -> float:
-    """Largest frontier deposit whose average (or marginal) yield is still ``>= rate``.
+def capacity_at_rate(frontier: IncomeFrontier, rate: float) -> float:
+    """Largest frontier deposit whose marginal yield is still ``>= rate``.
 
-    ``marginal=False``: the largest vertex with ``I(P) / P >= rate``.
-    ``marginal=True``: the largest vertex with ``dI/dP >= rate`` — the deposit
-    at which the next dollar stops beating an outside option ``rate``.
+    The largest vertex with ``dI/dP >= rate``: the deposit at which the next
+    dollar stops beating an outside option ``rate``, i.e. the income-maximising
+    deposit ``argmax_P P · (Y(P) - rate)`` on the concave frontier.
     Capacities are frontier vertices (refine the grid for resolution) and are
     censored at ``frontier.total[-1]``; ``0`` when no vertex qualifies.
     """
     if np.isnan(rate):
         raise ValueError("rate must not be NaN")
-    values = frontier.marginal_yield if marginal else frontier.average_yield
-    qualifying = np.nonzero(values >= rate)[0]
+    qualifying = np.nonzero(frontier.marginal_yield >= rate)[0]
     return float(frontier.total[qualifying].max()) if qualifying.size else 0.0
