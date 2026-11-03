@@ -6,6 +6,18 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
+## [v1.4.0] — 2026-11-03
+
+Morpho Blue supply research tooling (a supply entity, rotation and
+marginal-income allocation strategies, AdaptiveCurve math and a market
+simulator), Pendle PT / Morpho / Boros fixed-term strategies, exact
+Uniswap V3 fee replication, and new data sources (DefiLlama, FRED,
+Etherscan and generic on-chain logs, per-network gas history), plus
+moving-block bootstrap confidence intervals. Defaults of existing
+strategies are unchanged; the behaviour changes are listed under
+Changed and Fixed (stricter loader time inputs, loaders that raise on
+missing data instead of zero-filling, the perp liquidation boundary).
+
 Uniswap V3 LP replication backtesting: exact per-leg fee accrual from
 the pool's own `feeGrowthGlobal` counters, validated 1:1 against real
 on-chain positions on Base (all 13 within 0.06% of the chain's
@@ -207,17 +219,6 @@ when the observations carry `fee_growth0/1`.
 
 ### Changed
 
-- **`MorphoSupplyAllocationStrategy` is marginal-only (breaking)**: the
-  `ALLOCATION_MODE` parameter and its `"average"` water-filling mode are
-  removed, together with the average-only `MAX_POSITIONS` and
-  `MIN_REBALANCE_FRACTION` parameters and the public `water_fill` helper.
-  Average mode deployed the largest position whose *whole-position* APY
-  cleared the target (a break-even rule), over-deploying into steeply
-  diluting pools relative to the income optimum, which equalises marginal
-  revenue. Migration: drop `ALLOCATION_MODE`, `MAX_POSITIONS` and
-  `MIN_REBALANCE_FRACTION` from the params (they now raise `TypeError`);
-  `TARGET_APY` is the hurdle on marginal revenue. `examples/morpho_supply`
-  drops `--mode` / `--min-rebalance-fraction`.
 - **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
   parity including E501 at 120 columns and the whitespace / blank-line
   rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
@@ -231,15 +232,16 @@ when the observations carry `fee_growth0/1`.
   `pd.to_datetime(..., unit=...)` (or `Loader._utc_index`) so a unit is
   never guessed; datetime inputs take a fast path without an object
   round trip.
-- **Dependency floors raised** (`setup.py` and `requirements.txt` kept in
-  sync; the pre-commit pylint hook pins follow): runtime
-  `mlflow>=3.12.0` (was `>=3.11.1`), `requests>=2.34.0` (was
-  `>=2.33.1`); dev tooling `pytest>=9.1.1`, `pytest-cov>=7.1.0`,
-  `pylint>=4.0.6`, `pre-commit>=4.6.1`; release tooling `build>=1.5.1`,
-  `twine>=7.0.0`. CI actions bumped to `checkout@v7`, `setup-python@v7`,
-  `cache@v6`, `codecov-action@v7`. `examples/agentic_trader` pins moved
-  to `openai-agents==0.17.7` and `dash==4.3.0`. Supersedes the
-  dependabot PRs #80, #90–#95.
+- **Dependency floors raised** (`setup.py`, `requirements.txt` and the
+  pre-commit hook pins kept in sync): runtime `mlflow>=3.17.2` (was
+  `>=3.11.1`), `requests>=2.34.2` (was `>=2.33.1`); dev tooling
+  `pytest>=9.2.0`, `pytest-cov>=7.1.0`, `pylint>=4.1.3`,
+  `ruff>=0.17.3` (replacing flake8 and isort), `pre-commit>=4.6.2`, new
+  `pytest-benchmark>=5.3.0` and `snakeviz>=2.2.2`; release tooling
+  `build>=1.6.1`, `twine>=7.0.0`. CI actions bumped to `checkout@v7.0.1`,
+  `setup-python@v7`, `cache@v6`, `codecov-action@v7`.
+  `examples/agentic_trader` pins moved to `openai-agents==0.24.0` and
+  `dash==4.4.1`.
 - **`UniswapV3Loader.get_pool_decimals`** is now concrete and delegates
   to `get_pool_info`; the Ethereum loader no longer overrides it.
 - **`UniswapV3LPEntity.update_state`** additionally validates

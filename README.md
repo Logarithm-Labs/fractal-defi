@@ -213,7 +213,7 @@ BibTeX:
 @software{fractal_defi,
   author    = {Krestenko, Anatoly and {the Fractal contributors}},
   title     = {Fractal: A Python Research Library for {DeFi} Strategies},
-  version   = {1.3.2},
+  version   = {1.4.0},
   year      = {2026},
   doi       = {10.5281/zenodo.20049904},
   url       = {https://doi.org/10.5281/zenodo.20049904},
