@@ -57,15 +57,19 @@ def test_allocation_sums_to_total_and_is_nan_beyond_the_frontier():
     assert np.isnan(alloc[3]).all()
 
 
-def test_capacity_average_and_marginal():
+def test_capacity_is_marginal():
     yields, _ = _concave_yields()
     frontier = concave_income_frontier(GRID, yields)
-    assert capacity_at_rate(frontier, 4.0, marginal=True) == 3.0
-    assert capacity_at_rate(frontier, 3.0, marginal=True) == 6.0
-    assert capacity_at_rate(frontier, 4.0) == 4.0       # averages 4.125 at P = 4, 3.9 at P = 5
-    assert capacity_at_rate(frontier, 0.0, marginal=True) == 8.0   # censored at the grid top
+    assert capacity_at_rate(frontier, 4.0) == 3.0
+    assert capacity_at_rate(frontier, 3.0) == 6.0
+    assert capacity_at_rate(frontier, 0.0) == 8.0       # censored at the grid top
     assert capacity_at_rate(frontier, 9.0) == 0.0
-    assert capacity_at_rate(frontier, 4.0) >= capacity_at_rate(frontier, 4.0, marginal=True)
+    total = np.concatenate([[0.0], frontier.total])
+    for rate in (0.5, 3.0, 4.0, 4.5):                   # an income-maximising deposit at the hurdle (largest on ties)
+        net = total * (np.concatenate([[0.0], frontier.average_yield]) - rate)
+        cap = capacity_at_rate(frontier, rate)
+        assert net[total == cap][0] == pytest.approx(net.max())
+        assert cap == total[np.isclose(net, net.max())].max()
 
 
 def test_grid_without_origin_and_per_market_grids():
