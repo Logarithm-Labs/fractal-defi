@@ -2,82 +2,58 @@
 
 The single-position rotation (:mod:`fractal.strategies.morpho_supply_rotation`)
 is bounded by the depth of one market: at size it degenerates into holding the
-deepest pool. This strategy instead holds several positions. ``"average"`` mode
-water-fills them to one common whole-position APY; ``"marginal"`` mode maximises
+deepest pool. This strategy instead holds several positions, sized to maximise
 expected income net of switching costs on a discrete capital grid.
 
-Water-filling. Each market's supply APY falls as we add capital (self-dilution,
-:meth:`MorphoSupplyEntity.projected_supply_apy`). Pour capital into the
-best-paying market until its rate falls to the second-best, then into both until
-they meet the third, and so on, so that all funded markets pay one common *average*
-rate ``λ`` on our position. (This is not the income optimum when our share of a pool
-is large: that equalises marginal revenue, see ``"marginal"`` below.) For a given
-``λ`` the amount market ``i`` takes is :meth:`MorphoSupplyEntity.capacity_at`
-(the curve inverted), capped by its entry-gate liquidity; ``λ`` is found on a
-shared grid of required position APYs, refined once inside the crossing bracket, so
-the amounts sum to the capital.
+Each market's supply APY falls as we add capital (self-dilution,
+:meth:`MorphoSupplyEntity.projected_supply_apy`). A dollar added to a pool
+lowers the rate on every dollar already in it, so the last dollar's
+contribution (the marginal revenue) is below the pool's average rate. The
+income optimum equalises marginal revenue across funded pools, not their
+average rates: equalising average rates over-allocates to small pools with
+steep dilution, exactly the hot, high-utilization pools a spike makes
+attractive.
 
-Threshold as the stop. Pure water-filling would place any amount of capital by
-driving ``λ`` toward zero. Below ``TARGET_APY`` the capital is better left idle
-(a passive alternative, gas, risk), so ``λ`` never goes below it: if the
-markets cannot absorb the whole book at ``TARGET_APY``, the rest stays in cash.
-With little capital the threshold is never reached and the rule is pure
-equalisation.
+The allocator approximates expected income net of switching costs by dynamic
+programming over pools on a capital grid of ``ALLOC_CHUNKS`` chunks::
 
-What this changes for capacity: the book's capacity is the **sum** of what each
-market takes at the target rate, not the depth of the single best one.
+    max  h · Σ_i R_i(P_i) − Σ_i gas_i(P_i) + h · TARGET_APY · idle
+    R_i(P)   = P · y_i(P)                    income of pool i at position P (dilution included)
+    gas_i(P) = 0 if P is the current position, else GAS_USD_PER_LEG + bps · |ΔP|
+    P_i ≥ P_i_now − withdrawable_i           (the exit gate)
+    P_i ≤ liquidity cap, Σ P_i + idle = NAV,  h = HOLD_HORIZON_BARS / BARS_PER_YEAR
+
+No concavity is assumed. That matters: above the IRM target the curve is four
+times steeper, so a hot pool's income can *fall* as we add capital and rise
+again once utilization drops below target — the best position is then either
+small (harvest the spike) or large (push it below target), never in between,
+and equalising rates cannot find that.
+
+Idle capital as the stop. Idle "earns" ``TARGET_APY`` in the objective only, as
+the opportunity cost of capital (a passive alternative, gas, risk): a dollar is
+placed only if its marginal contribution beats the target, so the hurdle
+applies to the marginal dollar, and capital the markets cannot pay for at that
+margin stays in cash. The gas term makes holding the default: a reallocation
+happens only when its expected gain over ``HOLD_HORIZON_BARS`` pays for its
+legs. Off-grid positions consume rounded-up budget units; the unchanged
+portfolio is also considered so rounding alone cannot force a trade. Targets
+exclude execution fees, which reduce the amounts actually supplied.
 
 Signal discipline is the rotation strategy's: the market snapshot used for
 sizing is the mean of the ``SIGNAL_WINDOW_BARS`` bars ending ``SIGNAL_LAG_BARS``
 observed bars ago, while the liquidity
 gates read the current bar — a physical constraint at execution time, not a
-forecast. Rebalancing happens every ``REBALANCE_BARS`` bars and only moves
-amounts above ``MIN_REBALANCE_FRACTION`` of NAV, so costs are paid for
-reallocations that matter. Costs are charged by the entities.
+forecast. The allocation is re-solved every ``REBALANCE_BARS`` bars. Costs are
+charged by the entities.
 
 This is a discrete research model, not a live execution system. Sparse markets
 retain their last state; cross-chain transfers omit bridge costs and latency.
 Rewards assume a fixed campaign budget diluted by total supplied capital.
 Defaults illustrate configuration and are not recommendations.
-
-Two allocation modes (``ALLOCATION_MODE``):
-
-``"average"`` (default)
-    The water-filling above: equalise the *average* rate every funded pool pays
-    on our whole position there. Fast, but not income-maximising: a dollar added
-    to a pool lowers the rate on every dollar already in it, so the last dollar's
-    contribution (the marginal revenue) is below the pool's average rate, and the
-    rule over-allocates to small pools with steep dilution — exactly the hot,
-    high-utilization pools a spike makes attractive. Churn is controlled only by
-    ``MIN_REBALANCE_FRACTION``.
-
-``"marginal"``
-    Approximate expected income net of switching costs by dynamic programming
-    over pools on a capital grid of ``ALLOC_CHUNKS`` chunks::
-
-        max  h · Σ_i R_i(P_i) − Σ_i gas_i(P_i) + h · TARGET_APY · idle
-        R_i(P)   = P · y_i(P)                    income of pool i at position P (dilution included)
-        gas_i(P) = 0 if P is the current position, else GAS_USD_PER_LEG + bps · |ΔP|
-        P_i ≥ P_i_now − withdrawable_i           (the exit gate)
-        P_i ≤ liquidity cap, Σ P_i + idle = NAV,  h = HOLD_HORIZON_BARS / BARS_PER_YEAR
-
-    No concavity is assumed. That matters: above the IRM target the curve is four
-    times steeper, so a hot pool's income can *fall* as we add capital and rise
-    again once utilization drops below target — the best position is then either
-    small (harvest the spike) or large (push it below target), never in between,
-    and equalising rates cannot find that. Idle "earns" ``TARGET_APY`` in the
-    objective only, as the opportunity cost: a dollar is placed only if its
-    marginal contribution beats the target, so the floor applies to the marginal
-    dollar. The gas term makes holding the default: a reallocation happens only
-    when its expected gain over ``HOLD_HORIZON_BARS`` pays for its legs.
-    ``MIN_REBALANCE_FRACTION`` and ``MAX_POSITIONS`` are not used in this mode.
-    Off-grid positions consume rounded-up budget units; the unchanged portfolio
-    is also considered so rounding alone cannot force a trade. Targets exclude
-    execution fees, which reduce the amounts actually supplied.
 """
 import math
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, fields
 
 import numpy as np
@@ -97,119 +73,40 @@ from fractal.strategies.morpho_supply_common import (
 __all__ = [
     "MorphoSupplyAllocationParams",
     "MorphoSupplyAllocationStrategy",
-    "water_fill",
 ]
-
-_BISECTION_STEPS = 60
-_LAMBDA_POINTS = 4001          # required-rate grid of the vectorised average-mode solver
-_REFINE_POINTS = 257           # second grid inside the crossing bracket (plus linear interpolation)
-
-
-def water_fill(
-    capital: float,
-    take: dict[str, Callable[[float], float]],
-    lambda_floor: float,
-    lambda_ceiling: float,
-) -> tuple[float, dict[str, float]]:
-    """Common required position APY ``λ`` and per-market amounts that place ``capital``.
-
-    Args:
-        capital: USD to place.
-        take: ``name -> f(λ)``, the amount market ``name`` absorbs while still
-            paying ``λ`` (non-increasing in ``λ``, may return ``inf``).
-        lambda_floor: the target rate; ``λ`` never goes below it. Capital the
-            markets cannot take at this rate is returned as unplaced.
-        lambda_ceiling: a rate above which nothing is taken (the best market's
-            undiluted rate); the bisection's upper bound.
-
-    Returns:
-        ``(λ, amounts)``; ``sum(amounts) <= capital`` with equality unless the
-        floor binds.
-    """
-    if capital <= 0.0 or not take:
-        return lambda_floor, dict.fromkeys(take, 0.0)
-
-    def total(rate: float) -> float:
-        return sum(take[name](rate) for name in take)
-
-    if total(lambda_floor) <= capital:
-        return lambda_floor, {name: take[name](lambda_floor) for name in take}
-    low, high = lambda_floor, max(lambda_ceiling, lambda_floor)
-    for _ in range(_BISECTION_STEPS):
-        mid = 0.5 * (low + high)
-        if total(mid) > capital:
-            low = mid
-        else:
-            high = mid
-    # ``high`` is the smallest rate at which the markets take no more than the
-    # capital. If a take curve jumps at that rate (a step: exogenous mode, or
-    # an unbounded ``inf`` take), the capital left over is split across the
-    # jumping markets in proportion to their jump, capped by it.
-    amounts = {name: take[name](high) for name in take}
-    remaining = capital - sum(amounts.values())
-    if remaining > 1e-9:
-        jumps = {name: take[name](low) - amounts[name] for name in take}
-        jumps = {name: jump for name, jump in jumps.items() if jump > 0.0}
-        if jumps:
-            unbounded = [name for name, jump in jumps.items() if math.isinf(jump)]
-            if unbounded:
-                for name in unbounded:
-                    amounts[name] += remaining / len(unbounded)
-            else:
-                total_jump = sum(jumps.values())
-                for name, jump in jumps.items():
-                    amounts[name] += min(jump, remaining * jump / total_jump)
-    placed = sum(amounts.values())
-    if placed > capital:
-        amounts = {name: amount * capital / placed for name, amount in amounts.items()}
-    return high, amounts
 
 
 @dataclass
 class MorphoSupplyAllocationParams(MorphoSupplyBaseParams):
-    """Hyperparameters of the water-filling allocator.
+    """Hyperparameters of the marginal-income allocator.
 
     The shared eligibility, signal and entity fields live on
     :class:`MorphoSupplyBaseParams`; this class adds the allocator's own
-    solving and mode parameters.
+    solving parameters.
 
     Attributes:
-        TARGET_APY: in ``"average"`` mode, the floor on the common whole-position
-            APY ``λ``; in ``"marginal"`` mode, the idle-capital opportunity-cost
-            APY. Capital whose mode-specific objective does not clear it stays in cash.
-        MAX_POSITIONS: markets funded at once (the top ones by projected APY at
-            ``NAV / MAX_POSITIONS``). Each funded market costs two legs per
-            rebalance that touches it. Default 100 = no cap in practice.
+        TARGET_APY: the idle-capital opportunity-cost APY, the hurdle on
+            marginal revenue: a chunk of capital is placed only if its
+            marginal contribution beats it; the rest stays in cash.
         REBALANCE_BARS: bars between re-solving the allocation (default every bar).
-        MIN_REBALANCE_FRACTION: resize deltas below this fraction of NAV are
-            not traded (churn guard; pays for itself against ``COST_BPS_PER_LEG``).
-            First entries and full exits are exempt, so the guard can never strand
-            capital in cash or in a market the allocator no longer targets.
         SIGNAL_WINDOW_BARS: bars averaged into the sizing snapshot; ``1`` by
             default here (react bar-by-bar), while the rotation keeps the base
             default ``24`` for a steadier signal.
-        ALLOCATION_MODE: ``"average"`` (equal average rates, churn guard
-            ``MIN_REBALANCE_FRACTION``) or ``"marginal"`` (income-maximising with
-            an expected-gas switching cost); see the module docstring.
-        HOLD_HORIZON_BARS: ``"marginal"`` only — expected holding period, in
-            bars, over which a rate gain must repay the gas of the legs it needs.
-            Illustrative default: six bars. This is a configurable modeling
-            horizon, not an estimate of future rate persistence.
-        ALLOC_CHUNKS: ``"marginal"`` only — capital grid of the optimiser
-            (100 = 1 % of NAV per chunk).
+        HOLD_HORIZON_BARS: expected holding period, in bars, over which a rate
+            gain must repay the gas of the legs it needs. Illustrative
+            default: six bars. This is a configurable modeling horizon, not an
+            estimate of future rate persistence.
+        ALLOC_CHUNKS: capital grid of the optimiser (100 = 1 % of NAV per chunk).
     """
     TARGET_APY: float = 0.06
-    MAX_POSITIONS: int = 100
     REBALANCE_BARS: int = 1
-    MIN_REBALANCE_FRACTION: float = 0.05
     SIGNAL_WINDOW_BARS: int = 1
-    ALLOCATION_MODE: str = "average"
     HOLD_HORIZON_BARS: int = 6
     ALLOC_CHUNKS: int = 100
 
 
 class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams]):
-    """Allocate across Morpho supply markets by average-rate water fill or marginal income."""
+    """Allocate across Morpho supply markets by marginal income net of switching costs."""
 
     STRICT_OBSERVATIONS: bool = False
 
@@ -239,17 +136,12 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         """Register one entity per market plus the cash entity."""
         params = self._params
         validate_common_params(params)
-        if params.ALLOCATION_MODE not in ("average", "marginal"):
-            raise ValueError(f"ALLOCATION_MODE must be 'average' or 'marginal', got {params.ALLOCATION_MODE!r}")
-        for field_name in ("ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS", "MAX_POSITIONS"):
+        for field_name in ("ALLOC_CHUNKS", "HOLD_HORIZON_BARS", "REBALANCE_BARS"):
             value = getattr(params, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 1:
                 raise ValueError(f"{field_name} must be an integer >= 1, got {value!r}")
         if not math.isfinite(params.TARGET_APY) or params.TARGET_APY < 0.0:
             raise ValueError(f"TARGET_APY must be a finite non-negative rate, got {params.TARGET_APY!r}")
-        if not 0.0 <= params.MIN_REBALANCE_FRACTION < 1.0:
-            raise ValueError(
-                f"MIN_REBALANCE_FRACTION must be in [0, 1), got {params.MIN_REBALANCE_FRACTION!r}")
         for listing in self._markets:
             self.register_entity(NamedEntity(
                 entity_name=market_entity_name(listing),
@@ -265,11 +157,11 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         return [dict(event) for event in self._deferrals]
 
     def allocation_report(self) -> dict:
-        """Last solution, including its mode-specific ``lambda_apy``.
+        """Last solution, including its ``lambda_apy``.
 
-        ``lambda_apy`` is the common whole-position APY in ``"average"`` mode
-        and the lowest last-chunk marginal APY among funded pools in
-        ``"marginal"`` mode. It is ``None`` before a solution exists.
+        ``lambda_apy`` is the lowest last-chunk marginal APY among funded
+        pools. It is ``None`` before a solution exists or when no pool holds
+        a full chunk.
         """
         nav = self.total_balance
         cash = self.get_entity(self._params.CASH_ENTITY_NAME).balance
@@ -287,7 +179,7 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         self._fresh = set(observation.states)
 
     def predict(self) -> list[ActionToTake]:
-        """Every ``REBALANCE_BARS`` bars: re-solve the water-filling and trade the deltas."""
+        """Every ``REBALANCE_BARS`` bars: re-solve the marginal allocation and trade the deltas."""
         params = self._params
         self._bar_index += 1
         self._record_history()
@@ -300,81 +192,7 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         due = (self._bar_index - 1) % params.REBALANCE_BARS == 0
         if not due and self._last_targets:
             return []
-        if params.ALLOCATION_MODE == "marginal":
-            return self._rebalance(self._solve_marginal(snapshots, nav), threshold=0.0)
-        targets = self._solve(snapshots, nav)
-        return self._rebalance(targets, threshold=params.MIN_REBALANCE_FRACTION * nav)
-
-    # ------------------------------------------------------------- solving
-    def _solve(self, snapshots: dict[str, MorphoSupplyGlobalState], nav: float) -> dict[str, float]:
-        """Water-fill the unplaced capital across the fresh eligible markets on a shared ``λ`` grid.
-
-        Only markets with a fresh state on this bar may take new capital; a
-        holding whose feed stopped is pinned at its current balance so
-        :meth:`_rebalance` never trades it on stale liquidity.
-
-        Vectorised equivalent of :func:`water_fill` over :meth:`MorphoSupplyEntity.capacity_at`:
-        every market's take ``P_i(λ)`` is tabulated on one grid of required position APYs
-        from ``TARGET_APY`` up to the best undiluted rate (the IRM curve inverted
-        by interpolation on a fine utilization grid), the totals are summed as a
-        vector and ``λ*`` is read off where the total crosses the unplaced
-        capital — coarse grid, a second grid inside the crossing bracket, then
-        linear interpolation. Runs in milliseconds for ~100 markets,
-        which is what re-solving every bar needs.
-        """
-        params = self._params
-        eligible = {name: snap for name, snap in snapshots.items()
-                    if name in self._fresh and self._selectable(name)}
-        pinned = {name: self.get_entity(name).balance for name in self._history
-                  if name not in self._fresh and self.get_entity(name).balance > 1e-9}
-        free = nav - sum(pinned.values())
-        if not eligible or free <= 0.0:
-            self._last_lambda, self._last_targets = None, pinned
-            return pinned
-        nominal = nav / max(params.MAX_POSITIONS, 1)
-        ranked = sorted(
-            eligible,
-            key=lambda name: self.get_entity(name).projected_supply_apy(nominal, eligible[name]),
-            reverse=True,
-        )[:params.MAX_POSITIONS]
-        ceiling = max(self.get_entity(name).projected_supply_apy(0.0, eligible[name]) for name in ranked)
-        floor = params.TARGET_APY
-        if ceiling <= floor:
-            self._last_lambda, self._last_targets = floor, dict.fromkeys(ranked, 0.0) | pinned
-            return self._last_targets
-        lambdas = np.linspace(floor, ceiling, _LAMBDA_POINTS)
-        takes = np.vstack([self._take_curve(name, eligible[name], lambdas, free) for name in ranked])
-        total = takes.sum(axis=0)
-        if total[0] <= free:                                  # the floor binds: place what the markets take at TARGET
-            lam, amounts = floor, takes[:, 0]
-        else:
-            # cross ``free`` on the coarse grid, then refine on a second grid inside the
-            # bracket: a spike pool's take moves by whole percents per coarse step
-            hi = int(np.argmax(total <= free)) if (total <= free).any() else _LAMBDA_POINTS - 1
-            lo = max(hi - 1, 0)
-            fine = np.linspace(lambdas[lo], lambdas[hi], _REFINE_POINTS)
-            fine_takes = np.vstack([self._take_curve(name, eligible[name], fine, free) for name in ranked])
-            fine_total = fine_takes.sum(axis=0)
-            j = int(np.argmax(fine_total <= free)) if (fine_total <= free).any() else len(fine) - 1
-            k = max(j - 1, 0)
-            if j == k or fine_total[k] <= fine_total[j]:
-                lam, amounts = float(fine[j]), fine_takes[:, j]
-            else:
-                frac = float(np.clip((fine_total[k] - free) / (fine_total[k] - fine_total[j]), 0.0, 1.0))
-                lam = float(fine[k] + frac * (fine[j] - fine[k]))
-                amounts = fine_takes[:, k] + frac * (fine_takes[:, j] - fine_takes[:, k])
-        amounts = np.maximum(np.nan_to_num(np.asarray(amounts, dtype=float), nan=0.0, posinf=0.0), 0.0)
-        placed = float(amounts.sum())
-        if placed > free > 0.0:
-            amounts = amounts * (free / placed)
-        self._last_lambda = lam
-        self._last_targets = {name: float(amount) for name, amount in zip(ranked, amounts, strict=True)} | pinned
-        return self._last_targets
-
-    def _take_curve(self, name: str, snap: MorphoSupplyGlobalState, lambdas: np.ndarray, nav: float) -> np.ndarray:
-        """``P(λ)`` for one market on the ``λ`` grid: the entity's take, capped by the entry gate and ``nav``."""
-        cap = min(self._liquidity_cap(name), nav)
-        return self.get_entity(name).take_curve(lambdas, snap, cap)
+        return self._rebalance(self._solve_marginal(snapshots, nav))
 
     # ---------------------------------------------------- marginal optimiser
     def _solve_marginal(self, snapshots: dict[str, MorphoSupplyGlobalState], nav: float) -> dict[str, float]:
@@ -479,17 +297,16 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
         return self.get_entity(name).liquidity_capacity(multiple)
 
     # ---------------------------------------------------------- rebalancing
-    def _rebalance(self, targets: dict[str, float], threshold: float) -> list[ActionToTake]:
+    def _rebalance(self, targets: dict[str, float]) -> list[ActionToTake]:
         params = self._params
         cash = params.CASH_ENTITY_NAME
         actions: list[ActionToTake] = []
-        # 1. withdraw from over-allocated markets (and from markets no longer targeted);
-        #    the churn guard applies to resizes only, never to full exits
+        # 1. withdraw from over-allocated markets (and from markets no longer targeted)
         for name in self._history:
             entity = self.get_entity(name)
             target = targets.get(name, 0.0)
             excess = entity.balance - target
-            if excess <= 0.0 or (target > 0.0 and excess <= threshold):
+            if excess <= 0.0:
                 continue
             gas, bps = entity.leg_cost_model
             wanted = max((excess - gas) / (1.0 + bps / 1e4), 0.0)
@@ -505,11 +322,11 @@ class MorphoSupplyAllocationStrategy(BaseStrategy[MorphoSupplyAllocationParams])
                     desired, strategy.get_entity(source).max_withdrawable_notional),
             )
         # 2. deposit into under-allocated markets, best first, out of the cash available at
-        #    execute time; the churn guard applies to resizes only, never to first entries
+        #    execute time
         for name, target in sorted(targets.items(), key=lambda item: -item[1]):
             balance = self.get_entity(name).balance
             shortfall = target - balance
-            if shortfall <= 0.0 or (balance > 0.0 and shortfall <= threshold):
+            if shortfall <= 0.0:
                 continue
             actions += self.transfer(
                 from_entity=cash, to_entity=name,

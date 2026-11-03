@@ -108,10 +108,11 @@ def test_backtest_default_costs_are_per_chain_gas_without_proportional_fees(monk
 def test_backtest_builds_the_allocator_from_flags(monkeypatch, helpers):
     """--strategy allocation maps every allocator flag and keeps the allocator's own signal window."""
     backtest = _load_script(monkeypatch, helpers, "backtest")
-    args = backtest.parse_args(["--strategy", "allocation", "--mode", "marginal", "--target-apy", "0.04",
+    args = backtest.parse_args(["--strategy", "allocation", "--target-apy", "0.04",
                                 "--gas-usd-per-leg", "0.5", "--hold-horizon-bars", "24", "--rebalance-bars", "2"])
     params = backtest.build_strategy(args, [_listing()]).params
-    assert (params["ALLOCATION_MODE"], params["TARGET_APY"], params["GAS_USD_PER_LEG"]) == ("marginal", 0.04, 0.5)
+    assert (params["TARGET_APY"], params["GAS_USD_PER_LEG"]) == (0.04, 0.5)
+    assert "ALLOCATION_MODE" not in params
     assert (params["HOLD_HORIZON_BARS"], params["REBALANCE_BARS"], params["SIGNAL_WINDOW_BARS"]) == (24, 2, 1)
     assert params["GAS_USD_BY_CHAIN"] == {}  # one explicit figure replaces the per-chain table
 
@@ -122,8 +123,8 @@ def test_baude_paper_markets_are_distinct_ethereum_usdc_listings(monkeypatch, he
     listings = baude.paper_listings()
     assert len({listing.market_id for listing in listings}) == len(listings) == 10
     assert {(listing.chain_id, listing.loan_symbol) for listing in listings} == {(1, "USDC")}
-    daily = baude.allocation_params("marginal", daily=True, gas=False, paper_filters=True)
-    hourly = baude.allocation_params("marginal", daily=False, gas=True)
+    daily = baude.allocation_params(daily=True, gas=False, paper_filters=True)
+    hourly = baude.allocation_params(daily=False, gas=True)
     assert (daily.REBALANCE_BARS, daily.SIGNAL_WINDOW_BARS, daily.GAS_USD_PER_LEG, daily.MAX_LLTV) == (24, 24, 0.0, 1.0)
     assert (hourly.REBALANCE_BARS, hourly.GAS_USD_BY_CHAIN[1], hourly.TARGET_APY) == (1, 0.5, 0.0)
 
@@ -144,7 +145,7 @@ def test_baude_run_allocation_on_synthetic_panels(monkeypatch, helpers):
     baude = _load_script(monkeypatch, helpers, "baude_replication")
     panels = [_panel(helpers, _listing("a", "LOW"), 0.03), _panel(helpers, _listing("d", "HIGH"), 0.06)]
     apy, fees = baude.run_allocation(panels, helpers.observations(panels), 100_000.0,
-                                     baude.allocation_params("average", daily=True, gas=False, paper_filters=True))
+                                     baude.allocation_params(daily=True, gas=False, paper_filters=True))
     assert 0.0 < apy < 0.06
     assert fees == pytest.approx(0.0)
 
