@@ -32,7 +32,7 @@ from fractal.loaders.morpho_markets import (
     discover_chains,
     market_sizes_as_of,
 )
-from fractal.loaders.onchain import LogReader, RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.onchain import GasPriceHistoryLoader, LogReader, RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
@@ -40,6 +40,7 @@ from fractal.loaders.structs import (
     BorosMarketHistory,
     DEXHistory,
     FundingHistory,
+    GasPriceHistory,
     KlinesHistory,
     LendingHistory,
     PendleMarketHistory,
@@ -102,6 +103,8 @@ __all__ = [
     "FredSeriesLoader",
     "FundingHistory",
     "GMXV1FundingLoader",
+    "GasPriceHistory",
+    "GasPriceHistoryLoader",
     "GraphLoaderException",
     # Pre-1.3.0 alias (deprecated; will be removed in a future major release).
     "HyperLiquidPerpsPricesLoader",
