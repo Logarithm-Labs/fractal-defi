@@ -16,6 +16,7 @@ from fractal.loaders.defillama import (
     DefiLlamaTVLLoader,
     DefiLlamaYieldsLoader,
 )
+from fractal.loaders.etherscan import EtherscanClient, EtherscanError
 from fractal.loaders.fred import FredSeriesLoader
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
@@ -31,7 +32,7 @@ from fractal.loaders.morpho_markets import (
     discover_chains,
     market_sizes_as_of,
 )
-from fractal.loaders.onchain import RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.onchain import LogReader, RpcLoaderException, UniswapV3SwapsLoader
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
@@ -96,6 +97,8 @@ __all__ = [
     "DefiLlamaTVLLoader",
     "DefiLlamaYieldsLoader",
     "EthereumUniswapV2PoolDataLoader",
+    "EtherscanClient",
+    "EtherscanError",
     "FredSeriesLoader",
     "FundingHistory",
     "GMXV1FundingLoader",
@@ -110,6 +113,7 @@ __all__ = [
     "LendingHistory",
     "Loader",
     "LoaderType",
+    "LogReader",
     "MonteCarloHourPriceLoader",
     "MonteCarloPriceLoader",
     "MorphoMarketInfo",

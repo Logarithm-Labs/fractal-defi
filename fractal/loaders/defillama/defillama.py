@@ -23,20 +23,15 @@ request paths (``connectionpool``, ``util.retry``, ``poolmanager``) are
 redacted too. Other sinks are not covered — e.g. third-party HTTP debugging
 hooks — so do not enable verbose HTTP tracing with a real key.
 """
-import contextlib
-import logging
 import os
-import threading
 import warnings
-from collections import Counter
-from collections.abc import Iterator
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
 from fractal.loaders._dt import to_seconds, to_utc
-from fractal.loaders._http import HttpClient, LoaderHttpError
+from fractal.loaders._http import KEY_REDACTOR, HttpClient, KeyRedactingFilter, LoaderHttpError
 from fractal.loaders.base_loader import Loader, LoaderType
 from fractal.loaders.structs import DEXHistory, RateHistory, TVLHistory
 
@@ -333,63 +328,10 @@ class DefiLlamaDEXLoader(DefiLlamaBaseLoader):
         )
 
 
-# urllib3 loggers whose records can carry the request path (and so the key).
-_REDACTED_LOGGERS = ("urllib3.connectionpool", "urllib3.util.retry", "urllib3.poolmanager")
-
-
-class _KeyRedactingFilter(logging.Filter):
-    """Scrub the API keys of in-flight Pro requests from urllib3 log records.
-
-    One shared instance is installed once on every logger in
-    ``_REDACTED_LOGGERS``; each request registers its key only while it
-    runs. Installing once, instead of adding and removing a filter per
-    request, avoids racing with a concurrent request whose record is being
-    filtered while the logger's filter list changes.
-    """
-
-    def __init__(self) -> None:
-        super().__init__()
-        self._lock = threading.Lock()
-        self._secrets: Counter[str] = Counter()
-        self._installed = False
-
-    @staticmethod
-    def scrub(text: str, secret: str) -> str:
-        return text.replace(secret, "<redacted>")
-
-    @contextlib.contextmanager
-    def redacting(self, secret: str) -> Iterator[None]:
-        """Redact ``secret`` from urllib3 log records inside the block."""
-        with self._lock:
-            if not self._installed:
-                for name in _REDACTED_LOGGERS:
-                    logging.getLogger(name).addFilter(self)
-                self._installed = True
-            self._secrets[secret] += 1
-        try:
-            yield
-        finally:
-            with self._lock:
-                self._secrets[secret] -= 1
-                if self._secrets[secret] <= 0:
-                    del self._secrets[secret]
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        with self._lock:
-            secrets = list(self._secrets)
-        if not secrets:
-            return True
-        message = record.getMessage()
-        redacted = message
-        for secret in secrets:
-            redacted = self.scrub(redacted, secret)
-        if redacted != message:
-            record.msg = redacted
-            record.args = ()
-        return True
-
-
-_KEY_REDACTOR = _KeyRedactingFilter()
+# The shared redactor lives in ``_http``; the private names stay for callers
+# and tests that reach them through this module.
+_KeyRedactingFilter = KeyRedactingFilter
+_KEY_REDACTOR = KEY_REDACTOR
 
 
 class DefiLlamaProLoader(DefiLlamaBaseLoader):
