@@ -16,6 +16,7 @@ from fractal.loaders.defillama import (
     DefiLlamaTVLLoader,
     DefiLlamaYieldsLoader,
 )
+from fractal.loaders.fred import FredSeriesLoader
 from fractal.loaders.gmx_v1 import GMXV1FundingLoader
 from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperliquidFundingRatesLoader,
@@ -89,6 +90,7 @@ __all__ = [
     "DefiLlamaTVLLoader",
     "DefiLlamaYieldsLoader",
     "EthereumUniswapV2PoolDataLoader",
+    "FredSeriesLoader",
     "FundingHistory",
     "GMXV1FundingLoader",
     "GraphLoaderException",
