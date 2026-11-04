@@ -14,6 +14,7 @@ from fractal.core.entities.models.pendle_math import (
     amm_swap_exact_asset_in,
     amm_swap_exact_pt,
     apy_from_pt_price,
+    hybrid_oracle_price,
     linear_discount_oracle_price,
     ln_rate,
     pt_price_from_apy,
@@ -77,6 +78,28 @@ def test_twap_oracle_price_matches_compounded_formula():
         pt_price_from_apy(SUSDE_APY, SUSDE_YEARS), rel=1e-12
     )
     assert twap_oracle_price(SUSDE_LN_RATE, 0.0) == 1.0
+
+
+@pytest.mark.core
+def test_hybrid_oracle_takes_the_higher_of_discount_and_twap():
+    """``EOPendlePTFeedHybrid``: the linear discount is a floor under the TWAP price."""
+    half_year = 0.5 * SECONDS_PER_YEAR
+    deep_discount = hybrid_oracle_price(0.20, 0.05, half_year)  # linear 0.90 < TWAP exp(-0.025)
+    assert deep_discount == pytest.approx(twap_oracle_price(0.05, half_year), rel=1e-15)
+    shallow_discount = hybrid_oracle_price(0.01, 0.05, half_year)  # linear 0.995 > TWAP
+    assert shallow_discount == pytest.approx(linear_discount_oracle_price(0.01, half_year), rel=1e-15)
+
+
+@pytest.mark.core
+def test_hybrid_oracle_is_capped_at_one():
+    """A negative TWAP rate prices PT above par; the feed never reports more than 1."""
+    assert hybrid_oracle_price(0.05, -0.05, 0.5 * SECONDS_PER_YEAR) == 1.0
+
+
+@pytest.mark.core
+def test_hybrid_oracle_is_one_at_and_after_expiry():
+    assert hybrid_oracle_price(0.10, 0.08, 0.0) == 1.0
+    assert hybrid_oracle_price(0.10, 0.08, -60.0) == 1.0
 
 
 @pytest.mark.core
