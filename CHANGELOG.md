@@ -6,6 +6,12 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
+### Added
+
+- **`AaveEntity(liquidation_mode="partial", liquidation_bonus=...)`** — opt-in Aave V3 liquidation (`LiquidationLogic.sol`, aave-v3-origin `8305565`): liquidatable only below HF 1, liquidators repay up to 50% of the debt (100% at HF ≤ 0.95 or when collateral or debt is under $2000), seize `repaid × bonus` of collateral, may not leave under $1000 of either leg, and repeat while HF stays below 1; a collateral shortfall writes the remaining debt off. The bonus is validated as on `PoolConfigurator` (`> 1`, `liq_thr · bonus ≤ 1`). The default `"full"` mode keeps the existing wipe.
+- **`AaveGlobalState.supply_cap` / `reserve_total_supply`** — optional reserve supply cap: `action_deposit` rejects a deposit that would take the other suppliers' total plus this position past the cap. Like Aave, only new supply is checked (accrued interest may exceed the cap). No cap by default.
+- **`aave_math.liquidation_call`** (`fractal.core.entities.models.aave_math`) — one Aave V3 `liquidationCall` on a single-collateral, single-debt position as a pure function, with the protocol constants.
+
 ## [v1.4.0] — 2026-11-03
 
 Morpho Blue supply research tooling (a supply entity, rotation and

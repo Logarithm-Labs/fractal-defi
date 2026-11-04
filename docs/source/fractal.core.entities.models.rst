@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   fractal.core.entities.models.aave_math
    fractal.core.entities.models.allocation_math
    fractal.core.entities.models.boros_math
    fractal.core.entities.models.morpho_market_sim
