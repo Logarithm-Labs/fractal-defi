@@ -141,6 +141,13 @@ when the observations carry `fee_growth0/1`.
   `benchmark` marker, excluded from the default run), `make benchmark`,
   `make profile` / `make profile-view` (`scripts/profile_backtest.py`,
   cProfile + SnakeViz) and a manual, non-gating CI job.
+- **Release consistency check** — `make release-check`
+  (`scripts/release_check.py`, stdlib only, no network): version, date
+  and CHANGELOG agree, `[Unreleased]` is folded in, the tag does not exist
+  yet, dependency floors match in all three places, every module has a
+  docs page, `__all__` entries exist, new data files are whitelisted and
+  examples' `fractal` imports resolve. Runs in CI on release PRs; the CI
+  workflow now declares read-only `permissions`.
 - **Pendle PT + Morpho Blue + Boros** — a fixed-term paradigm and three
   protocol entities (supersedes #83):
   `BaseFixedTermEntity` / `BaseFixedTermGlobalState` (`seconds_to_expiry`

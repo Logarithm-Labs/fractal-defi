@@ -31,7 +31,7 @@ TESTS    := tests
 EXAMPLES := examples
 
 .PHONY: help setup install pre-commit format lint \
-        test test-slow test-integration test-all test-e2e smoke benchmark profile profile-view \
+        test test-slow test-integration test-all test-e2e smoke release-check benchmark profile profile-view \
         docs docs-strict docs-serve docs-clean \
         clean clean-runs clean-all \
         build release-test release post-release
@@ -55,6 +55,7 @@ help:
 	@echo "    test-all         every layer combined (core + slow + integration)"
 	@echo "    test-e2e         Docker MLflow end-to-end harness"
 	@echo "    smoke            build wheel, install in throwaway venv, run imports + tests against it"
+	@echo "    release-check    pre-release consistency: versions, dependency floors, docs pages, exports, examples"
 	@echo "    benchmark        run deterministic offline performance benchmarks"
 	@echo "    profile          write cProfile + text reports under profile-artifacts/"
 	@echo "    profile-view     open the generated profile in SnakeViz"
@@ -118,6 +119,13 @@ test-e2e:
 
 smoke:
 	bash scripts/smoke/run.sh
+
+# Versions / CHANGELOG / CITATION agree, dependency floors match in all
+# three places, every module has a docs page, examples' imports resolve.
+# BASE is the last release; ``versions`` fails on dev while [Unreleased]
+# still has entries — that is the point before a release.
+release-check:
+	$(PYTHON) scripts/release_check.py --base $(or $(BASE),origin/main)
 
 benchmark:
 	pytest -m benchmark --benchmark-only tests/benchmarks
