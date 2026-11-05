@@ -8,7 +8,7 @@ from fractal.loaders.binance import (
     BinancePriceLoader,
     BinanceSpotPriceLoader,
 )
-from fractal.loaders.boros import BorosMarketInfo, BorosMarketLoader
+from fractal.loaders.boros import BorosLoaderException, BorosMarketInfo, BorosMarketLoader
 from fractal.loaders.defillama import (
     DefiLlamaDEXLoader,
     DefiLlamaPoolLoader,
@@ -25,7 +25,7 @@ from fractal.loaders.hyperliquid import (  # Pre-1.3.0 alias.
     HyperLiquidPerpsPricesLoader,
     HyperliquidPerpsPricesLoader,
 )
-from fractal.loaders.morpho import MorphoMarketInfo, MorphoMarketLoader
+from fractal.loaders.morpho import MorphoLoaderException, MorphoMarketInfo, MorphoMarketLoader
 from fractal.loaders.morpho_markets import (
     MorphoMarketListing,
     MorphoMarketsLoader,
@@ -36,11 +36,16 @@ from fractal.loaders.onchain import (
     GasPriceHistoryLoader,
     LogReader,
     MorphoOraclePriceLoader,
-    RpcLoaderException,
     UniswapV3SwapsLoader,
     calibrate_oracle_price,
 )
-from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
+from fractal.loaders.pendle import (
+    PendleLoaderException,
+    PendleMarketInfo,
+    PendleMarketLoader,
+    PendleMarketState,
+    PendleOHLCVLoader,
+)
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
 from fractal.loaders.structs import (
@@ -94,6 +99,7 @@ __all__ = [
     "BinanceKlinesLoader",
     "BinancePriceLoader",
     "BinanceSpotPriceLoader",
+    "BorosLoaderException",
     "BorosMarketHistory",
     "BorosMarketInfo",
     "BorosMarketLoader",
@@ -126,11 +132,13 @@ __all__ = [
     "LogReader",
     "MonteCarloHourPriceLoader",
     "MonteCarloPriceLoader",
+    "MorphoLoaderException",
     "MorphoMarketInfo",
     "MorphoMarketListing",
     "MorphoMarketLoader",
     "MorphoMarketsLoader",
     "MorphoOraclePriceLoader",
+    "PendleLoaderException",
     "PendleMarketHistory",
     "PendleMarketInfo",
     "PendleMarketLoader",
@@ -140,7 +148,6 @@ __all__ = [
     "PriceHistory",
     "RateHistory",
     "RpcCallError",
-    "RpcLoaderException",
     "StETHLoader",
     "SwapsHistory",
     "TVLHistory",

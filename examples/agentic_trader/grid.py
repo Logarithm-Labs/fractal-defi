@@ -1,4 +1,6 @@
+import sys
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings('ignore')
 
@@ -6,6 +8,8 @@ from datetime import datetime
 
 from prompts import BEARISH_PROMPT, BULLISH_PROMPT, NEUTRAL_PROMPT
 from sklearn.model_selection import ParameterGrid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, so ``examples.*`` imports work from this folder
 
 from examples.agentic_trader.backtest import AgentTradingStrategy
 from fractal.core.base import Observation

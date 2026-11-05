@@ -51,11 +51,12 @@ def build_leveraged_frame(cfg: dict, start: datetime, end: datetime) -> tuple:
     ``"linear"`` — ``1 − base_discount · t`` (``cfg["base_discount"]``).
     """
     bar = cfg["bar"]
+    interval = "1d" if bar == "day" else "1h"
     info = pendle_market_info(cfg["chain_id"], cfg["pendle_market"])
-    pendle = PendleMarketLoader(cfg["pendle_market"], cfg["chain_id"], start, end, time_frame=bar,
+    pendle = PendleMarketLoader(cfg["pendle_market"], cfg["chain_id"], start, end, interval=interval,
                                 expiry=info.expiry).read(with_run=True)
     morpho = MorphoMarketLoader(cfg["morpho_market"], cfg["chain_id"], start, end, resolution=_BAR_HOURS[bar],
-                                interval="HOUR" if bar == "hour" else "DAY").read(with_run=True)
+                                interval=interval).read(with_run=True)
     frame = pendle.join(morpho, how="inner").sort_index()
     if frame.empty:
         raise RuntimeError("Pendle and Morpho histories do not overlap on the requested grid")
@@ -118,21 +119,21 @@ def leveraged_observations(frame: pd.DataFrame, cfg: dict) -> list[Observation]:
 def build_hedged_frame(cfg: dict, start: datetime, end: datetime) -> tuple:
     """Pendle (volatile PT) + Binance price/funding (+ Boros mark APR) on a daily or hourly grid."""
     bar = cfg["bar"]
-    info = pendle_market_info(cfg["chain_id"], cfg["pendle_market"])
-    pendle = PendleMarketLoader(cfg["pendle_market"], cfg["chain_id"], start, end, time_frame=bar,
-                                expiry=info.expiry).read(with_run=True)
     interval = "1d" if bar == "day" else "1h"
+    info = pendle_market_info(cfg["chain_id"], cfg["pendle_market"])
+    pendle = PendleMarketLoader(cfg["pendle_market"], cfg["chain_id"], start, end, interval=interval,
+                                expiry=info.expiry).read(with_run=True)
     price = BinancePriceLoader(cfg["binance_ticker"], interval=interval, start_time=start,
                                end_time=end).read(with_run=True)
     funding = BinanceFundingLoader(cfg["binance_ticker"], start_time=start, end_time=end).read(with_run=True)
-    grid_funding = funding["rate"].resample("1d" if bar == "day" else "1h").sum()  # cash-flow semantics
+    grid_funding = funding["rate"].resample(interval).sum()  # cash-flow semantics
     frame = pendle.join(price.rename(columns={"price": "spot"}), how="inner")
     frame = frame.join(grid_funding.rename("funding_rate"), how="left")
     frame["funding_rate"] = frame["funding_rate"].fillna(0.0)  # a bar without a settlement carries no cash flow
     boros_maturity = None
     if cfg.get("boros_market"):
         binfo = boros_market_info(int(cfg["boros_market"]))
-        boros = BorosMarketLoader(int(cfg["boros_market"]), start, end, time_frame="1d" if bar == "day" else "1h",
+        boros = BorosMarketLoader(int(cfg["boros_market"]), start, end, interval=interval,
                                   maturity=binfo.maturity, include_settlements=False).read(with_run=True)
         frame = frame.join(boros[["mark_apr_close"]].rename(columns={"mark_apr_close": "boros_mark_apr"}), how="left")
         frame["boros_mark_apr"] = frame["boros_mark_apr"].ffill()

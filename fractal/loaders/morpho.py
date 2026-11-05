@@ -43,6 +43,7 @@ column documents.
 """
 import math
 import re
+import time as _time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -59,7 +60,9 @@ from fractal.loaders.structs import LendingHistory, PriceHistory
 MORPHO_GRAPHQL_URL = "https://api.morpho.org/graphql"
 _REQUEST_SLEEP_SECONDS = 0.1
 _MARKET_ID_RE = re.compile(r"^0x[a-fA-F0-9]{64}$")
-_INTERVAL_SECONDS = {"HOUR": 3600, "DAY": 86_400}
+# ``interval`` (the library's bar convention) -> the API's TimeseriesOptions interval.
+_API_INTERVALS = {"1h": "HOUR", "1d": "DAY"}
+_INTERVAL_SECONDS = {"1h": 3600, "1d": 86_400}
 # Bumped whenever the emitted column set changes, so a cached CSV written by
 # an older loader cannot be read back as if it had today's columns.
 _CACHE_SCHEMA = "v4marketstate"
@@ -279,7 +282,7 @@ class MorphoMarketLoader(Loader):
         chain_id: EVM chain id.
         start_time / end_time: inclusive UTC window.
         resolution: bar length in hours the rates are converted to.
-        interval: API interval, ``"HOUR"`` or ``"DAY"``.
+        interval: API bar, ``"1h"`` (default) or ``"1d"``.
         compounding: ``"continuous"`` (per-bar exponent ``ln(1+apy)·Δt/YEAR``)
             or ``"linear"`` (``apy · Δt / YEAR``, Aave parity).
         include_market_totals: include token-unit supply/borrow assets and
@@ -305,7 +308,7 @@ class MorphoMarketLoader(Loader):
         end_time: datetime | None = None,
         *,
         resolution: int = 1,
-        interval: str = "HOUR",
+        interval: str = "1h",
         compounding: str = "continuous",
         include_market_totals: bool = False,
         max_window_days: float | None = None,
@@ -363,10 +366,12 @@ class MorphoMarketLoader(Loader):
     def _fetch_market(self) -> dict[str, Any]:
         query = _HISTORY_QUERY % (_MARKET_TOTALS_QUERY if self.include_market_totals else "")
         payloads = []
-        for lo, hi in self._request_windows():
+        for i, (lo, hi) in enumerate(self._request_windows()):
+            if i:
+                _time.sleep(_REQUEST_SLEEP_SECONDS)  # pace chunked windows under the API rate limit
             data = graphql_query(self._http, query, {
                 "id": self.market_id, "cid": self.chain_id,
-                "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": self.interval},
+                "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": _API_INTERVALS[self.interval]},
             })
             market = data.get("marketById")
             if not market:

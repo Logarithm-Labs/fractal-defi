@@ -13,7 +13,7 @@ class _RangeLimitedHttp:
     """Fake HttpClient: rejects eth_getLogs ranges wider than max_span.
 
     ``reject_as_http`` picks the failure mode — a JSON-RPC error body
-    (RpcLoaderException path) or a transport-level LoaderHttpError.
+    (RpcCallError path) or a transport-level LoaderHttpError.
     """
 
     def __init__(self, max_span: int, reject_as_http: bool):

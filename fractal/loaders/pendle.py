@@ -39,8 +39,10 @@ from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
 PENDLE_API = "https://api-v2.pendle.finance/core"
 PENDLE_ROUTER = "0x888888888889758F76e7103c6CbF23ABbF58F946"  # same on every chain
 _REQUEST_SLEEP_SECONDS = 0.65  # 100 CU/min on the free tier
-_TIME_FRAMES = {"hour": 3600, "day": 86_400, "week": 7 * 86_400}
-_OHLCV_TIME_FRAMES = {"hour": 3600, "day": 86_400, "week": 7 * 86_400}
+# ``interval`` (the library's bar convention, as in the Binance/Hyperliquid
+# loaders) -> the API's ``time_frame`` value; seconds per API time frame.
+_API_TIME_FRAMES = {"1h": "hour", "1d": "day", "1w": "week"}
+_TIME_FRAME_SECONDS = {"hour": 3600, "day": 86_400, "week": 7 * 86_400}
 _OHLCV_ROW_CAP = 1440
 _READ_STATE_SELECTOR = function_selector("readState(address)")
 
@@ -173,8 +175,8 @@ class PendleMarketLoader(Loader):
         market_address: Pendle market (LP) address.
         chain_id: EVM chain id (1, 42161, 8453, …).
         start_time / end_time: inclusive UTC window.
-        time_frame: ``"hour"`` or ``"day"``.
-        daily_fallback: with ``time_frame="hour"``, fill the part of the
+        interval: bar length, ``"1h"`` (default) or ``"1d"``.
+        daily_fallback: with ``interval="1h"``, fill the part of the
             window older than the API's hourly retention with daily rows
             stretched to hourly (a warning says how many bars).
         expiry: market expiry; fetched via :func:`get_market_info` when
@@ -189,22 +191,22 @@ class PendleMarketLoader(Loader):
         start_time: datetime,
         end_time: datetime | None = None,
         *,
-        time_frame: str = "hour",
+        interval: str = "1h",
         daily_fallback: bool = True,
         expiry: datetime | None = None,
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
-        if time_frame not in ("hour", "day"):
-            raise ValueError(f"time_frame must be 'hour' or 'day', got {time_frame!r}")
+        if interval not in ("1h", "1d"):
+            raise ValueError(f"interval must be '1h' or '1d', got {interval!r}")
         self.market_address = validate_evm_address(market_address, field="market_address")
         self.chain_id = int(chain_id)
         self.start_time = to_utc(start_time)
         self.end_time = to_utc(end_time) if end_time is not None else utcnow()
         if self.end_time < self.start_time:
             raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
-        self.time_frame = time_frame
+        self.interval = interval
         self.daily_fallback = daily_fallback
         self._expiry: datetime | None = to_utc(expiry) if expiry is not None else None
         self._http = http or HttpClient()
@@ -219,15 +221,15 @@ class PendleMarketLoader(Loader):
     def _cache_key(self) -> str:
         tail = "dfb" if self.daily_fallback else "nofb"
         return (
-            f"{self.chain_id}-{self.market_address}-{self.time_frame}-"
+            f"{self.chain_id}-{self.market_address}-{self.interval}-"
             f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-{to_seconds(self.expiry)}-{tail}"
         )
 
     # ---------------------------------------------------------- fetch
     def _fetch(self, time_frame: str, start: datetime, end: datetime) -> list[dict[str, Any]]:
-        """Forward-paging fetch of one time frame over ``[start, end]``."""
+        """Forward-paging fetch of one API ``time_frame`` (``"hour"``/``"day"``) over ``[start, end]``."""
         url = f"{PENDLE_API}/v3/{self.chain_id}/markets/{self.market_address}/historical-data"
-        step_seconds = _TIME_FRAMES[time_frame]
+        step_seconds = _TIME_FRAME_SECONDS[time_frame]
         rows: list[dict[str, Any]] = []
         cursor = start
         while cursor <= end:
@@ -248,8 +250,8 @@ class PendleMarketLoader(Loader):
         return rows
 
     def extract(self) -> None:
-        rows = self._fetch(self.time_frame, self.start_time, self.end_time)
-        if self.time_frame == "hour" and self.daily_fallback:
+        rows = self._fetch(_API_TIME_FRAMES[self.interval], self.start_time, self.end_time)
+        if self.interval == "1h" and self.daily_fallback:
             # Pendle keeps ~60 days of hourly rows: fill the older part of the
             # window (or all of it, when the hourly response is empty) from the
             # daily series, stretched to the hourly grid.
@@ -324,7 +326,10 @@ class PendleMarketLoader(Loader):
 
 # -------------------------------------------------------------- OHLCV
 class PendleOHLCVLoader(Loader):
-    """USD candles of a PT / YT / LP address → :class:`KlinesHistory`."""
+    """USD candles of a PT / YT / LP address → :class:`KlinesHistory`.
+
+    ``interval`` is the candle size: ``"1h"`` (default), ``"1d"`` or ``"1w"``.
+    """
 
     def __init__(
         self,
@@ -333,26 +338,26 @@ class PendleOHLCVLoader(Loader):
         start_time: datetime,
         end_time: datetime | None = None,
         *,
-        time_frame: str = "hour",
+        interval: str = "1h",
         loader_type: LoaderType = LoaderType.CSV,
         http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
-        if time_frame not in _OHLCV_TIME_FRAMES:
-            raise ValueError(f"time_frame must be one of {sorted(_OHLCV_TIME_FRAMES)}, got {time_frame!r}")
+        if interval not in _API_TIME_FRAMES:
+            raise ValueError(f"interval must be one of {sorted(_API_TIME_FRAMES)}, got {interval!r}")
         self.token_address = validate_evm_address(token_address, field="token_address")
         self.chain_id = int(chain_id)
         self.start_time = to_utc(start_time)
         self.end_time = to_utc(end_time) if end_time is not None else utcnow()
         if self.end_time < self.start_time:
             raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
-        self.time_frame = time_frame
+        self.interval = interval
         self._http = http or HttpClient()
         self._rows: list[dict[str, Any]] = []
 
     def _cache_key(self) -> str:
         return (
-            f"{self.chain_id}-{self.token_address}-{self.time_frame}-"
+            f"{self.chain_id}-{self.token_address}-{self.interval}-"
             f"{to_seconds(self.start_time)}-{to_seconds(self.end_time)}"
         )
 
@@ -370,12 +375,13 @@ class PendleOHLCVLoader(Loader):
 
     def extract(self) -> None:
         url = f"{PENDLE_API}/v4/{self.chain_id}/prices/{self.token_address}/ohlcv"
-        step_seconds = _OHLCV_TIME_FRAMES[self.time_frame]
+        time_frame = _API_TIME_FRAMES[self.interval]
+        step_seconds = _TIME_FRAME_SECONDS[time_frame]
         rows: list[dict[str, Any]] = []
         cursor = self.start_time
         while cursor <= self.end_time:
             payload = self._http.get(url, params={
-                "time_frame": self.time_frame, "timestamp_start": _iso(cursor), "timestamp_end": _iso(self.end_time),
+                "time_frame": time_frame, "timestamp_start": _iso(cursor), "timestamp_end": _iso(self.end_time),
             })
             batch = self._parse(payload)
             if not batch:

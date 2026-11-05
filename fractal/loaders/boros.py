@@ -34,7 +34,7 @@ from fractal.loaders.structs import BorosMarketHistory
 
 BOROS_API = "https://api-boros.pendle.finance/apis/v1"
 _REQUEST_SLEEP_SECONDS = 0.35
-_TIME_FRAMES = {"5m": 300, "1h": 3600, "1d": 86_400, "1w": 7 * 86_400}
+_INTERVAL_SECONDS = {"5m": 300, "1h": 3600, "1d": 86_400, "1w": 7 * 86_400}  # also the API timeFrame values
 _OHLCV_CAP = 200
 _SETTLEMENT_CAP = 5000
 _TICK_BASE = 1.00005
@@ -148,7 +148,7 @@ class BorosMarketLoader(Loader):
     Args:
         market_id: Boros market id (integer).
         start_time / end_time: inclusive UTC window.
-        time_frame: candle size (``"1h"`` default).
+        interval: candle size, ``"5m"``, ``"1h"`` (default), ``"1d"`` or ``"1w"``.
         maturity: market maturity; fetched via :func:`get_market_info` when omitted.
         include_settlements: also pull ``settlement-summary`` rows and join them.
         underlying: ``(asset_symbol, exchange)`` to fetch
@@ -162,7 +162,7 @@ class BorosMarketLoader(Loader):
         start_time: datetime,
         end_time: datetime | None = None,
         *,
-        time_frame: str = "1h",
+        interval: str = "1h",
         maturity: datetime | None = None,
         include_settlements: bool = True,
         underlying: tuple | None = None,
@@ -170,14 +170,14 @@ class BorosMarketLoader(Loader):
         http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
-        if time_frame not in _TIME_FRAMES:
-            raise ValueError(f"time_frame must be one of {sorted(_TIME_FRAMES)}, got {time_frame!r}")
+        if interval not in _INTERVAL_SECONDS:
+            raise ValueError(f"interval must be one of {sorted(_INTERVAL_SECONDS)}, got {interval!r}")
         self.market_id = int(market_id)
         self.start_time = to_utc(start_time)
         self.end_time = to_utc(end_time) if end_time is not None else utcnow()
         if self.end_time < self.start_time:
             raise ValueError(f"end_time {self.end_time} precedes start_time {self.start_time}")
-        self.time_frame = time_frame
+        self.interval = interval
         self.include_settlements = include_settlements
         self.underlying = underlying
         self._maturity: datetime | None = to_utc(maturity) if maturity is not None else None
@@ -197,19 +197,19 @@ class BorosMarketLoader(Loader):
         if self.underlying:
             tail += f"-{self.underlying[0]}-{self.underlying[1]}".lower()
         return (
-            f"m{self.market_id}-{self.time_frame}-{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-"
+            f"m{self.market_id}-{self.interval}-{to_seconds(self.start_time)}-{to_seconds(self.end_time)}-"
             f"{to_seconds(self.maturity)}-{tail}"
         )
 
     # ----------------------------------------------------------- fetch
     def _fetch_candles(self) -> list[dict[str, Any]]:
-        window = _OHLCV_CAP * _TIME_FRAMES[self.time_frame]
+        window = _OHLCV_CAP * _INTERVAL_SECONDS[self.interval]
         rows: list[dict[str, Any]] = []
         cursor = to_seconds(self.start_time)
         end = to_seconds(self.end_time)
         while cursor <= end:
             payload = self._http.get(f"{BOROS_API}/markets/ohlcv", params={
-                "marketId": self.market_id, "timeFrame": self.time_frame,
+                "marketId": self.market_id, "timeFrame": self.interval,
                 "startTimestamp": cursor, "endTimestamp": min(cursor + window - 1, end),
             })
             rows.extend(_rows(payload))
@@ -241,7 +241,7 @@ class BorosMarketLoader(Loader):
     def _fetch_underlying(self) -> list[dict[str, Any]]:
         asset, exchange = self.underlying
         payload = self._http.get(f"{BOROS_API}/markets/historical-underlying-apr", params={
-            "assetSymbol": asset, "exchange": exchange, "timeFrame": _TIME_FRAMES[self.time_frame],
+            "assetSymbol": asset, "exchange": exchange, "timeFrame": _INTERVAL_SECONDS[self.interval],
             "startTimestamp": to_seconds(self.start_time), "endTimestamp": to_seconds(self.end_time),
         })
         return _rows(payload)
@@ -321,6 +321,6 @@ class BorosMarketLoader(Loader):
         )
 
 
-def bar_seconds(time_frame: str) -> int:
-    """Seconds per candle for a Boros ``time_frame``."""
-    return _TIME_FRAMES[time_frame]
+def bar_seconds(interval: str) -> int:
+    """Seconds per candle for a Boros ``interval``."""
+    return _INTERVAL_SECONDS[interval]

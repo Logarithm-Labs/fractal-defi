@@ -67,7 +67,7 @@ def _expected(newest_blocks, count, qs):
 def _loader(node=None, url="https://node.example", **kwargs):
     kwargs.setdefault("start_time", GENESIS + pd.Timedelta("1h"))
     kwargs.setdefault("end_time", GENESIS + pd.Timedelta("3h"))
-    return GasPriceHistoryLoader(url, "testnet", http=node or _Node(), **kwargs)
+    return GasPriceHistoryLoader(url, 31337, http=node or _Node(), **kwargs)
 
 
 @pytest.fixture(autouse=True)
@@ -197,8 +197,9 @@ def test_empty_range_keeps_the_shape():
 def test_invalid_arguments(kwargs, match):
     with pytest.raises(ValueError, match=match):
         _loader(**kwargs)
-    with pytest.raises(ValueError, match="chain"):
-        GasPriceHistoryLoader("https://node.example", "../etc", GENESIS, GENESIS)
+    for bad_chain_id in ("ethereum", 0, -1, 1.5, True):
+        with pytest.raises(ValueError, match="chain_id"):
+            GasPriceHistoryLoader("https://node.example", bad_chain_id, GENESIS, GENESIS)
 
 
 @pytest.mark.core

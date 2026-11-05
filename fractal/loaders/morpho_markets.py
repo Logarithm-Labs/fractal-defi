@@ -33,7 +33,7 @@ from fractal.core.entities.models.morpho_math import from_wad
 from fractal.loaders._dt import to_seconds, to_utc
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.morpho import MorphoLoaderException, _validate_market_id, graphql_query
+from fractal.loaders.morpho import _API_INTERVALS, MorphoLoaderException, _validate_market_id, graphql_query
 
 __all__ = [
     "AS_OF_RULES",
@@ -283,7 +283,7 @@ def market_sizes_as_of(
     *,
     rule: str = "at_or_before",
     max_staleness: timedelta = _DAY,
-    interval: str = "HOUR",
+    interval: str = "1h",
     batch: int = 25,
     http: HttpClient | None = None,
 ) -> pd.DataFrame:
@@ -311,7 +311,7 @@ def market_sizes_as_of(
             are no longer listed.
         timestamp: the as-of instant (naive datetimes are UTC).
         max_staleness: look-back of ``"at_or_before"`` (> 0).
-        interval: API interval, ``"HOUR"`` or ``"DAY"``.
+        interval: API bar, ``"1h"`` (default) or ``"1d"``.
         batch: markets per request.
         http: injectable client for offline tests.
 
@@ -324,8 +324,8 @@ def market_sizes_as_of(
     """
     if rule not in AS_OF_RULES:
         raise ValueError(f"rule must be one of {AS_OF_RULES}, got {rule!r}")
-    if interval not in ("HOUR", "DAY"):
-        raise ValueError(f"interval must be 'HOUR' or 'DAY', got {interval!r}")
+    if interval not in _API_INTERVALS:
+        raise ValueError(f"interval must be one of {sorted(_API_INTERVALS)}, got {interval!r}")
     if batch <= 0:
         raise ValueError(f"batch must be > 0, got {batch}")
     if max_staleness <= timedelta(0):
@@ -348,7 +348,7 @@ def market_sizes_as_of(
             for i, (chain_id, market_id) in enumerate(chunk)
         )
         data = graphql_query(client, f"query MarketSizesAsOf($o: TimeseriesOptions) {{ {aliases} }}", {
-            "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": interval},
+            "o": {"startTimestamp": lo, "endTimestamp": hi, "interval": _API_INTERVALS[interval]},
         })
         for i, (chain_id, market_id) in enumerate(chunk):
             market = data.get(f"m{i}")

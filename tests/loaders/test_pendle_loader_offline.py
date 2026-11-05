@@ -146,12 +146,12 @@ def test_cache_key_covers_expiry_and_frame():
     a = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, http=_FakePendleHttp(START))
     b = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY + timedelta(days=30),
                            http=_FakePendleHttp(START))
-    c = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, time_frame="day", http=_FakePendleHttp(START))
+    c = PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, interval="1d", http=_FakePendleHttp(START))
     assert len({a._cache_key(), b._cache_key(), c._cache_key()}) == 3
     with pytest.raises(ValueError):
         PendleMarketLoader(MARKET, 1, START + HOUR, START, expiry=EXPIRY)
     with pytest.raises(ValueError):
-        PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, time_frame="minute")
+        PendleMarketLoader(MARKET, 1, START, START + HOUR, expiry=EXPIRY, interval="1m")
 
 
 @pytest.mark.core

@@ -204,7 +204,7 @@ def test_graphql_errors_and_validation_raise():
     with pytest.raises(ValueError):
         MorphoMarketLoader("0x1234", 1, START, END)
     with pytest.raises(ValueError):
-        MorphoMarketLoader(MARKET_ID, 1, START, END, interval="MINUTE")
+        MorphoMarketLoader(MARKET_ID, 1, START, END, interval="1m")
     with pytest.raises(ValueError):
         MorphoMarketLoader(MARKET_ID, 1, START, END, compounding="daily")
     with pytest.raises(ValueError):
@@ -482,6 +482,16 @@ def test_chunked_requests_match_the_single_request(max_window_days, requests):
 
 
 @pytest.mark.core
+def test_chunked_requests_are_paced(monkeypatch):
+    """One pause between consecutive windows (none before the first), so long histories stay under the rate limit."""
+    pauses = []
+    monkeypatch.setattr("fractal.loaders.morpho._time.sleep", pauses.append)
+    http = _WindowedMorphoHttp(72)
+    MorphoMarketLoader(MARKET_ID, 1, START, START + timedelta(days=3), max_window_days=1, http=http).read(with_run=True)
+    assert len(http.calls) == 3 and len(pauses) == 2 and all(p > 0 for p in pauses)
+
+
+@pytest.mark.core
 def test_chunking_deduplicates_overlapping_payloads_and_validates_the_window():
     # a source that ignores the window returns every point in every chunk
     history = MorphoMarketLoader(MARKET_ID, 1, START, END, max_window_days=1 / 24, http=_FakeMorphoHttp()).read(
@@ -496,7 +506,7 @@ def test_chunking_deduplicates_overlapping_payloads_and_validates_the_window():
     with pytest.raises(ValueError, match="max_window_days"):
         MorphoMarketLoader(MARKET_ID, 1, START, END, max_window_days=0)
     with pytest.raises(ValueError, match="max_window_days"):
-        MorphoMarketLoader(MARKET_ID, 1, START, END, interval="DAY", max_window_days=0.5)
+        MorphoMarketLoader(MARKET_ID, 1, START, END, interval="1d", max_window_days=0.5)
 
 
 class _GapHttp(_FakeMorphoHttp):

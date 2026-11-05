@@ -4,7 +4,7 @@
 ...), the EIP-1559 base fee and the priority fee (tip) a transaction paid
 on one network, in gwei, as a :class:`~fractal.loaders.structs.GasPriceHistory`::
 
-    loader = GasPriceHistoryLoader(os.environ["ETH_RPC_URL"], "ethereum",
+    loader = GasPriceHistoryLoader(os.environ["ETH_RPC_URL"], 1,
                                    "2024-01-01", "2024-02-01", freq="1h")
     gas = loader.read(with_run=True)          # base_fee_gwei, priority_fee_gwei, ...
 
@@ -60,6 +60,7 @@ token at bar ``t``), :meth:`GasPriceHistoryLoader.read` adds
 gas_price`` (native tokens) is always added. The cache holds only the
 chain data, so the price function never enters a cache key.
 """
+import numbers
 from collections.abc import Callable, Sequence
 from datetime import datetime
 from itertools import pairwise
@@ -97,7 +98,8 @@ class GasPriceHistoryLoader(Loader):
         rpc_url: JSON-RPC endpoint that serves ``eth_feeHistory`` over the
             range. A keyed URL is redacted from errors and logs and is
             never part of the cache key.
-        chain: label for the cache key (``"ethereum"``, ``"base"``, ...).
+        chain_id: EVM chain id of the node's network (``1`` Ethereum,
+            ``8453`` Base, ...); it keys the cache, the URL never does.
         start_time: first bar (naive = UTC).
         end_time: last bar, inclusive.
         freq: bar length, a fixed ``pd.Timedelta`` string (``"1h"``, ``"1D"``).
@@ -116,7 +118,7 @@ class GasPriceHistoryLoader(Loader):
     def __init__(  # pylint: disable=too-many-arguments
         self,
         rpc_url: str,
-        chain: str,
+        chain_id: int,
         start_time: str | datetime | pd.Timestamp,
         end_time: str | datetime | pd.Timestamp,
         freq: str = "1h",
@@ -131,9 +133,9 @@ class GasPriceHistoryLoader(Loader):
         http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
-        if not chain or not str(chain).replace("-", "").replace("_", "").isalnum():
-            raise ValueError(f"chain must be a plain label such as 'ethereum', got {chain!r}")
-        self.chain = str(chain).lower()
+        if isinstance(chain_id, bool) or not isinstance(chain_id, numbers.Integral) or chain_id <= 0:
+            raise ValueError(f"chain_id must be a positive integer EVM chain id, got {chain_id!r}")
+        self.chain_id = int(chain_id)
         self.start_time, self.end_time = _utc(start_time), _utc(end_time)
         if self.end_time < self.start_time:
             raise ValueError("end_time is before start_time")
@@ -157,13 +159,13 @@ class GasPriceHistoryLoader(Loader):
         self._rpc = JsonRpcClient(rpc_url, http=http)
 
     def __repr__(self) -> str:
-        return (f"GasPriceHistoryLoader(chain={self.chain!r}, start={self.start_time}, end={self.end_time}, "
+        return (f"GasPriceHistoryLoader(chain_id={self.chain_id}, start={self.start_time}, end={self.end_time}, "
                 f"freq={self.freq!r})")
 
     # ------------------------------------------------------------ pipeline
     def _cache_key(self) -> str:
         qs = "_".join(f"{q:g}" for q in self.percentiles)
-        return (f"{self.chain}-gas-{int(self.start_time.timestamp())}-{int(self.end_time.timestamp())}"
+        return (f"{self.chain_id}-gas-{int(self.start_time.timestamp())}-{int(self.end_time.timestamp())}"
                 f"-{int(self.bar_length.total_seconds())}s-{self.blocks_per_sample}x{self.samples_per_bar}-p{qs}")
 
     def _sample_times(self, bar_end: int) -> list[int]:

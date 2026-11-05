@@ -4,9 +4,10 @@ from fractal.loaders.thegraph.uniswap_v3.uniswap_loader import UniswapV3Loader
 
 class BaseUniswapV3Loader(UniswapV3Loader):
     """
-    Loader for Uniswap V3 on Base (the network). Uses the standard
-    ``uniswap-v3`` subgraph schema (``pools`` / ``poolDayDatas`` /
-    ``poolHourDatas``).
+    Loader for Uniswap V3 on the Base network — a concrete chain loader
+    like ``EthereumUniswapV3Loader`` / ``ArbitrumUniswapV3Loader``,
+    not an abstract base class. Uses the standard ``uniswap-v3`` subgraph
+    schema (``pools`` / ``poolDayDatas`` / ``poolHourDatas``).
     The Graph:
     https://thegraph.com/explorer/subgraphs/HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1?view=Query&chain=arbitrum-one
     SUBGRAPH_ID = "HMuAwufqZ1YCRmzL2SfHTVkzZovC9VL2UAKhjvRqKiR1"

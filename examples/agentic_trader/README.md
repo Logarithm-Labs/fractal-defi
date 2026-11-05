@@ -156,7 +156,7 @@ result.to_dataframe().to_csv('result.csv')
 ```
 
 ```bash
-python agent_strategy.py
+python backtest.py
 StrategyMetrics(accumulated_return=0.3630, apy=0.2912, sharpe=1.0867, max_drawdown=-0.2368)
 ```
 
@@ -226,7 +226,7 @@ mlflow server --host 127.0.0.1 --port 8080
 
 Run grid search with MLflow logging:
 ```bash
-python agent_pipeline.py
+python grid.py
 🏃 View run upset-quail-538 at: http://127.0.0.1:8080/#/experiments/322037600437979899/runs/0b62ce154e8740feb18ed8af9ec69dda
 🧪 View experiment at: http://127.0.0.1:8080/#/experiments/322037600437979899
 [non-fatal] Tracing: request failed: _ssl.c:983: The handshake operation timed out
