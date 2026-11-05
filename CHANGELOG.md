@@ -6,6 +6,11 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
+### Added
+
+- **`MorphoOraclePriceLoader`** (`fractal.loaders.onchain`): a Morpho Blue market's oracle `price()` per bar (`freq="1D"` by default) at the last block at or before each bar (no look-ahead), in loan-token units per collateral unit, as `PriceHistory` for `MorphoGlobalState.collateral_price`. The oracle address and token decimals come from `get_market_info`; past-block `eth_call` needs an archive node. **`calibrate_oracle_price`** scales a modelled oracle price on the backtest grid to exact reads (`model × κ`, `ln κ` linear in time between reads), so daily reads carry an underlying-asset feed into hourly bars.
+- **`hybrid_oracle_price`** (`pendle_math`): the `EOPendlePTFeedHybrid` PT feed, `min(1, max(linear discount, TWAP))`.
+
 ## [v1.4.0] — 2026-11-03
 
 Morpho Blue supply research tooling (a supply entity, rotation and
