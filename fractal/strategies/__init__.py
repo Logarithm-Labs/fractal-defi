@@ -1,6 +1,7 @@
 from fractal.strategies.basis_trading_strategy import BasisTradingStrategy, BasisTradingStrategyHyperparams
 from fractal.strategies.fixed_range_liquidity_provision import (
     FixedRangeLiquidityProvision,
+    FixedRangeLiquidityProvisionException,
     FixedRangeLiquidityProvisionParams,
 )
 from fractal.strategies.hedged_pt import HedgedPTException, HedgedPTParams, HedgedPTStrategy
@@ -11,13 +12,7 @@ from fractal.strategies.morpho_rate_hedged_leveraged_pt import (
     MorphoRateHedgedLeveragedPTParams,
 )
 from fractal.strategies.morpho_supply_allocation import MorphoSupplyAllocationParams, MorphoSupplyAllocationStrategy
-from fractal.strategies.morpho_supply_common import (
-    MorphoSupplyBaseParams,
-    build_supply_entity,
-    is_selectable,
-    market_entity_name,
-    validate_common_params,
-)
+from fractal.strategies.morpho_supply_common import MorphoSupplyBaseParams
 from fractal.strategies.morpho_supply_rotation import MorphoSupplyRotationParams, MorphoSupplyRotationStrategy
 from fractal.strategies.perp_hedged_pt import PerpHedgedPT, PerpHedgedPTParams
 from fractal.strategies.rate_hedged_leveraged_pt import RateHedgedLeveragedPTParams, RateHedgedLeveragedPTStrategy
@@ -27,6 +22,7 @@ __all__ = [
     'BasisTradingStrategy',
     'BasisTradingStrategyHyperparams',
     'FixedRangeLiquidityProvision',
+    'FixedRangeLiquidityProvisionException',
     'FixedRangeLiquidityProvisionParams',
     'HedgedPTException',
     'HedgedPTParams',
@@ -49,8 +45,4 @@ __all__ = [
     'RateHedgedLeveragedPTStrategy',
     'TauResetParams',
     'TauResetStrategy',
-    'build_supply_entity',
-    'is_selectable',
-    'market_entity_name',
-    'validate_common_params',
 ]

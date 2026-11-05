@@ -126,7 +126,7 @@ def test_missing_close_raises_and_validation(monkeypatch):
     with pytest.raises(ValueError, match="mark_apr_close"):
         loader.transform()
     with pytest.raises(ValueError):
-        BorosMarketLoader(MARKET_ID, START, START, maturity=MATURITY, time_frame="2h")
+        BorosMarketLoader(MARKET_ID, START, START, maturity=MATURITY, interval="2h")
     with pytest.raises(ValueError):
         BorosMarketLoader(MARKET_ID, START + timedelta(hours=1), START, maturity=MATURITY)
 

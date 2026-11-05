@@ -25,7 +25,7 @@ closed-form ``P · (1 + r/n)^n``.
 
 Run from the repo root:
 
-    PYTHONPATH=. python examples/quick_start.py
+    python examples/quick_start/quick_start.py
 """
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta

@@ -11,11 +11,9 @@ import pandas as pd
 
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
-from fractal.loaders.rpc import JsonRpcClient, RpcCallError, as_signed, decode_words, event_topic
+from fractal.loaders.rpc import JsonRpcClient, as_signed, decode_words, event_topic
 from fractal.loaders.structs import SwapsHistory
 from fractal.loaders.thegraph.base_graph_loader import validate_evm_address
-
-RpcLoaderException = RpcCallError  # kept for callers that catch the old name
 
 
 class UniswapV3SwapsLoader(Loader):

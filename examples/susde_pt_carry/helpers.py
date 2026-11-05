@@ -7,9 +7,13 @@ floating settlement) and the mark APR of the matching yield-unit market.
 import json
 import math
 import os
+import sys
 from datetime import datetime
+from pathlib import Path
 
 import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, so ``examples.*`` imports work from this folder
 
 from examples.pendle_pt_backtests.helpers import build_leveraged_frame, sy_exchange_rate, window
 from fractal.core.base import Observation
@@ -52,7 +56,7 @@ def build_frame(cfg: dict, start: datetime, end: datetime) -> tuple:
     frame["spot"] = frame["spot"].ffill()
     frame = frame.join(funding["rate"].resample(interval).sum().rename("funding_rate"), how="left")
     frame["funding_rate"] = frame["funding_rate"].fillna(0.0)  # no settlement in this bar → no cash flow
-    boros = BorosMarketLoader(int(cfg["boros_market"]), start, leg_end, time_frame=interval,
+    boros = BorosMarketLoader(int(cfg["boros_market"]), start, leg_end, interval=interval,
                               maturity=binfo.maturity, include_settlements=False).read(with_run=True)
     frame = frame.join(boros[["mark_apr_close"]].rename(columns={"mark_apr_close": "boros_mark_apr"}), how="left")
     frame["boros_mark_apr"] = frame["boros_mark_apr"].ffill()

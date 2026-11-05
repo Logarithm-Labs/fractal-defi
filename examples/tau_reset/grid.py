@@ -1,5 +1,7 @@
 import os
+import sys
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings('ignore')
 
@@ -7,6 +9,8 @@ from datetime import UTC, datetime
 
 import numpy as np
 from sklearn.model_selection import ParameterGrid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, so ``examples.*`` imports work from this folder
 
 from examples.tau_reset.backtest import THE_GRAPH_API_KEY, TauResetStrategy, build_observations
 from fractal.core.pipeline import DefaultPipeline, ExperimentConfig, MLflowConfig
