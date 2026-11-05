@@ -6,25 +6,19 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
-### Added
-
-- **`MorphoOraclePriceLoader`** (`fractal.loaders.onchain`): a Morpho Blue market's oracle `price()` per bar (`freq="1D"` by default) at the last block at or before each bar (no look-ahead), in loan-token units per collateral unit, as `PriceHistory` for `MorphoGlobalState.collateral_price`. The oracle address and token decimals come from `get_market_info`; past-block `eth_call` needs an archive node. **`calibrate_oracle_price`** scales a modelled oracle price on the backtest grid to exact reads (`model × κ`, `ln κ` linear in time between reads), so daily reads carry an underlying-asset feed into hourly bars.
-- **`hybrid_oracle_price`** (`pendle_math`): the `EOPendlePTFeedHybrid` PT feed, `min(1, max(linear discount, TWAP))`.
-- **`AaveEntity(liquidation_mode="partial", liquidation_bonus=...)`** — opt-in Aave V3 liquidation (`LiquidationLogic.sol`, aave-v3-origin `8305565`): liquidatable only below HF 1, liquidators repay up to 50% of the debt (100% at HF ≤ 0.95 or when collateral or debt is under $2000), seize `repaid × bonus` of collateral, may not leave under $1000 of either leg, and repeat while HF stays below 1; a collateral shortfall writes the remaining debt off. The bonus is validated as on `PoolConfigurator` (`> 1`, `liq_thr · bonus ≤ 1`). The default `"full"` mode keeps the existing wipe.
-- **`AaveGlobalState.supply_cap` / `reserve_total_supply`** — optional reserve supply cap: `action_deposit` rejects a deposit that would take the other suppliers' total plus this position past the cap. Like Aave, only new supply is checked (accrued interest may exceed the cap). No cap by default.
-- **`aave_math.liquidation_call`** (`fractal.core.entities.models.aave_math`) — one Aave V3 `liquidationCall` on a single-collateral, single-debt position as a pure function, with the protocol constants.
-
-## [v1.4.0] — 2026-11-03
+## [v1.4.0] — 2026-11-05
 
 Morpho Blue supply research tooling (a supply entity, rotation and
 marginal-income allocation strategies, AdaptiveCurve math and a market
 simulator), Pendle PT / Morpho / Boros fixed-term strategies, exact
 Uniswap V3 fee replication, and new data sources (DefiLlama, FRED,
-Etherscan and generic on-chain logs, per-network gas history), plus
-moving-block bootstrap confidence intervals. Defaults of existing
-strategies are unchanged; the behaviour changes are listed under
-Changed and Fixed (stricter loader time inputs, loaders that raise on
-missing data instead of zero-filling, the perp liquidation boundary).
+Etherscan and generic on-chain logs, per-network gas history, Morpho
+Blue oracle price history), opt-in Aave V3 partial liquidation and
+reserve supply cap, plus moving-block bootstrap confidence intervals.
+Defaults of existing strategies are unchanged; the behaviour changes
+are listed under Changed and Fixed (stricter loader time inputs,
+loaders that raise on missing data instead of zero-filling, the perp
+liquidation boundary).
 
 Uniswap V3 LP replication backtesting: exact per-leg fee accrual from
 the pool's own `feeGrowthGlobal` counters, validated 1:1 against real
@@ -35,6 +29,11 @@ when the observations carry `fee_growth0/1`.
 
 ### Added
 
+- **`MorphoOraclePriceLoader`** (`fractal.loaders.onchain`): a Morpho Blue market's oracle `price()` per bar (`freq="1D"` by default) at the last block at or before each bar (no look-ahead), in loan-token units per collateral unit, as `PriceHistory` for `MorphoGlobalState.collateral_price`. The oracle address and token decimals come from `get_market_info`; past-block `eth_call` needs an archive node. **`calibrate_oracle_price`** scales a modelled oracle price on the backtest grid to exact reads (`model × κ`, `ln κ` linear in time between reads), so daily reads carry an underlying-asset feed into hourly bars.
+- **`hybrid_oracle_price`** (`pendle_math`): the `EOPendlePTFeedHybrid` PT feed, `min(1, max(linear discount, TWAP))`.
+- **`AaveEntity(liquidation_mode="partial", liquidation_bonus=...)`** — opt-in Aave V3 liquidation (`LiquidationLogic.sol`, aave-v3-origin `8305565`): liquidatable only below HF 1, liquidators repay up to 50% of the debt (100% at HF ≤ 0.95 or when collateral or debt is under $2000), seize `repaid × bonus` of collateral, may not leave under $1000 of either leg, and repeat while HF stays below 1; a collateral shortfall writes the remaining debt off. The bonus is validated as on `PoolConfigurator` (`> 1`, `liq_thr · bonus ≤ 1`). The default `"full"` mode keeps the existing wipe.
+- **`AaveGlobalState.supply_cap` / `reserve_total_supply`** — optional reserve supply cap: `action_deposit` rejects a deposit that would take the other suppliers' total plus this position past the cap. Like Aave, only new supply is checked (accrued interest may exceed the cap). No cap by default.
+- **`aave_math.liquidation_call`** (`fractal.core.entities.models.aave_math`) — one Aave V3 `liquidationCall` on a single-collateral, single-debt position as a pure function, with the protocol constants.
 - **`GasPriceHistoryLoader`** (`fractal.loaders.onchain`) / **`GasPriceHistory`** — per-bar (`freq="1h"`, `"1D"`, ...) gas prices of one network in gwei from `eth_feeHistory` at the last block at or before each bar (no look-ahead): mean base fee, median priority fee at configurable percentiles (empty blocks excluded), `gas_price_gwei`, block fullness, and the cost of a reference transaction in native tokens and, with a caller-supplied `native_price(t)`, in USD. Sampled window, node requirements and L2 caveats (OP Stack L1 data fee, Arbitrum tips) are documented. Adds `JsonRpcClient.fee_history`.
 - **`FredSeriesLoader`** (`fractal.loaders.fred`) — one daily FRED series (default `DGS3MO`) from the keyless `fredgraph.csv` download as a `RateHistory`; published percent is converted to a decimal (`percent_to_decimal`), each row is indexed by when it becomes known (`availability_lag_days`, default 1: the value for day d is usable from d + 1 00:00 UTC), missing days are dropped, and the window keeps the value already known at `start_time`.
 - **`HttpClient.get_text`** — GET returning the raw body for CSV/text endpoints, with the same retries and HTTP error reporting as `get`; existing methods are unchanged.

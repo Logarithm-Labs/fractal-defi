@@ -14,7 +14,7 @@ authors:
     email: "xboringwozniak@gmail.com"
   - name: "the Fractal contributors"
 version: 1.4.0
-date-released: 2026-11-03
+date-released: 2026-11-05
 license: BSD-3-Clause
 doi: 10.5281/zenodo.20049904
 repository-code: "https://github.com/Logarithm-Labs/fractal-defi"
