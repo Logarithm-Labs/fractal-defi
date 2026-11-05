@@ -41,6 +41,7 @@ __all__ = [
     "amm_swap_exact_pt",
     "apy_from_pt_price",
     "exchange_rate",
+    "hybrid_oracle_price",
     "linear_discount_oracle_price",
     "ln_rate",
     "pt_price_from_apy",
@@ -92,6 +93,17 @@ def twap_oracle_price(ln_rate_twap: float, seconds_to_expiry: float) -> float:
     """``PendlePYOracleLib.getPtToAssetRate`` core: ``exp(-lnImpliedRate_TWAP * t)``; ``1.0`` after expiry."""
     time_left = max(seconds_to_expiry, 0.0)
     return math.exp(-ln_rate_twap * time_left / SECONDS_PER_YEAR)
+
+
+def hybrid_oracle_price(base_discount_per_year: float, ln_rate_twap: float, seconds_to_expiry: float) -> float:
+    """``EOPendlePTFeedHybrid``: ``min(1, max(linear discount, TWAP))``.
+
+    The linear discount (:func:`linear_discount_oracle_price`) is a floor
+    under the TWAP price (:func:`twap_oracle_price`), and the feed never
+    reports more than par. ``1.0`` at/after expiry.
+    """
+    return min(1.0, max(linear_discount_oracle_price(base_discount_per_year, seconds_to_expiry),
+                        twap_oracle_price(ln_rate_twap, seconds_to_expiry)))
 
 
 # ---------------------------------------------------------------------- AMM

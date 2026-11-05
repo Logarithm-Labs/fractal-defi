@@ -32,7 +32,14 @@ from fractal.loaders.morpho_markets import (
     discover_chains,
     market_sizes_as_of,
 )
-from fractal.loaders.onchain import GasPriceHistoryLoader, LogReader, RpcLoaderException, UniswapV3SwapsLoader
+from fractal.loaders.onchain import (
+    GasPriceHistoryLoader,
+    LogReader,
+    MorphoOraclePriceLoader,
+    RpcLoaderException,
+    UniswapV3SwapsLoader,
+    calibrate_oracle_price,
+)
 from fractal.loaders.pendle import PendleMarketInfo, PendleMarketLoader, PendleMarketState, PendleOHLCVLoader
 from fractal.loaders.rpc import JsonRpcClient, RpcCallError
 from fractal.loaders.simulations import ConstantFundingsLoader, MonteCarloHourPriceLoader, MonteCarloPriceLoader
@@ -123,6 +130,7 @@ __all__ = [
     "MorphoMarketListing",
     "MorphoMarketLoader",
     "MorphoMarketsLoader",
+    "MorphoOraclePriceLoader",
     "PendleMarketHistory",
     "PendleMarketInfo",
     "PendleMarketLoader",
@@ -146,6 +154,7 @@ __all__ = [
     "UniswapV3EthereumPoolMinuteDataLoader",
     "UniswapV3EthereumPricesLoader",
     "UniswapV3SwapsLoader",
+    "calibrate_oracle_price",
     "discover_chains",
     "market_sizes_as_of",
     "missing_bars",
