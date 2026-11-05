@@ -81,6 +81,15 @@ tests/
 pip install fractal-defi
 ```
 
+> [!NOTE]
+> 1.4.0 is not on PyPI yet, so `pip install fractal-defi` still installs
+> 1.3.1. Until the upload lands, install 1.4.0 from the
+> [GitHub release](https://github.com/Logarithm-Labs/fractal-defi/releases/tag/v1.4.0):
+>
+> ```bash
+> pip install https://github.com/Logarithm-Labs/fractal-defi/releases/download/v1.4.0/fractal_defi-1.4.0-py3-none-any.whl
+> ```
+
 Or from source (latest unreleased ``dev`` branch):
 
 ```bash
