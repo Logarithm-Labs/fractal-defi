@@ -46,7 +46,7 @@ if __name__ == '__main__':
         raise ValueError("MLFLOW_URI isn't set.")
 
     if not aws_key or not aws_secret:
-        warnings.warn("AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY are not set", RuntimeWarning)
+        warnings.warn("AWS_ACCESS_KEY_ID or AWS_SECRET_ACCESS_KEY are not set", RuntimeWarning, stacklevel=2)
 
     mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri=mlflow_uri,

@@ -10,10 +10,14 @@
 * **API surface check**: both expose the lending paradigm's actions and
   read-only properties.
 """
+import random
+
 import pytest
 
 from fractal.core.base.entity import EntityException
+from fractal.core.entities.models.aave_math import liquidation_call
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.protocols.morpho import MorphoEntity, MorphoException, MorphoGlobalState
 from fractal.core.entities.simple.lending import SimpleLendingEntity, SimpleLendingException, SimpleLendingGlobalState
 
 
@@ -27,6 +31,17 @@ def _simple():
     e = SimpleLendingEntity()
     e.update_state(SimpleLendingGlobalState(collateral_price=1.0, debt_price=1.0))
     return e
+
+
+def _morpho():
+    # LLTV 0.85 with a 0.8 borrow cushion mirrors the siblings' max_ltv / liq_thr defaults.
+    e = MorphoEntity(lltv=0.85, max_ltv=0.8)
+    e.update_state(MorphoGlobalState(collateral_price=1.0, debt_price=1.0))
+    return e
+
+
+LENDING_ENTITIES = [(_aave, EntityException), (_simple, SimpleLendingException), (_morpho, MorphoException)]
+LENDING_FACTORIES = [_aave, _simple, _morpho]
 
 
 @pytest.mark.core
@@ -48,7 +63,7 @@ def test_simple_lending_initial_state_clean():
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_deposit_rejected(factory, exc):
     e = factory()
     with pytest.raises(exc, match="deposit amount must be >= 0"):
@@ -56,7 +71,7 @@ def test_lending_negative_deposit_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_withdraw_rejected(factory, exc):
     e = factory()
     e.action_deposit(100)
@@ -65,7 +80,7 @@ def test_lending_negative_withdraw_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_borrow_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -74,7 +89,7 @@ def test_lending_negative_borrow_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_negative_repay_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -84,7 +99,7 @@ def test_lending_negative_repay_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_withdraw_overdraft_rejected(factory, exc):
     e = factory()
     e.action_deposit(100)
@@ -93,7 +108,7 @@ def test_lending_withdraw_overdraft_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_repay_more_than_borrowed_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -103,7 +118,7 @@ def test_lending_repay_more_than_borrowed_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_borrow_above_max_ltv_rejected(factory, exc):
     e = factory()
     e.action_deposit(1000)
@@ -113,7 +128,7 @@ def test_lending_borrow_above_max_ltv_rejected(factory, exc):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory,exc", [(_aave, EntityException), (_simple, SimpleLendingException)])
+@pytest.mark.parametrize("factory,exc", LENDING_ENTITIES)
 def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
     """Cannot withdraw collateral if it would breach max_ltv."""
     e = factory()
@@ -127,13 +142,13 @@ def test_lending_withdraw_pushes_above_max_ltv_rejected(factory, exc):
 @pytest.mark.core
 def test_aave_rejects_liq_thr_below_max_ltv():
     """``liq_thr >= max_ltv`` invariant validated at construction."""
-    with pytest.raises(EntityException, match="liq_thr.*must be >="):
+    with pytest.raises(EntityException, match=r"liq_thr.*must be >="):
         AaveEntity(max_ltv=0.8, liq_thr=0.7)
 
 
 @pytest.mark.core
 def test_simple_lending_rejects_liq_thr_below_max_ltv():
-    with pytest.raises(SimpleLendingException, match="liq_thr.*must be >="):
+    with pytest.raises(SimpleLendingException, match=r"liq_thr.*must be >="):
         SimpleLendingEntity(max_ltv=0.8, liq_thr=0.7)
 
 
@@ -164,7 +179,7 @@ def test_simple_lending_rejects_borrowing_rate_below_minus_one():
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_collateral_never_negative_through_lifecycle(factory):
     e = factory()
     assert e._internal_state.collateral >= 0
@@ -179,7 +194,7 @@ def test_lending_collateral_never_negative_through_lifecycle(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_borrowed_never_negative_through_lifecycle(factory):
     e = factory()
     e.action_deposit(1000)
@@ -193,7 +208,7 @@ def test_lending_borrowed_never_negative_through_lifecycle(factory):
 
 
 @pytest.mark.core
-@pytest.mark.parametrize("factory", [_aave, _simple])
+@pytest.mark.parametrize("factory", LENDING_FACTORIES)
 def test_lending_full_repay_reduces_borrowed_to_zero(factory):
     e = factory()
     e.action_deposit(1000)
@@ -305,3 +320,112 @@ def test_aave_check_liquidation_deprecated_alias_still_works():
         warnings.simplefilter("always")
         e.check_liquidation()
     assert any(issubclass(w.category, DeprecationWarning) for w in caught)
+
+
+# ------------------------------------------- Aave partial liquidation (L3/L4)
+# (liq_thr, bonus) pairs that satisfy PoolConfigurator's liq_thr · bonus <= 1.
+_AAVE_RESERVES = [(0.8, 1.05), (0.85, 1.075), (0.9, 1.1), (0.95, 1.05)]
+
+
+def _random_liquidation_inputs(rng):
+    liq_thr, bonus = rng.choice(_AAVE_RESERVES)
+    collateral_price = rng.choice([1.0, rng.uniform(100, 5000)])
+    debt_price = rng.choice([1.0, rng.uniform(0.5, 4000)])
+    # Sizes around the $2000 close-factor floor reach the $1000 leftover rule; HF spans 0.85–1.1.
+    collateral_value = rng.choice([10 ** rng.uniform(2, 7), rng.uniform(2_000, 2_200)])
+    ltv = liq_thr / rng.uniform(0.85, 1.1)
+    return (
+        collateral_value / collateral_price,
+        collateral_value * ltv / debt_price,
+        collateral_price,
+        debt_price,
+        liq_thr,
+        bonus,
+    )
+
+
+@pytest.mark.core
+@pytest.mark.parametrize("seed", list(range(20)))
+def test_liquidation_call_respects_protocol_bounds(seed):
+    """One call: seize exactly ``repaid × bonus`` unless all collateral goes, close factor and leftover floors hold."""
+    rng = random.Random(seed)
+    for _ in range(50):
+        collateral, debt, p_c, p_d, liq_thr, bonus = _random_liquidation_inputs(rng)
+        hf = liq_thr * collateral * p_c / (debt * p_d)
+        repaid, seized = liquidation_call(collateral, debt, p_c, p_d, liq_thr=liq_thr, liquidation_bonus=bonus)
+        if hf >= 1:
+            assert (repaid, seized) == (0.0, 0.0)
+            continue
+        assert 0 < repaid <= debt
+        assert 0 < seized <= collateral
+        if seized == collateral:  # collateral exhausted: the rest of the debt is written off
+            assert repaid == debt
+            continue
+        assert seized * p_c == pytest.approx(repaid * p_d * bonus, rel=1e-12)
+        if hf > 0.95 and collateral * p_c >= 2000 and debt * p_d >= 2000:
+            assert repaid <= 0.5 * debt * (1 + 1e-12)
+        if repaid < debt:
+            assert (debt - repaid) * p_d >= 1000 * (1 - 1e-9)
+            assert (collateral - seized) * p_c >= 1000 * (1 - 1e-9)
+
+
+@pytest.mark.core
+@pytest.mark.parametrize("seed", list(range(20)))
+def test_aave_partial_mode_invariants_on_random_paths(seed):
+    """After every step: legs non-negative, no debt without collateral, and no liquidatable position left over.
+
+    HF ≥ 1 with debt implies collateral value ≥ debt value, so equity never ends below the
+    zero that the ``full`` mode leaves after a wipe.
+    """
+    rng = random.Random(seed)
+    liq_thr, bonus = rng.choice(_AAVE_RESERVES)
+    volatile_collateral = rng.random() < 0.5
+    e = AaveEntity(
+        max_ltv=liq_thr - 0.05, liq_thr=liq_thr, collateral_is_volatile=volatile_collateral,
+        liquidation_mode="partial", liquidation_bonus=bonus,
+    )
+    price = rng.uniform(500, 4000)
+
+    def state(px, lending_rate=0.0, borrowing_rate=0.0):
+        p_c, p_d = (px, 1.0) if volatile_collateral else (1.0, px)
+        return AaveGlobalState(collateral_price=p_c, debt_price=p_d,
+                               lending_rate=lending_rate, borrowing_rate=borrowing_rate)
+
+    e.update_state(state(price))
+    e.action_deposit(10 ** rng.uniform(2, 6) / (price if volatile_collateral else 1.0))
+    for _ in range(40):
+        if e.max_borrow_amount > 0 and rng.random() < 0.5:
+            e.action_borrow(e.max_borrow_amount * rng.uniform(0.5, 1.0))
+        price *= rng.lognormvariate(0.0, 0.08)
+        e.update_state(state(price, rng.uniform(0, 1e-4), rng.uniform(0, 5e-4)))
+        collateral, borrowed = e.internal_state.collateral, e.internal_state.borrowed
+        assert collateral >= 0
+        assert borrowed >= 0
+        if borrowed > 0:
+            assert collateral > 0
+            assert e.health_factor >= 1
+        assert e.balance >= 0
+
+
+@pytest.mark.core
+@pytest.mark.parametrize("seed", list(range(10)))
+def test_aave_supply_cap_never_exceeded_by_deposits(seed):
+    """Random deposits and withdrawals: accepted ones keep others + own ≤ cap, rejected ones change nothing."""
+    rng = random.Random(seed)
+    cap = rng.uniform(1_000, 10_000)
+    others = rng.uniform(0, cap)
+    e = AaveEntity()
+    e.update_state(AaveGlobalState(collateral_price=1, debt_price=1, supply_cap=cap, reserve_total_supply=others))
+    for _ in range(50):
+        before = e.internal_state.collateral
+        if rng.random() < 0.7:
+            amount = rng.uniform(0, cap - others) * 0.6
+            try:
+                e.action_deposit(amount)
+            except EntityException:
+                assert e.internal_state.collateral == before
+                assert others + before + amount > cap
+                continue
+        elif before > 0:
+            e.action_withdraw(rng.uniform(0, before))
+        assert others + e.internal_state.collateral <= cap

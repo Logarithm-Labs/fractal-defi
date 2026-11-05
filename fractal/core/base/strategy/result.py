@@ -1,22 +1,81 @@
-from dataclasses import dataclass
+import math
+from dataclasses import dataclass, replace
 from datetime import datetime
-from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
 
 from fractal.core.base.entity import GlobalState, InternalState
+from fractal.core.base.execution import ExecutionRecord
+
+# A "positive return" must clear float noise before a ratio with no observed
+# downside is reported as ``+inf``: a 1-ulp gain is not a loss-free strategy.
+_RATIO_EPS = 1e-12
 
 
 @dataclass
 class StrategyMetrics:
     """
     Default metrics of the strategy.
+
+    Conventions for the risk metrics added with #68.
+
+    Ratio policy for ``sortino``, ``calmar`` and ``omega_ratio``: ``+inf``
+    means no observed downside with a positive return (so a loss-free path
+    always ranks above the same path with any loss); ``0.0`` means the
+    ratio is undefined or the input is degenerate (flat or non-positive
+    return with no downside, empty/degenerate data). "Positive" means above
+    a ``1e-12`` float-noise tolerance, and a non-finite ``max_drawdown``
+    (NaN balances in a hand-built frame) gives ``calmar = 0.0``.
+
+    * ``sortino`` — annualized downside-only Sharpe with a zero target
+      return: ``mean(r) / downside_std * sqrt(frequency)``, where
+      ``downside_std`` is the root-mean-square of the negative part of
+      the per-bar returns. With no downside deviation: ``+inf`` when the
+      mean return is positive, else ``0.0``.
+    * ``calmar`` — the linear ``apy / abs(max_drawdown)``. With no
+      drawdown: ``+inf`` when ``apy`` is positive, else ``0.0``.
+    * ``var_95`` / ``cvar_95`` — **positive loss magnitudes** taken from
+      the worst 5% of per-bar returns: ``var_95 = -quantile(r, 0.05)`` and
+      ``cvar_95`` is the mean loss over the ``ceil(0.05 * n)`` worst
+      observations. Both are clamped to ``0.0`` when that tail contains no
+      losses, and non-finite returns (from a ``0 -> positive`` balance
+      transition) are dropped before either is computed.
+    * ``omega_ratio`` — ``sum(max(r, 0)) / sum(max(-r, 0))`` at a zero
+      per-bar threshold. With no losing bars: ``+inf`` when there are
+      gains, else ``0.0``.
+    * ``time_in_drawdown`` — fraction of observations **strictly below**
+      the running peak of the balance, in ``[0, 1]``.
     """
     accumulated_return: float  # total return of the strategy
-    apy: float                 # annualized return
+    apy: float                 # annualized return, linear: ``accumulated_return / years``
     sharpe: float              # risk-adjusted return
     max_drawdown: float        # maximum drawdown
+    # Compound annual growth rate: ``(1 + accumulated_return) ** (1 / years) - 1``.
+    # ``-1.0`` when the balance is wiped out. Kept separate from ``apy`` so
+    # existing grid results and dashboards stay comparable.
+    cagr: float = 0.0
+    # Ratio metrics: ``+inf`` = no observed downside with positive return;
+    # ``0.0`` = undefined / degenerate input (see class docstring).
+    sortino: float = 0.0
+    calmar: float = 0.0
+    var_95: float = 0.0
+    cvar_95: float = 0.0
+    omega_ratio: float = 0.0
+    time_in_drawdown: float = 0.0
+    # Execution-telemetry derived metrics (#68, confirmed definitions):
+    # * ``fees_paid`` — cumulative fees in the portfolio accounting unit;
+    # * ``turnover`` — total traded notional / average positive NAV;
+    # * ``fee_drag`` — fees_paid / initial portfolio NAV (stable, non-negative).
+    # All ``0.0`` when telemetry is absent; ``turnover``/``fee_drag`` are also
+    # ``0.0`` when their denominator is degenerate, while ``fees_paid`` (no
+    # denominator) always reports the recorded fee total.
+    # The NAV used by ``turnover``/``fee_drag`` stays in the accounting unit the
+    # telemetry was recorded in, so both ratios are independent of the
+    # ``notional_price`` rescaling applied to the return/drawdown series.
+    fees_paid: float = 0.0
+    turnover: float = 0.0
+    fee_drag: float = 0.0
 
 
 @dataclass
@@ -28,12 +87,16 @@ class StrategyResult:
     indexed by timestamp. Methods convert this into a flat ``DataFrame``
     or compute scalar return / risk metrics.
     """
-    timestamps: List[datetime]
-    internal_states: List[Dict[str, InternalState]]
-    global_states: List[Dict[str, GlobalState]]
-    balances: List[Dict[str, float]]
+    timestamps: list[datetime]
+    internal_states: list[dict[str, InternalState]]
+    global_states: list[dict[str, GlobalState]]
+    balances: list[dict[str, float]]
+    # Cumulative execution telemetry for the run (issue #68). Optional so
+    # existing 4-field constructions remain valid; ``None`` when telemetry
+    # is unavailable (e.g. results built by hand in tests/examples).
+    execution_records: list[ExecutionRecord] | None = None
 
-    def get_metrics(self, data: pd.DataFrame, notional_price: Optional[str | float] = None) -> StrategyMetrics:
+    def get_metrics(self, data: pd.DataFrame, notional_price: str | float | None = None) -> StrategyMetrics:
         """
         Calculate metrics of the strategy by StrategyResult data.
         StrategyResult data can be generated by to_dataframe() method.
@@ -48,12 +111,26 @@ class StrategyResult:
 
         Returns:
             StrategyMetrics: Metrics of the strategy. For degenerate inputs
-            (empty df, single timestamp, zero/non-finite initial balance,
+            (empty df, single timestamp, non-positive/non-finite initial balance,
             zero notional_price column) returns ``StrategyMetrics`` filled
-            with ``0.0`` rather than raising or returning ``inf``/``nan``.
+            with ``0.0`` rather than raising or returning ``inf``/``nan`` —
+            except ``fees_paid``, which has no denominator and is always the
+            recorded fee total. On valid inputs ``sortino`` / ``calmar`` /
+            ``omega_ratio`` are ``+inf`` when there is no observed downside
+            and the return is positive (see ``StrategyMetrics``).
+
+        Note:
+            ``fees_paid`` / ``turnover`` / ``fee_drag`` are computed from all
+            of ``self.execution_records`` (the whole run); passing a slice of
+            ``to_dataframe()`` as ``data`` does not filter the records.
         """
+        # Execution-telemetry derived metrics (0.0 when absent/degenerate).
+        records = self.execution_records or []
+        fees_paid = float(sum(record.fee_paid for record in records))
+        degenerate = replace(self._zero_metrics(), fees_paid=fees_paid)
+
         if data is None or data.empty:
-            return self._zero_metrics()
+            return degenerate
 
         data = data.sort_values('timestamp').copy()
         if notional_price is None:
@@ -66,23 +143,31 @@ class StrategyResult:
             raise ValueError("notional_price must be None, str or float")
 
         # Guards against divide-by-zero / inf / nan from degenerate inputs.
-        if isinstance(notional_price, np.ndarray):
-            if (notional_price == 0).any() or (~np.isfinite(notional_price)).any():
-                return self._zero_metrics()
+        if isinstance(notional_price, np.ndarray) and (
+            (notional_price == 0).any() or (~np.isfinite(notional_price)).any()
+        ):
+            return degenerate
 
+        # ``notional_price`` only re-expresses the return/drawdown series; the
+        # telemetry-derived ratios divide two accounting-unit quantities, so
+        # they use the unscaled balance and stay invariant to the rescaling.
+        raw_net_balance = data['net_balance'].values.astype(float)
         data['net_balance'] = data['net_balance'] / notional_price
 
         first_balance = data['net_balance'].iloc[0]
-        if first_balance == 0 or not np.isfinite(first_balance):
-            return self._zero_metrics()
+        # Returns are undefined against a non-positive base (a negative start
+        # would flip the sign of every return).
+        if first_balance <= 0 or not np.isfinite(first_balance):
+            return degenerate
 
         total_seconds: float = (data['timestamp'].iloc[-1] - data['timestamp'].iloc[0]).total_seconds()
         if total_seconds <= 0:
-            return self._zero_metrics()
+            return degenerate
         total_years: float = total_seconds / (60 * 60 * 24 * 365)
 
         accumulated_return: float = data['net_balance'].iloc[-1] / first_balance - 1
         apy = accumulated_return / total_years
+        cagr = self._compound_annual_growth(accumulated_return, total_years)
         data_frequency = len(data) / total_years
 
         returns = data['net_balance'].pct_change().dropna()
@@ -98,18 +183,94 @@ class StrategyResult:
         # cumulative_max can hit 0 if first_balance is 0 — already guarded above.
         drawdowns = net_balance / cumulative_max - 1
         max_drawdown = float(np.min(drawdowns)) if drawdowns.size else 0.0
+        time_in_drawdown = float(np.mean(net_balance < cumulative_max)) if net_balance.size else 0.0
+
+        if not np.isfinite(max_drawdown):
+            calmar = 0.0
+        elif max_drawdown < 0:
+            calmar = apy / abs(max_drawdown)
+        else:
+            calmar = math.inf if apy > _RATIO_EPS else 0.0
+
+        returns_values = returns.values if not returns.empty else np.array([])
+        # A bar that divides by a zero balance (e.g. ``0 -> positive``) yields a
+        # non-finite ``pct_change``; it is not an observed return, so the
+        # tail/ratio metrics are computed on the finite observations only.
+        returns_values = returns_values[np.isfinite(returns_values)]
+        if returns_values.size == 0:
+            sortino = var_95 = cvar_95 = omega_ratio = 0.0
+        else:
+            # Downside-only Sharpe with a zero target, annualized like ``sharpe``.
+            downside_std = float(np.sqrt(np.mean(np.minimum(returns_values, 0.0) ** 2)))
+            if downside_std == 0:
+                sortino = math.inf if float(returns_values.mean()) > _RATIO_EPS else 0.0
+            elif not np.isfinite(downside_std):
+                sortino = 0.0
+            else:
+                sortino = float(returns_values.mean()) / downside_std * np.sqrt(data_frequency)
+
+            # Positive loss magnitudes from the worst 5% of returns. ``var_95``
+            # is the empirical 5% quantile loss; ``cvar_95`` averages a fixed
+            # ``ceil(5% * n)`` worst-observation tail, so the expected shortfall
+            # always covers the intended 5% of the sample — selecting every bar
+            # ``<= q05`` would sweep in the whole tied block on flat series.
+            q05 = float(np.quantile(returns_values, 0.05))
+            var_95 = max(0.0, -q05)
+            tail_size = max(1, int(np.ceil(0.05 * returns_values.size)))
+            cvar_95 = max(0.0, -float(np.sort(returns_values)[:tail_size].mean()))
+
+            gains = float(np.maximum(returns_values, 0.0).sum())
+            losses = float(np.maximum(-returns_values, 0.0).sum())
+            omega_ratio = gains / losses if losses > 0 else (math.inf if gains > _RATIO_EPS else 0.0)
+
+        traded_notional = float(sum(record.traded_notional for record in records))
+        positive_nav = raw_net_balance[raw_net_balance > 0]
+        mean_positive_nav = float(positive_nav.mean()) if positive_nav.size else 0.0
+        turnover = traded_notional / mean_positive_nav if mean_positive_nav > 0 else 0.0
+        initial_nav = float(raw_net_balance[0])
+        fee_drag = fees_paid / initial_nav if initial_nav > 0 else 0.0
 
         return StrategyMetrics(
             accumulated_return=accumulated_return,
             apy=apy,
             sharpe=sharpe,
-            max_drawdown=max_drawdown
+            max_drawdown=max_drawdown,
+            cagr=cagr,
+            sortino=sortino,
+            calmar=calmar,
+            var_95=var_95,
+            cvar_95=cvar_95,
+            omega_ratio=omega_ratio,
+            time_in_drawdown=time_in_drawdown,
+            fees_paid=fees_paid,
+            turnover=turnover,
+            fee_drag=fee_drag,
         )
+
+    @staticmethod
+    def _compound_annual_growth(accumulated_return: float, total_years: float) -> float:
+        """CAGR of ``accumulated_return`` over ``total_years``.
+
+        ``-1.0`` once the balance is wiped out (growth factor <= 0). Very
+        short windows push the annualised log-growth beyond what ``exp``
+        can represent; there the linear annualisation is returned instead
+        of overflowing.
+        """
+        growth = 1.0 + accumulated_return
+        if growth <= 0:
+            return -1.0
+        log_annual = math.log(growth) / total_years
+        if abs(log_annual) > 700:
+            return accumulated_return / total_years
+        return math.expm1(log_annual)
 
     @staticmethod
     def _zero_metrics() -> "StrategyMetrics":
         return StrategyMetrics(
-            accumulated_return=0.0, apy=0.0, sharpe=0.0, max_drawdown=0.0,
+            accumulated_return=0.0, apy=0.0, sharpe=0.0, max_drawdown=0.0, cagr=0.0,
+            sortino=0.0, calmar=0.0, var_95=0.0, cvar_95=0.0,
+            omega_ratio=0.0, time_in_drawdown=0.0,
+            fees_paid=0.0, turnover=0.0, fee_drag=0.0,
         )
 
     def get_default_metrics(self) -> StrategyMetrics:

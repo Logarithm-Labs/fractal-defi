@@ -200,7 +200,7 @@ def test_rebalance_delta_spot_negative_branch_orders_deposit_before_withdraw():
 def test_rebalance_returns_empty_when_no_delta():
     s = _make_strategy(target_lev=3.0)
     _seed_initial_position(s, price=3000.0)
-    assert s._rebalance() == []
+    assert s._rebalance() == []  # pylint: disable=use-implicit-booleaness-not-comparison — literal empty-list contract check
 
 
 @pytest.mark.core

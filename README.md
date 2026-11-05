@@ -82,7 +82,7 @@ pip install .
 Requires Python 3.10–3.13.
 
 Contributors and anyone running the test suite want the editable
-install with the dev extras (pulls in pytest, pylint, flake8, isort,
+install with the dev extras (pulls in pytest, pylint, ruff,
 pre-commit, sphinx). See [`CONTRIBUTING.md`](CONTRIBUTING.md):
 
 ```bash
@@ -164,6 +164,9 @@ below.
 | [`examples/tau_reset/`](examples/tau_reset/) | Active Uniswap V3 LP with τ-reset rebalancing |
 | [`examples/agentic_trader/`](examples/agentic_trader/) | LLM-driven trading agent over historical klines |
 | [`examples/ml_funding_rate_forecasting/`](examples/ml_funding_rate_forecasting/) | ML pipeline: forecasting Binance funding rates with feature engineering + CatBoost |
+| [`examples/pendle_pt_backtests/`](examples/pendle_pt_backtests/) | Pendle PT looping on Morpho Blue and PT carry hedged with a perp (+ Boros funding lock) on real data |
+| [`examples/susde_pt_carry/`](examples/susde_pt_carry/) | sUSDe PT leveraged loans with and without a Boros yield-unit overlay on eight markets; MLflow grid and an analysis notebook |
+| [`examples/morpho_supply/`](examples/morpho_supply/) | Morpho Blue supply: single-position rotation and multi-market allocation on live hourly data, plus a replication of Baude et al. (arXiv:2608.24206) |
 
 After cloning the repo and installing the package, run an example
 directly:
@@ -172,6 +175,7 @@ directly:
 python examples/quick_start/quick_start.py
 python examples/basis/backtest.py
 python examples/tau_reset/backtest.py
+python examples/pendle_pt_backtests/leveraged_pt_backtest.py
 ```
 
 The grid-search variants (`examples/<name>/grid.py`) log results to
@@ -209,7 +213,7 @@ BibTeX:
 @software{fractal_defi,
   author    = {Krestenko, Anatoly and {the Fractal contributors}},
   title     = {Fractal: A Python Research Library for {DeFi} Strategies},
-  version   = {1.3.2},
+  version   = {1.4.0},
   year      = {2026},
   doi       = {10.5281/zenodo.20049904},
   url       = {https://doi.org/10.5281/zenodo.20049904},

@@ -31,7 +31,7 @@ TESTS    := tests
 EXAMPLES := examples
 
 .PHONY: help setup install pre-commit format lint \
-        test test-slow test-integration test-all test-e2e smoke \
+        test test-slow test-integration test-all test-e2e smoke release-check benchmark profile profile-view \
         docs docs-strict docs-serve docs-clean \
         clean clean-runs clean-all \
         build release-test release post-release
@@ -45,8 +45,8 @@ help:
 	@echo ""
 	@echo "  Lint / format:"
 	@echo "    pre-commit       run every pre-commit hook (matches CI lint job)"
-	@echo "    format           auto-fix import order (isort)"
-	@echo "    lint             flake8 + pylint(fractal) + pylint(tests) + isort --check"
+	@echo "    format           auto-fix lint findings (ruff --fix, incl. import order)"
+	@echo "    lint             ruff + pylint(fractal) + pylint(tests)"
 	@echo ""
 	@echo "  Tests (layered):"
 	@echo "    test             offline core suite (~1100 tests, ~10s) — default for CI on every PR"
@@ -55,6 +55,10 @@ help:
 	@echo "    test-all         every layer combined (core + slow + integration)"
 	@echo "    test-e2e         Docker MLflow end-to-end harness"
 	@echo "    smoke            build wheel, install in throwaway venv, run imports + tests against it"
+	@echo "    release-check    pre-release consistency: versions, dependency floors, docs pages, exports, examples"
+	@echo "    benchmark        run deterministic offline performance benchmarks"
+	@echo "    profile          write cProfile + text reports under profile-artifacts/"
+	@echo "    profile-view     open the generated profile in SnakeViz"
 	@echo ""
 	@echo "  Docs:"
 	@echo "    docs             build Sphinx html (open docs/build/html/index.html)"
@@ -90,11 +94,10 @@ pre-commit:
 	pre-commit run --all-files
 
 format:
-	isort $(PROJECT) $(TESTS) $(EXAMPLES)
+	ruff check $(PROJECT) $(TESTS) $(EXAMPLES) --fix
 
 lint:
-	isort --check-only --diff $(PROJECT) $(TESTS) $(EXAMPLES)
-	flake8 $(PROJECT) $(TESTS)
+	ruff check $(PROJECT) $(TESTS) $(EXAMPLES)
 	pylint $(PROJECT) --disable=R --score=no
 	pylint --rcfile=$(TESTS)/.pylintrc $(TESTS) --disable=R --score=no
 
@@ -116,6 +119,22 @@ test-e2e:
 
 smoke:
 	bash scripts/smoke/run.sh
+
+# Versions / CHANGELOG / CITATION agree, dependency floors match in all
+# three places, every module has a docs page, examples' imports resolve.
+# BASE is the last release; ``versions`` fails on dev while [Unreleased]
+# still has entries — that is the point before a release.
+release-check:
+	$(PYTHON) scripts/release_check.py --base $(or $(BASE),origin/main)
+
+benchmark:
+	pytest -m benchmark --benchmark-only tests/benchmarks
+
+profile:
+	$(PYTHON) scripts/profile_backtest.py
+
+profile-view: profile
+	snakeviz profile-artifacts/fractal-backtest.prof
 
 # ─── docs ─────────────────────────────────────────────────────────
 docs:

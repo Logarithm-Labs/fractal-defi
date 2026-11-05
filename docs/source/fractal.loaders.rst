@@ -8,6 +8,8 @@ Subpackages
    :maxdepth: 4
 
    fractal.loaders.binance
+   fractal.loaders.defillama
+   fractal.loaders.onchain
    fractal.loaders.simulations
    fractal.loaders.thegraph
 
@@ -19,6 +21,13 @@ Submodules
 
    fractal.loaders.aave
    fractal.loaders.base_loader
+   fractal.loaders.boros
+   fractal.loaders.etherscan
+   fractal.loaders.fred
    fractal.loaders.gmx_v1
    fractal.loaders.hyperliquid
+   fractal.loaders.morpho
+   fractal.loaders.morpho_markets
+   fractal.loaders.pendle
+   fractal.loaders.rpc
    fractal.loaders.structs

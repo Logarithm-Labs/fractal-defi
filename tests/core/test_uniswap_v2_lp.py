@@ -7,6 +7,8 @@ Pool fee model (post-2026 refactor):
 * Old ``trading_fee`` field is removed (was applied to the full deposit
   on both open AND close — incorrect modeling).
 """
+from itertools import pairwise
+
 import pytest
 
 from fractal.core.base.entity import EntityException
@@ -178,7 +180,7 @@ def test_compound_mode_position_grows_each_bar():
         e.update_state(state)
         pos_history.append(e.stable_amount + e.volatile_amount * e._global_state.price)
     # Strictly monotonically increasing — each bar adds share * fees to position.
-    assert all(b > a for a, b in zip(pos_history, pos_history[1:]))
+    assert all(b > a for a, b in pairwise(pos_history))
     # Cash + cumulative tracker untouched (no separate accounting in compound).
     assert e.internal_state.cash == pytest.approx(cash_at_open)
     assert e.internal_state.cumulative_position_fees == 0.0

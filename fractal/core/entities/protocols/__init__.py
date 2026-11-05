@@ -6,14 +6,29 @@ math, Lido staking rewards). Use them to backtest strategies against
 actual protocol behaviour.
 """
 from fractal.core.entities.protocols.aave import AaveEntity, AaveGlobalState
+from fractal.core.entities.protocols.boros import BorosEntity, BorosException, BorosGlobalState, BorosInternalState
 from fractal.core.entities.protocols.hyperliquid import (  # Pre-1.3.0 aliases — re-exported for back-compat.
     HyperliquidEntity,
-    HyperliquidGlobalState,
     HyperLiquidGlobalState,
-    HyperliquidInternalState,
+    HyperliquidGlobalState,
     HyperLiquidInternalState,
-    HyperliquidPosition,
+    HyperliquidInternalState,
     HyperLiquidPosition,
+    HyperliquidPosition,
+)
+from fractal.core.entities.protocols.morpho import MorphoEntity, MorphoException, MorphoGlobalState, MorphoInternalState
+from fractal.core.entities.protocols.morpho_supply import (
+    MorphoSupplyEntity,
+    MorphoSupplyException,
+    MorphoSupplyGlobalState,
+    MorphoSupplyInternalState,
+)
+from fractal.core.entities.protocols.pendle_pt import (
+    PendlePTConfig,
+    PendlePTEntity,
+    PendlePTException,
+    PendlePTGlobalState,
+    PendlePTInternalState,
 )
 from fractal.core.entities.protocols.steth import StakedETHEntity, StakedETHGlobalState
 from fractal.core.entities.protocols.uniswap_v2_lp import UniswapV2LPConfig, UniswapV2LPEntity, UniswapV2LPGlobalState
@@ -21,13 +36,41 @@ from fractal.core.entities.protocols.uniswap_v3_lp import UniswapV3LPConfig, Uni
 from fractal.core.entities.protocols.uniswap_v3_spot import UniswapV3SpotEntity, UniswapV3SpotGlobalState
 
 __all__ = [
-    "AaveEntity", "AaveGlobalState",
-    "HyperliquidEntity",
-    "HyperliquidGlobalState", "HyperliquidInternalState", "HyperliquidPosition",
+    "AaveEntity",
+    "AaveGlobalState",
+    "BorosEntity",
+    "BorosException",
+    "BorosGlobalState",
+    "BorosInternalState",
     # Pre-1.3.0 aliases (deprecated; will be removed in a future major release).
-    "HyperLiquidGlobalState", "HyperLiquidInternalState", "HyperLiquidPosition",
-    "StakedETHEntity", "StakedETHGlobalState",
-    "UniswapV2LPConfig", "UniswapV2LPEntity", "UniswapV2LPGlobalState",
-    "UniswapV3LPConfig", "UniswapV3LPEntity", "UniswapV3LPGlobalState",
-    "UniswapV3SpotEntity", "UniswapV3SpotGlobalState",
+    "HyperLiquidGlobalState",
+    "HyperLiquidInternalState",
+    "HyperLiquidPosition",
+    "HyperliquidEntity",
+    "HyperliquidGlobalState",
+    "HyperliquidInternalState",
+    "HyperliquidPosition",
+    "MorphoEntity",
+    "MorphoException",
+    "MorphoGlobalState",
+    "MorphoInternalState",
+    "MorphoSupplyEntity",
+    "MorphoSupplyException",
+    "MorphoSupplyGlobalState",
+    "MorphoSupplyInternalState",
+    "PendlePTConfig",
+    "PendlePTEntity",
+    "PendlePTException",
+    "PendlePTGlobalState",
+    "PendlePTInternalState",
+    "StakedETHEntity",
+    "StakedETHGlobalState",
+    "UniswapV2LPConfig",
+    "UniswapV2LPEntity",
+    "UniswapV2LPGlobalState",
+    "UniswapV3LPConfig",
+    "UniswapV3LPEntity",
+    "UniswapV3LPGlobalState",
+    "UniswapV3SpotEntity",
+    "UniswapV3SpotGlobalState",
 ]

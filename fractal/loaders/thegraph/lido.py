@@ -1,6 +1,5 @@
 """Lido stETH staking-rate loader (TheGraph)."""
 from datetime import datetime
-from typing import List, Optional
 
 import pandas as pd
 
@@ -23,16 +22,16 @@ class StETHLoader(ArbitrumGraphLoader):
         self,
         api_key: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> None:
         super().__init__(
             api_key=api_key,
             subgraph_id=self.SUBGRAPH_ID,
             loader_type=loader_type,
         )
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
 
     def _cache_key(self) -> str:
         s = to_seconds(self.start_time) if self.start_time is not None else "open"
@@ -40,7 +39,7 @@ class StETHLoader(ArbitrumGraphLoader):
         return f"steth-{s}-{e}"
 
     def extract(self) -> None:
-        rows: List[dict] = []
+        rows: list[dict] = []
         # Walk backward from the upper bound (end_time or now); stop when we
         # reach start_time or run out of data.
         cursor = to_seconds(self.end_time) if self.end_time is not None else int(utcnow().timestamp())

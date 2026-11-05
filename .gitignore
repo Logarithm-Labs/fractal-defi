@@ -46,6 +46,7 @@ htmlcov/
 nosetests.xml
 coverage.xml
 *.cover
+profile-artifacts/
 *.py,cover
 .hypothesis/
 .pytest_cache/
@@ -167,9 +168,18 @@ backtest/.DS_Store
 !examples/basis/BTC_hyperliquid.csv
 !examples/tau_reset/tau_strategy_result.csv
 
+# Reference outputs of the replication example (per-bar trajectories
+# stay ignored — regenerate via backtest.py / methods_grid_backtests.py).
+!examples/dex_replication_backtest/results/summary.csv
+!examples/dex_replication_backtest/results/methods_grid_results.csv
+# Reference trajectories of the Pendle PT backtests (also slow-test fixtures).
+!examples/pendle_pt_backtests/results/*.csv
+!examples/susde_pt_carry/results/*.csv
+
 # Workshop / tutorial notebooks (the ``*.ipynb`` blanket above keeps
 # scratch notebooks out of git; whitelist the curated ones explicitly).
 !examples/quick_start/quick_start.ipynb
+!examples/susde_pt_carry/analysis.ipynb
 
 *id_rsa
 *id_rsa.pub
@@ -201,3 +211,20 @@ tests/mlflow_tests/output/
 # ENTITIES_REVIEW.md, etc. — any file
 # whose name contains "review" in any case and ends in .md.
 *[Rr][Ee][Vv][Ii][Ee][Ww]*.md
+
+# Local agent state (pi routing cache/circuits, GitNexus index, autoresearch runs, generated plans)
+.pi/
+.gitnexus/
+.auto/
+docs/plans/
+
+# Per-tool agent adapters and personal overrides (AGENTS.md is the canonical shared file)
+.claude/
+.codex/
+CLAUDE.local.md
+AGENTS.override.md
+
+# Morpho supply example: live-API artefacts (registry CSVs are the
+# reviewed universe, results/ holds backtest and replication outputs).
+examples/morpho_supply/results/
+examples/morpho_supply/registry/

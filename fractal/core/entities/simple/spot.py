@@ -15,7 +15,6 @@ pays the fee out of the product received; selling pays the fee out of
 the notional received. ``balance`` is computed at the close price.
 """
 from dataclasses import dataclass
-from typing import Optional
 
 from fractal.core.base.entity import EntityException, GlobalState
 from fractal.core.entities.base.spot import BaseSpotEntity, BaseSpotInternalState
@@ -43,7 +42,7 @@ class SimpleSpotExchangeInternalState(BaseSpotInternalState):
 class SimpleSpotExchange(BaseSpotEntity):
     """Single-asset spot exchange driven by OHLCV bars."""
 
-    def __init__(self, trading_fee: Optional[float] = 0.005) -> None:
+    def __init__(self, trading_fee: float | None = 0.005) -> None:
         """
         Args:
             trading_fee: Fee charged on the received asset on each trade.
@@ -102,6 +101,7 @@ class SimpleSpotExchange(BaseSpotEntity):
         product_received = amount_in_notional * (1 - self._trading_fee) / self._global_state.close
         self._internal_state.amount += product_received
         self._internal_state.cash -= amount_in_notional
+        self.record_execution("buy", amount_in_notional, amount_in_notional * self._trading_fee)
 
     def action_sell(self, amount_in_product: float) -> None:
         if amount_in_product < 0:
@@ -116,6 +116,10 @@ class SimpleSpotExchange(BaseSpotEntity):
         notional_received = amount_in_product * self._global_state.close * (1 - self._trading_fee)
         self._internal_state.amount -= amount_in_product
         self._internal_state.cash += notional_received
+        self.record_execution(
+            "sell", amount_in_product * self._global_state.close,
+            amount_in_product * self._global_state.close * self._trading_fee,
+        )
 
     def action_deposit(self, amount_in_notional: float) -> None:
         if amount_in_notional < 0:

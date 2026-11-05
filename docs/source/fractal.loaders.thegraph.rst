@@ -7,6 +7,7 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
+   fractal.loaders.thegraph.aerodrome
    fractal.loaders.thegraph.uniswap_v2
    fractal.loaders.thegraph.uniswap_v3
 

@@ -9,7 +9,7 @@
     node) to use it again.
 """
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -32,16 +32,16 @@ class GMXV1FundingLoader(Loader):
         token_address: str,
         loader_type: LoaderType = LoaderType.CSV,
         url: str = LEGACY_URL,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         period: str = "daily",
     ) -> None:
         super().__init__(loader_type=loader_type)
         self.token_address: str = validate_evm_address(token_address, field="token_address")
         self._url: str = url
         self._period: str = period
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
         self._http = HttpClient()
 
     def _cache_key(self) -> str:
@@ -49,7 +49,7 @@ class GMXV1FundingLoader(Loader):
         e = to_seconds(self.end_time) if self.end_time is not None else "now"
         return f"{self.token_address}-{self._period}-{s}-{e}"
 
-    def _query(self, last_ts: Optional[int]) -> str:
+    def _query(self, last_ts: int | None) -> str:
         clauses = [f'period: "{self._period}"', f'token: "{self.token_address}"']
         if last_ts is not None:
             clauses.append(f"timestamp_lt: {last_ts}")
@@ -65,8 +65,8 @@ class GMXV1FundingLoader(Loader):
         )
 
     def extract(self) -> None:
-        all_rows: List[Dict[str, Any]] = []
-        cursor: Optional[int] = (
+        all_rows: list[dict[str, Any]] = []
+        cursor: int | None = (
             to_seconds(self.end_time) if self.end_time is not None else None
         )
         while True:

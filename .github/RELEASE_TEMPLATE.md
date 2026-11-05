@@ -58,7 +58,7 @@ complete list grouped by area.
      is a real to-do, not a placeholder. -->
 
 - [ ] `make smoke` green locally (build wheel + install + tests against it)
-- [ ] `make pre-commit` green (lint at 10/10, isort clean)
+- [ ] `make pre-commit` green (lint at 10/10, ruff clean)
 - [ ] `make docs-strict` builds with 0 warnings
 - [ ] `pytest -m core` <N>/<N> ✓
 - [ ] `pytest -m slow` <N>/<N> ✓

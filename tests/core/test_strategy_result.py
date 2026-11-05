@@ -1,4 +1,5 @@
 """Tests for :class:`StrategyResult` and :class:`StrategyMetrics`."""
+import math
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
@@ -50,8 +51,39 @@ def test_get_metrics_accumulated_return_and_apy():
     df = r.to_dataframe()
     m: StrategyMetrics = r.get_metrics(df)
     assert m.accumulated_return == pytest.approx(0.2)
-    # 3 hourly samples → ~2 hours; apy = 0.2 / (2/(365*24)) — large, just sanity-check sign
     assert m.apy > 0
+
+
+@pytest.mark.core
+def test_get_metrics_cagr_compounds_while_apy_stays_linear():
+    """50% over ~6 months: linear ``apy`` gives ~100%, ``cagr`` ~125%."""
+    days = 183
+    timestamps = [datetime(2024, 1, 1, tzinfo=UTC) + timedelta(days=i) for i in range(days)]
+    prices = [100.0 + (50.0 * i / (days - 1)) for i in range(days)]
+    internal_states = [{"X": _IS(amount=1.0)} for _ in range(days)]
+    global_states = [{"X": _GS(price=p)} for p in prices]
+    balances = [{"X": p} for p in prices]
+    r = StrategyResult(
+        timestamps=timestamps,
+        internal_states=internal_states,
+        global_states=global_states,
+        balances=balances,
+    )
+    df = r.to_dataframe()
+    m = r.get_metrics(df)
+    total_years = (timestamps[-1] - timestamps[0]).total_seconds() / (365 * 24 * 3600)
+    assert m.apy == pytest.approx(m.accumulated_return / total_years, rel=1e-9)
+    assert m.cagr == pytest.approx(math.expm1(math.log(1.5) / total_years), rel=1e-9)
+    assert m.cagr > m.apy
+
+
+@pytest.mark.core
+def test_get_metrics_cagr_is_minus_one_when_wiped_out():
+    r = _build_result([100.0, 50.0, 0.0])
+    m = r.get_metrics(r.to_dataframe())
+    assert m.accumulated_return == pytest.approx(-1.0)
+    assert m.cagr == -1.0
+    assert m.apy < 0
 
 
 @pytest.mark.core

@@ -25,7 +25,7 @@ fixed in v1.4.0.
 """
 import warnings
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 import pandas as pd
 
@@ -52,7 +52,7 @@ _WINDOWS = [
 ]
 
 
-def _window_for(start_time: Optional[datetime], end_time: Optional[datetime]) -> str:
+def _window_for(start_time: datetime | None, end_time: datetime | None) -> str:
     """Pick the smallest TimeWindow enum covering ``[start_time, end_time]``."""
     end = to_utc(end_time) or utcnow()
     start = to_utc(start_time)
@@ -62,6 +62,15 @@ def _window_for(start_time: Optional[datetime], end_time: Optional[datetime]) ->
     for name, td in _WINDOWS:
         if span <= td:
             return name
+    max_window = _WINDOWS[-1][1]
+    if span > max_window:
+        warnings.warn(
+            f"Requested span {span.days} days exceeds Aave GraphQL max window "
+            f"({max_window.days} days). History before "
+            f"{end - max_window:%Y-%m-%d} will be missing.",
+            UserWarning,
+            stacklevel=3,
+        )
     return "LAST_YEAR"
 
 
@@ -82,8 +91,8 @@ class AaveV3RatesLoader(Loader):
         market_address: str,
         loader_type: LoaderType = LoaderType.CSV,
         url: str = DEFAULT_URL,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         resolution: int = 1,
     ) -> None:
         super().__init__(loader_type=loader_type)
@@ -91,8 +100,8 @@ class AaveV3RatesLoader(Loader):
         self.market_address: str = validate_evm_address(market_address, field="market_address")
         self.chain_id: int = int(chain_id)
         self._url: str = url
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
         self._resolution: int = int(resolution)
         self._http = HttpClient()
 
@@ -101,7 +110,7 @@ class AaveV3RatesLoader(Loader):
         e = to_seconds(self.end_time) if self.end_time is not None else "now"
         return f"{self.chain_id}-{self.asset_address}-{s}-{e}-{self._resolution}"
 
-    def _request(self) -> Dict[str, Any]:
+    def _request(self) -> dict[str, Any]:
         window = _window_for(self.start_time, self.end_time)
         variables = {
             "req": {
@@ -183,9 +192,17 @@ class AaveV3RatesLoader(Loader):
             self._read(self._cache_key())
         if self._data is None or self._data.empty:
             return LendingHistory(lending_rates=[], borrowing_rates=[], time=[])
+        lending = self._data["lending_rate"].astype(float)
+        borrowing = self._data["borrowing_rate"].astype(float)
+        if lending.isna().any() or borrowing.isna().any():
+            raise ValueError(
+                "Aave rate history has missing lending/borrowing values after merge. "
+                "Got NaN in lending_rate or borrowing_rate; refusing to substitute 0% "
+                "which would silently freeze accruals in backtests."
+            )
         return LendingHistory(
-            lending_rates=self._data["lending_rate"].astype(float).fillna(0.0).values,
-            borrowing_rates=self._data["borrowing_rate"].astype(float).fillna(0.0).values,
+            lending_rates=lending.values,
+            borrowing_rates=borrowing.values,
             time=pd.to_datetime(self._data["date"], utc=True).values,
         )
 
@@ -197,8 +214,8 @@ class AaveV3ArbitrumLoader(AaveV3RatesLoader):
         self,
         asset_address: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         resolution: int = 1,
     ) -> None:
         super().__init__(
@@ -219,8 +236,8 @@ class AaveV3EthereumLoader(AaveV3RatesLoader):
         self,
         asset_address: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         resolution: int = 1,
     ) -> None:
         super().__init__(
@@ -248,8 +265,8 @@ class AaveV2EthereumLoader(AaveV3EthereumLoader):
         self,
         asset_address: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         resolution: int = 1,
     ) -> None:
         warnings.warn(

@@ -36,7 +36,7 @@ Loader contract notes:
 import hashlib
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Literal
 
 import numpy as np
 
@@ -55,12 +55,12 @@ class MonteCarloPriceLoader(Loader):
         price_history: PriceHistory,
         trajectories_number: int = 100,
         mu: float = 0.0,
-        sigma: Optional[float] = None,
+        sigma: float | None = None,
         mode: Mode = "gbm",
         loader_type: LoaderType = LoaderType.PICKLE,
         seed: int = 420,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> None:
         # ``loader_type`` is keyword-only on the ABC (after ``*args``) — must
         # pass it by name, not positionally, otherwise it lands in ``*args``
@@ -76,11 +76,11 @@ class MonteCarloPriceLoader(Loader):
         self.price_history: PriceHistory = price_history
         self.trajectories_number: int = int(trajectories_number)
         self.mu: float = float(mu)
-        self._sigma_override: Optional[float] = None if sigma is None else float(sigma)
+        self._sigma_override: float | None = None if sigma is None else float(sigma)
         self.mode: Mode = mode
         self.seed: int = int(seed)
-        self.start_time: Optional[datetime] = to_utc(start_time)
-        self.end_time: Optional[datetime] = to_utc(end_time)
+        self.start_time: datetime | None = to_utc(start_time)
+        self.end_time: datetime | None = to_utc(end_time)
         self._rng = np.random.default_rng(self.seed)
         self._trajectories: TrajectoryBundle = []
         self._sigma: float = 0.0  # populated by transform()

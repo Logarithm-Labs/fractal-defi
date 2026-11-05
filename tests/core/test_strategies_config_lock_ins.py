@@ -18,7 +18,7 @@ class _BasisP(BasisTradingStrategyHyperparams):
 
 @pytest.mark.core
 def test_hyperliquid_basis_max_leverage_has_safe_default():
-    assert HyperliquidBasis.MAX_LEVERAGE == pytest.approx(10.0)
+    assert pytest.approx(10.0) == HyperliquidBasis.MAX_LEVERAGE
 
 
 @pytest.mark.core

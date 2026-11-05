@@ -36,6 +36,9 @@ SHARED_PUBLIC_API = {
     # base entity machinery (inherited from BaseEntity)
     "execute",
     "get_available_actions",
+    # execution telemetry (#68)
+    "attach_execution_recorder",
+    "record_execution",
     # readouts
     "balance",
     "is_position",
@@ -55,11 +58,30 @@ SHARED_PUBLIC_API = {
     "notional_side",
 }
 
-# Members allowed only on V3 (range/tick math).
+# Members allowed only on V3 (range/tick math + V3-specific gas fields).
+# ``gas_cost_per_{mint,burn,collect}`` are V3-only because V3 has a distinct
+# on-chain ``collect`` step that V2 lacks (V2 fees auto-flow via reserves
+# growth and surface in the entity via ``update_state`` rather than an
+# explicit collect call). A V2 extension covering mint+burn gas only is a
+# follow-up — until then these three live on V3 alone.
 V3_ONLY_PUBLIC = {
     "is_in_range",
     "price_to_tick",
     "tick_to_price",
+    "gas_cost_per_mint",
+    "gas_cost_per_burn",
+    "gas_cost_per_collect",
+    # Exact-amount mint (replicates a real on-chain mint 1:1); V2 has no
+    # price range, so pair-mode entry is not needed there.
+    "action_open_position_from_pair",
+    # Protocol-fee split (slot0.feeProtocol) — V3-specific mechanism;
+    # e.g. Base pools take 1/4 or 1/6 of swap fees.
+    "protocol_fee",
+    # Fee-accrual scheme selector (auto | aggregate | fee_growth).
+    "fee_model",
+    # Per-leg fee computation for the feeGrowth model (pure, mirrors
+    # calculate_fees); V2 has no feeGrowth counters.
+    "calculate_fees_from_growth",
 }
 
 # Members allowed only on V2. V3 has different fee accrual mechanics
@@ -78,6 +100,16 @@ V2_ONLY_CONFIG_FIELDS = {
     "fees_compounding_model",
 }
 
+# Config fields allowed only on V3 — same rationale as ``V3_ONLY_PUBLIC``
+# above (gas is V3-only until V2 grows a matching mint+burn extension).
+V3_ONLY_CONFIG_FIELDS = {
+    "protocol_fee",
+    "fee_model",
+    "gas_cost_per_mint",
+    "gas_cost_per_burn",
+    "gas_cost_per_collect",
+}
+
 
 def _public_members(cls):
     """Public members exposed on a class instance.
@@ -85,10 +117,7 @@ def _public_members(cls):
     Instantiates with default config so instance-level attributes (config-derived)
     show up alongside class-level methods/properties.
     """
-    if cls is UniswapV2LPEntity:
-        instance = cls(UniswapV2LPConfig())
-    else:
-        instance = cls(UniswapV3LPConfig())
+    instance = cls(UniswapV2LPConfig()) if cls is UniswapV2LPEntity else cls(UniswapV3LPConfig())
     return {m for m in dir(instance) if not m.startswith("_") and not m.isupper()}
 
 
@@ -151,7 +180,7 @@ def test_v2_v3_configs_have_same_fields():
     v2_fields = {f.name for f in fields(UniswapV2LPConfig)}
     v3_fields = {f.name for f in fields(UniswapV3LPConfig)}
     shared_v2 = v2_fields - V2_ONLY_CONFIG_FIELDS
-    shared_v3 = v3_fields  # currently no V3-only config fields
+    shared_v3 = v3_fields - V3_ONLY_CONFIG_FIELDS
     assert shared_v2 == shared_v3, (
         f"Config fields differ outside the declared V2/V3-only sets — "
         f"V2-only: {shared_v2 - shared_v3}, V3-only: {shared_v3 - shared_v2}"
@@ -184,6 +213,16 @@ SHARED_INTERNAL_FIELDS = {
 V3_ONLY_INTERNAL_FIELDS = {
     "price_lower",
     "price_upper",
+    # Per-leg cumulative fee counters, filled in feeGrowth mode (V3
+    # feeGrowthGlobal counters have no V2 analogue).
+    "fees_token0",
+    "fees_token1",
+}
+
+# Global-state fields allowed only on V3: per-bar feeGrowthGlobal deltas.
+V3_ONLY_GLOBAL_FIELDS = {
+    "fee_growth0",
+    "fee_growth1",
 }
 
 
@@ -217,10 +256,10 @@ def test_global_states_inherit_from_base():
 
 @pytest.mark.core
 def test_v2_v3_global_states_have_same_fields():
-    """Both inherit from BasePoolGlobalState and add nothing — so fields match."""
+    """Fields match modulo the declared V3-only feeGrowth extensions."""
     v2_fields = {f.name for f in fields(UniswapV2LPGlobalState)}
     v3_fields = {f.name for f in fields(UniswapV3LPGlobalState)}
-    assert v2_fields == v3_fields
+    assert v2_fields == v3_fields - V3_ONLY_GLOBAL_FIELDS
 
 
 @pytest.mark.core

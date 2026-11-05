@@ -1,5 +1,4 @@
 from datetime import datetime
-from typing import List
 
 import pytest
 from hodler import Hodler, HodlerGlobalState, HodlerParams, HodlerStrategy
@@ -13,7 +12,7 @@ class TestHodlerStrategy:
         hodler_strategy.register_entity(NamedEntity(entity_name='stupid_hodler_2', entity=Hodler()))
         try:
             hodler_strategy.register_entity(NamedEntity(entity_name='stupid_hodler', entity=Hodler()))
-            assert False
+            raise AssertionError("register_entity must reject the duplicate name")
         except ValueError:
             assert True
         assert len(hodler_strategy._entities) == 2
@@ -42,7 +41,7 @@ class TestHodlerStrategy:
     @pytest.mark.core
     def test_full_pipeline(self):
         hodler_strategy = HodlerStrategy(debug=True, params=HodlerParams())
-        observations: List[Observation] = [
+        observations: list[Observation] = [
             Observation(timestamp=datetime(2020, 1, 2), states={
                 'stupid_hodler': HodlerGlobalState(price=3001),
             }),

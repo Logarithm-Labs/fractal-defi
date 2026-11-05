@@ -1,7 +1,7 @@
+import contextlib
 import os
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Optional
 from uuid import uuid4
 
 from loguru import logger
@@ -21,17 +21,15 @@ def _strip_default_sink_once() -> None:
     global _DEFAULT_SINK_STRIPPED  # pylint: disable=global-statement
     if _DEFAULT_SINK_STRIPPED:
         return
-    try:
+    # Already removed by user code — fine.
+    with contextlib.suppress(ValueError):
         logger.remove(0)
-    except ValueError:
-        # Already removed by user code — fine.
-        pass
     _DEFAULT_SINK_STRIPPED = True
 
 
 class BaseLogger(ABC):
 
-    def __init__(self, base_artifacts_path: Optional[str] = None, class_name: str = None):
+    def __init__(self, base_artifacts_path: str | None = None, class_name: str | None = None):
         self._id: str = str(uuid4())
         if class_name is None:
             class_name = self.__class__.__name__
@@ -39,7 +37,7 @@ class BaseLogger(ABC):
         self._setup_logger()
 
     @abstractmethod
-    def _init_base_path(self, *args, base_artifacts_path: Optional[str] = None, **kwargs):
+    def _init_base_path(self, *args, base_artifacts_path: str | None = None, **kwargs):
         raise NotImplementedError
 
     @abstractmethod
@@ -68,7 +66,7 @@ class BaseLogger(ABC):
 
 class DefaultLogger(BaseLogger):
 
-    def _init_base_path(self, base_artifacts_path: Optional[str] = None, class_name: str = None):
+    def _init_base_path(self, base_artifacts_path: str | None = None, class_name: str | None = None):
         if base_artifacts_path is None:
             # Honor an explicit run-output root if set; otherwise fall back
             # to cwd. ``PYTHONPATH`` is a colon-separated import list,
@@ -106,11 +104,9 @@ class DefaultLogger(BaseLogger):
         hid = getattr(self, "_handler_id", None)
         if hid is None:
             return
-        try:
+        # Already removed (e.g. by a prior close()).
+        with contextlib.suppress(ValueError):
             logger.remove(hid)
-        except ValueError:
-            # Already removed (e.g. by a prior close()).
-            pass
         self._handler_id = None
 
     @property

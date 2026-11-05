@@ -3,15 +3,21 @@
 # https://www.sphinx-doc.org/en/master/usage/configuration.html
 
 import os
+import re
 import sys
 
-sys.path.insert(0, os.path.abspath('../../'))
+ROOT = os.path.abspath('../../')
+sys.path.insert(0, ROOT)
 
 # -- Project information -----------------------------------------------------
 
 project = 'fractal'
-copyright = '2024, Logarithm Labs'
+copyright = '2024–2026, Logarithm Labs'
 author = 'Logarithm Labs'
+# Single source of truth for the version is setup.py.
+with open(os.path.join(ROOT, 'setup.py'), encoding='utf-8') as _setup:
+    release = re.search(r"version='([^']+)'", _setup.read()).group(1)
+version = release
 
 # -- General configuration ---------------------------------------------------
 

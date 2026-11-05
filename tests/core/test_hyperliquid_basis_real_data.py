@@ -12,6 +12,9 @@ from fractal.core.entities import HyperliquidGlobalState, UniswapV3SpotGlobalSta
 from fractal.strategies.basis_trading_strategy import BasisTradingStrategyHyperparams  # noqa: E402
 from fractal.strategies.hyperliquid_basis import HyperliquidBasis  # noqa: E402
 
+# Ratio metrics that are ``+inf`` by policy when a path has no observed downside.
+UNBOUNDED_RATIO_METRICS = {"sortino", "calmar", "omega_ratio"}
+
 _FIXTURES_DIR = (Path(__file__).resolve().parents[2]
                  / "examples" / "basis")
 
@@ -65,9 +68,14 @@ def test_hyperliquid_basis_runs_on_real_data_one_week(ticker):
     assert final_total > 0
     metrics = result.get_default_metrics()
     metric_dict = metrics.__dict__ if hasattr(metrics, "__dict__") else dict(metrics)
-    for value in metric_dict.values():
-        if isinstance(value, (int, float)):
-            assert math.isfinite(value)
+    for key, value in metric_dict.items():
+        if not isinstance(value, (int, float)):
+            continue
+        if key in UNBOUNDED_RATIO_METRICS:
+            # ``+inf`` by policy when the path has no observed downside.
+            assert not math.isnan(value) and value != -math.inf, key
+        else:
+            assert math.isfinite(value), key
 
 
 @pytest.mark.slow

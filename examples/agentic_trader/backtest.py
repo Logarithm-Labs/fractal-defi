@@ -1,7 +1,6 @@
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import List
 
 from agents import Agent, Runner, function_tool
 from openai_agent import AgentAction, create_agent
@@ -36,7 +35,7 @@ class AgentTradingStrategy(BaseStrategy[AgentTradingStrategyParams]):
 
     def __create_agent(self) -> Agent:
         @function_tool
-        def get_klines() -> List:
+        def get_klines() -> list:
             """
             This function is used as a tool to get the klines data.
             Returns:
@@ -50,7 +49,7 @@ class AgentTradingStrategy(BaseStrategy[AgentTradingStrategyParams]):
         exchange = self.get_entity('exchange')
         exchange.action_deposit(self._params.INITIAL_BALANCE)
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         if self._window_size == 0:
             exchange: SimpleSpotExchange = self.get_entity('exchange')
             internal_state: SimpleSpotExchangeInternalState = exchange.internal_state
@@ -95,10 +94,10 @@ if __name__ == '__main__':
                                          loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
-    observations: List[Observation] = [
+    observations: list[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': SimpleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
         for timestamp, o, h, l, c in zip(binance_klines.index, binance_klines['open'], binance_klines['high'],
-                                         binance_klines['low'], binance_klines['close'])
+                                         binance_klines['low'], binance_klines['close'], strict=False)
     ]
 
     # Run the strategy with an Agent

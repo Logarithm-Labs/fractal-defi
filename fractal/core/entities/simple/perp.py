@@ -22,7 +22,7 @@ Update sequence on each ``update_state``:
 
 1. Apply the new global state (mark price + funding rate).
 2. Settle funding: ``collateral -= size · mark_price · funding_rate``.
-3. Liquidation check: if ``balance < |size| · mark_price / MAX_LEVERAGE``,
+3. Liquidation check: if ``balance <= |size| · mark_price / MAX_LEVERAGE``,
    wipe collateral and the position.
 
 Funding settles **before** liquidation so a positive funding tick can
@@ -92,7 +92,7 @@ class SimplePerpEntity(BasePerpEntity):
         super().__init__(*args, **kwargs)
 
     @property
-    def TRADING_FEE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def TRADING_FEE(self) -> float:
         """Deprecated alias for :attr:`trading_fee`."""
         warnings.warn(
             "SimplePerpEntity.TRADING_FEE is deprecated; use trading_fee (lowercase).",
@@ -102,7 +102,7 @@ class SimplePerpEntity(BasePerpEntity):
         return self.trading_fee
 
     @property
-    def MAX_LEVERAGE(self) -> float:  # noqa: N802  (deprecated UPPERCASE alias)
+    def MAX_LEVERAGE(self) -> float:
         """Deprecated alias for :attr:`max_leverage`."""
         warnings.warn(
             "SimplePerpEntity.MAX_LEVERAGE is deprecated; use max_leverage (lowercase).",
@@ -235,6 +235,12 @@ class SimplePerpEntity(BasePerpEntity):
                     f"max_leverage {self.max_leverage}"
                 )
 
+        # Telemetry: fee already charged on the traded notional above.
+        self.record_execution(
+            self._trade_action_label(), abs(amount_in_product) * mark_price,
+            abs(amount_in_product) * mark_price * self.trading_fee,
+        )
+
     # ``action_close_position`` is inherited from :class:`BasePerpEntity`
     # (default impl: ``action_open_position(amount_in_product=-self.size)``).
 
@@ -312,7 +318,7 @@ class SimplePerpEntity(BasePerpEntity):
     def _check_liquidation(self) -> bool:
         if self._internal_state.size == 0:
             return False
-        return self.balance < self.maintenance_margin
+        return self.balance <= self.maintenance_margin
 
     def _wipe(self) -> None:
         self._internal_state.collateral = 0.0

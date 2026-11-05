@@ -145,7 +145,7 @@ def test_hl_and_sp_match_pnl_through_walk():
 
     # PnL identical (positions equivalent, no fees, no funding).
     assert len(pnls_hl) == len(pnls_sp)
-    for ph, ps in zip(pnls_hl, pnls_sp):
+    for ph, ps in zip(pnls_hl, pnls_sp, strict=False):
         assert ph == pytest.approx(ps)
 
 

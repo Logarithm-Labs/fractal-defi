@@ -1,12 +1,15 @@
+import sys
 import warnings
+from pathlib import Path
 
 warnings.filterwarnings('ignore')
 
 from datetime import datetime
-from typing import List
 
 from prompts import BEARISH_PROMPT, BULLISH_PROMPT, NEUTRAL_PROMPT
 from sklearn.model_selection import ParameterGrid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # repo root, so ``examples.*`` imports work from this folder
 
 from examples.agentic_trader.backtest import AgentTradingStrategy
 from fractal.core.base import Observation
@@ -18,7 +21,7 @@ from fractal.loaders.binance import BinanceKlinesLoader
 
 
 # Load prices from Binance and build observations
-def build_observations() -> List[Observation]:
+def build_observations() -> list[Observation]:
     # Load prices from Binance
     binance_klines = BinanceKlinesLoader('BTCUSDT', interval='1d',
                                          start_time=datetime(2024, 1, 1),
@@ -26,10 +29,10 @@ def build_observations() -> List[Observation]:
                                          loader_type=LoaderType.CSV).read(with_run=True)
 
     # Build observations list
-    observations: List[Observation] = [
+    observations: list[Observation] = [
         Observation(timestamp=timestamp, states={'exchange': SimpleSpotExchangeGlobalState(open=o, high=h, low=l, close=c)})
         for timestamp, o, h, l, c in zip(binance_klines.index, binance_klines['open'], binance_klines['high'],
-                                         binance_klines['low'], binance_klines['close'])
+                                         binance_klines['low'], binance_klines['close'], strict=False)
     ]
     return observations
 
@@ -49,7 +52,7 @@ if __name__ == '__main__':
     # Define MLflow and Experiment configurations
     mlflow_config: MLflowConfig = MLflowConfig(
         mlflow_uri='http://127.0.0.1:8080',
-        experiment_name=f'agent_trader_btc_v0.1-2024'
+        experiment_name='agent_trader_btc_v0.1-2024'
     )
     experiment_config: ExperimentConfig = ExperimentConfig(
         strategy_type=AgentTradingStrategy,

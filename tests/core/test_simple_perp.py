@@ -240,6 +240,22 @@ def test_liquidation_not_triggered_above_maintenance():
 
 
 @pytest.mark.core
+def test_liquidation_triggers_at_maintenance_boundary():
+    """Match Hyperliquid semantics: balance == maintenance_margin must wipe."""
+    e = SimplePerpEntity(trading_fee=0.0, max_leverage=10)
+    e.update_state(SimplePerpGlobalState(mark_price=1000))
+    e.action_deposit(200)
+    e.action_open_position(1)
+    mm = e.maintenance_margin
+    e._internal_state.collateral += mm - e.balance
+    assert e.balance == pytest.approx(mm)
+    assert e._check_liquidation() is True
+    e.update_state(SimplePerpGlobalState(mark_price=1000))
+    assert e.size == 0
+    assert e.internal_state.collateral == 0
+
+
+@pytest.mark.core
 def test_funding_settles_before_liquidation_check():
     """If a positive funding tick on a short position lifts balance back
     above maintenance, liquidation must NOT fire."""
@@ -289,7 +305,7 @@ def test_open_position_rejects_above_max_leverage():
     e.update_state(SimplePerpGlobalState(mark_price=1000.0))
     e.action_deposit(100)
     with pytest.raises(SimplePerpEntityException,
-                       match="leverage|maintenance_margin"):
+                       match=r"leverage|maintenance_margin"):
         e.action_open_position(2.0)  # notional 2000 → MM 200 > balance 100
     assert e.size == 0
     assert e.internal_state.collateral == 100

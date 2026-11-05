@@ -1,6 +1,5 @@
 import math
 from dataclasses import dataclass
-from typing import List
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams
 from fractal.core.entities import BasePerpEntity, BaseSpotEntity
@@ -69,7 +68,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
                 f"SPOT must be a BaseSpotEntity, got {type(spot).__name__}"
             )
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         """
         Predict the actions to take based on the current state of the entities.
         Returns a list of ActionToTake objects representing the actions to be executed.
@@ -95,7 +94,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
             return self._rebalance()
         return []
 
-    def _rebalance(self) -> List[ActionToTake]:
+    def _rebalance(self) -> list[ActionToTake]:
         """
         Rebalance the entities to maintain the target leverage ratio.
         Returns a list of ActionToTake objects representing the rebalancing actions to be executed.
@@ -233,7 +232,7 @@ class BasisTradingStrategy(BaseStrategy[BasisTradingStrategyHyperparams]):
             ]
         return []
 
-    def _deposit_into_strategy(self) -> List[ActionToTake]:
+    def _deposit_into_strategy(self) -> list[ActionToTake]:
         """
         Deposit initial funds into the strategy and open a position.
         Returns a list of ActionToTake objects representing the deposit actions to be executed.

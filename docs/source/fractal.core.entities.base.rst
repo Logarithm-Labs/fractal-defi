@@ -7,6 +7,7 @@ Submodules
 .. toctree::
    :maxdepth: 4
 
+   fractal.core.entities.base.fixed_term
    fractal.core.entities.base.hedge
    fractal.core.entities.base.lending
    fractal.core.entities.base.liquid_staking

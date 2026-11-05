@@ -4,6 +4,294 @@ All notable changes to **fractal-defi** are documented here. The format
 is loosely based on [Keep a Changelog](https://keepachangelog.com/),
 with one-line bullets per change.
 
+## [Unreleased]
+
+## [v1.4.0] — 2026-11-05
+
+Morpho Blue supply research tooling (a supply entity, rotation and
+marginal-income allocation strategies, AdaptiveCurve math and a market
+simulator), Pendle PT / Morpho / Boros fixed-term strategies, exact
+Uniswap V3 fee replication, and new data sources (DefiLlama, FRED,
+Etherscan and generic on-chain logs, per-network gas history, Morpho
+Blue oracle price history), opt-in Aave V3 partial liquidation and
+reserve supply cap, plus moving-block bootstrap confidence intervals.
+Defaults of existing strategies are unchanged; the behaviour changes
+are listed under Changed and Fixed (stricter loader time inputs,
+loaders that raise on missing data instead of zero-filling, the perp
+liquidation boundary).
+
+Uniswap V3 LP replication backtesting: exact per-leg fee accrual from
+the pool's own `feeGrowthGlobal` counters, validated 1:1 against real
+on-chain positions on Base (all 13 within 0.06% of the chain's
+`feeGrowthInside` accrual over a two-month window). Default behaviour
+of existing strategies is unchanged: the new fee model only engages
+when the observations carry `fee_growth0/1`.
+
+### Added
+
+- **`MorphoOraclePriceLoader`** (`fractal.loaders.onchain`): a Morpho Blue market's oracle `price()` per bar (`freq="1D"` by default) at the last block at or before each bar (no look-ahead), in loan-token units per collateral unit, as `PriceHistory` for `MorphoGlobalState.collateral_price`. The oracle address and token decimals come from `get_market_info`; past-block `eth_call` needs an archive node. **`calibrate_oracle_price`** scales a modelled oracle price on the backtest grid to exact reads (`model × κ`, `ln κ` linear in time between reads), so daily reads carry an underlying-asset feed into hourly bars.
+- **`hybrid_oracle_price`** (`pendle_math`): the `EOPendlePTFeedHybrid` PT feed, `min(1, max(linear discount, TWAP))`.
+- **`AaveEntity(liquidation_mode="partial", liquidation_bonus=...)`** — opt-in Aave V3 liquidation (`LiquidationLogic.sol`, aave-v3-origin `8305565`): liquidatable only below HF 1, liquidators repay up to 50% of the debt (100% at HF ≤ 0.95 or when collateral or debt is under $2000), seize `repaid × bonus` of collateral, may not leave under $1000 of either leg, and repeat while HF stays below 1; a collateral shortfall writes the remaining debt off. The bonus is validated as on `PoolConfigurator` (`> 1`, `liq_thr · bonus ≤ 1`). The default `"full"` mode keeps the existing wipe.
+- **`AaveGlobalState.supply_cap` / `reserve_total_supply`** — optional reserve supply cap: `action_deposit` rejects a deposit that would take the other suppliers' total plus this position past the cap. Like Aave, only new supply is checked (accrued interest may exceed the cap). No cap by default.
+- **`aave_math.liquidation_call`** (`fractal.core.entities.models.aave_math`) — one Aave V3 `liquidationCall` on a single-collateral, single-debt position as a pure function, with the protocol constants.
+- **`GasPriceHistoryLoader`** (`fractal.loaders.onchain`) / **`GasPriceHistory`** — per-bar (`freq="1h"`, `"1D"`, ...) gas prices of one network (`chain_id`) in gwei from `eth_feeHistory` at the last block at or before each bar (no look-ahead): mean base fee, median priority fee at configurable percentiles (empty blocks excluded), `gas_price_gwei`, block fullness, and the cost of a reference transaction in native tokens and, with a caller-supplied `native_price(t)`, in USD. Sampled window, node requirements and L2 caveats (OP Stack L1 data fee, Arbitrum tips) are documented. Adds `JsonRpcClient.fee_history`.
+- **`FredSeriesLoader`** (`fractal.loaders.fred`) — one daily FRED series (default `DGS3MO`) from the keyless `fredgraph.csv` download as a `RateHistory`; published percent is converted to a decimal (`percent_to_decimal`), each row is indexed by when it becomes known (`availability_lag_days`, default 1: the value for day d is usable from d + 1 00:00 UTC), missing days are dropped, and the window keeps the value already known at `start_time`.
+- **`HttpClient.get_text`** — GET returning the raw body for CSV/text endpoints, with the same retries and HTTP error reporting as `get`; existing methods are unchanged.
+- **`block_bootstrap`** (`fractal.core.base.strategy.bootstrap`) — moving-block bootstrap percentile CIs for daily series such as backtest P&L or returns: several block lengths driven by one seeded draw (common random numbers), the widest per-length interval as the headline CI, and joint resampling of aligned columns; `block_bootstrap_indices`, `percentile_ci` and `widest_block_ci` for custom statistics.
+- **`LogReader`** (`fractal.loaders.onchain`) — protocol-agnostic event-log reader: any emitter (one, a list or `None`) and `eth_getLogs` topic filters with OR-lists, over a block range or a time range (`get_logs_between` / `block_range`, no look-ahead at the end), returning raw JSON-RPC shaped logs de-duplicated and sorted, with an optional integer `timeStamp`. Node reads go in chunks; a range the node rejects as too large (range/limit, 413, timeout) is halved, transient failures (5xx/429, overload, dropped connections) are retried with backoff, and what still fails is read from Etherscan (OR-lists expanded per combination); `prefer="etherscan"` reverses the order. The error classifiers are public as `fractal.loaders.rpc.is_transient_error` / `is_range_limit_error` / `is_splittable_error`.
+- **`EtherscanClient`** (`fractal.loaders.etherscan`) — throttled Etherscan V2 (multichain) client for block-by-time and filtered event logs in the JSON-RPC log shape (paged, with the 10 000-row window split by block range); body-level rate-limit answers are retried; the key comes from `api_key=` or `ETHERSCAN_API_KEY` and is scrubbed from errors.
+- **`JsonRpcClient.block_at_timestamp`** — interpolation-guided search over cached block headers (`closest="after"|"before"`, optional `low`/`high` bracket), plus a `hex_to_int` helper for provider quantity encodings.
+- **`MorphoSupplyEntity`** — USD-notional Morpho Blue supply with liquidity-gated withdrawals and position impact anchored to each bar's observed supply APY, so sizing, projected and accrued yield share one curve; optional diluted rewards, optional controller feedback that lowers the rate from the observed level (drift clamped to the protocol bounds), and per-leg gas/fee telemetry.
+- **`MorphoSupplyRotationStrategy`** — lagged, size-aware single-position rotation with eligibility filters and blocked-entry/exit reporting; stale feeds are held, and holdings that leave the eligible universe are exited.
+- **`MorphoSupplyAllocationStrategy`** — multi-market, budget-constrained marginal-income grid allocation with switching costs and an idle-capital hurdle (`TARGET_APY`); reports the lowest last-chunk marginal APY as `lambda_apy`, holds stale feeds and exits ineligible holdings.
+- **`morpho_math` helpers** — shared WAD conversion, supplier-rate curve inversion and AdaptiveCurve controller calculations.
+- **Two-sided Morpho capacity helpers** — deterministic post-deposit utilization, closed-form static supply capacity, horizon-average supplier APY and drift-aware horizon capacity (absolute, deposit-relative or frozen controller drift), a monotone-response check and the controller transition time scale, and realised supplier APY from share-price growth (`realised_supply_apy`) under borrower absorption and supplier offset or crowding-in responses.
+- **`morpho_market_sim`** — vectorised AdaptiveCurve forward simulator (`simulate_market`: borrower/supplier flow rules, borrow interest credited to supply, borrow cap, deposit paths, same-step or lagged drift timing, optional increment-anchored utilization and APY scale, an explicit `undefined_anchor` policy, compounded or arithmetic horizon means), array-rate curve helpers in `morpho_math`, piecewise and reset-to-target supplier utilization rules, and a knot-mean fitting helper. No fitted values ship with the library.
+- **`allocation_math`** — income-optimal spread across markets via the upper concave hull of `P·Y(P)` (`concave_income_frontier`), per-market allocations, and marginal capacity at an outside rate (`capacity_at_rate`: the income-maximising deposit).
+- **`MorphoMarketsLoader` / `discover_chains`** — paginated discovery of listed markets by chain and loan asset, with immutable-key ordering, page deduplication, a repeated-page stop and a `max_markets` cap on kept markets.
+- **`market_sizes_as_of`** — point-in-time USD supply/borrow sizes for many Morpho markets (aliased, batched `historicalState` reads) so a universe can be ranked without survivorship bias; the snapshot rule is explicit (`"at_or_before"` with a staleness bound, or `"end_of_day"`, which looks up to one day ahead).
+- **`MorphoMarketLoader` / `LendingHistory` market totals** — opt-in token-unit supply/borrow assets and normalized supply/borrow shares for realized share-price yield and utilization calculations (requested only when enabled; BigInts parsed exactly from JSON numbers or decimal/hex strings, null points kept as NaN); `read_loan_price()` returns the loan asset's USD price on the market's bars; opt-in `max_window_days` request chunking for long windows (one request by default, consecutive windows paced under the API rate limit); opt-in `allow_gaps` keeps bars the API omits absent instead of raising (separate cache key); `missing_bars()` lists the absent bars of a regular grid; the cache schema is versioned separately from older histories.
+- **`MorphoMarketLoader` / `LendingHistory`** — optional USD market sizes, per-bar supplier rate and reward-inclusive APY, and a versioned cache schema.
+- **`examples/morpho_supply/`** — discovery, formula checks, a provider-backed backtest for both strategies (`--strategy rotation|allocation`) and a replication of Baude, Danos & El Khalloufi (arXiv:2608.24206); local registries and results stay gitignored.
+- **`UniswapV3LPConfig.fee_model`** — `"auto"` (default) / `"aggregate"`
+  / `"fee_growth"`. `fee_growth` accrues `Δ feeGrowthGlobal × L` per
+  bar per token leg (the chain's own liquidity weighting, protocol fee
+  already net); `aggregate` is the legacy `fees × L_pos/(L_pool+L_pos)`
+  estimate; `auto` picks per bar by presence of the feeGrowth fields.
+- **`UniswapV3LPConfig.protocol_fee`** — fraction of swap fees taken by
+  the protocol (`slot0.feeProtocol`; 1/4 or 1/6 on Base pools), applied
+  to the `aggregate` model only.
+- **`UniswapV3LPEntity.action_open_position_from_pair`** — mint from
+  exact `(token0, token1)` amounts with no swap and no fee, replicating
+  a real on-chain mint 1:1. `fees_token0` / `fees_token1` added to the
+  internal state; `price_to_tick` / `tick_to_price` are now static and
+  take decimals.
+- **`fractal.core.entities.models.uniswap_v3_fees`** — `tick_to_price`,
+  `liquidity_to_onchain`, `fees_from_growth`,
+  `position_fees_from_growth` helpers.
+- **`FixedRangeLiquidityProvision`** strategy — passive fixed-range LP
+  (zap-in or exact-pair mint on the first observation, then hold).
+- **`UniswapV3BasePoolHourDataLoader`** — native `poolHourDatas`
+  snapshots on Base with `price` from the hourly tick and per-bar
+  `fee_growth0/1` deltas (non-monotonic counter dips are clamped with a
+  warning).
+- **`UniswapV3SwapsLoader`** (`fractal.loaders.onchain`) — per-swap
+  `Swap` events over a block range via `eth_getLogs`, with adaptive
+  chunking; returns the new `SwapsHistory` struct.
+- **`AerodromeSlipstreamPoolHourDataLoader`** — Aerodrome Slipstream
+  (Base) hourly pool snapshots.
+- **`PoolHistory.fee_growth0/1`** optional columns; **`SwapsHistory`**
+  struct.
+- **`UniswapV3Loader.get_pool_info`** — pool static config (fee tier,
+  symbols, decimals) from the subgraph; the Arbitrum (Messari schema)
+  loader overrides it.
+- **`examples/dex_replication_backtest/`** — 13 real Base positions
+  replayed with `fee_model="fee_growth"` and compared per leg against
+  on-chain ground truth, plus a three-method comparison grid
+  (`fee_growth` / `aggregate` / per-event replay).
+- **`UniswapV3LPConfig.gas_cost_per_mint` / `gas_cost_per_burn` /
+  `gas_cost_per_collect`** — three optional flat-cost fields (notional
+  units, default `0.0`) deducted from `cash` on `action_open_position`
+  / `action_open_position_from_pair` (mint) and `action_close_position`
+  (burn + collect). Lets backtests model L1 / L2 transaction costs
+  additively on top of `pool_fee_rate` and `slippage_pct`.
+  Chain-agnostic: caller converts `gas_units × gas_price ×
+  native_token_price` into notional. Defaults preserve byte-identical
+  behaviour for existing configs (locked in by
+  `test_v3_zero_gas_default_is_parity_with_legacy`).
+- **`StrategyMetrics.cagr`** — compound annual growth rate
+  (`(1 + accumulated_return) ** (1 / years) - 1`, `-1.0` when wiped
+  out) next to the unchanged linear `apy`, so existing grid results
+  stay comparable. Logged to MLflow alongside `apy` (mean / q05 / q95 /
+  cvar05 aggregates included).
+- **`StrategyMetrics` risk metrics** — `sortino` (annualized,
+  zero-target downside deviation), `calmar` (`apy / |max_drawdown|`),
+  `var_95` / `cvar_95` (positive loss magnitudes from the worst 5% of
+  per-bar returns), `omega_ratio` (gains / losses at a zero threshold)
+  and `time_in_drawdown` (fraction of bars strictly below the running
+  peak). Ratio policy: `sortino` / `calmar` / `omega_ratio` are `+inf`
+  when there is no observed downside with a positive return, so a
+  loss-free path ranks above the same path with any loss; `0.0` means
+  undefined / degenerate input ("positive" means above a `1e-12`
+  float-noise tolerance). Logged to MLflow via
+  `metrics.__dict__` (the SQL store clamps `inf` to the max float).
+- **Execution telemetry** — `fractal.core.base.execution`:
+  `ExecutionLedger` / `ExecutionRecord` record every executed trade
+  (entity, action, traded notional, fee paid, observation timestamp) in
+  the accounting unit. `BaseStrategy.register_entity` attaches the
+  recorder; `BaseEntity.record_execution` is a no-op until a recorder is
+  attached and is called by the simple, perp, LP, spot, liquid-staking,
+  Pendle PT, Boros, Hyperliquid and Morpho supply entities. The run's records travel on
+  `StrategyResult.execution_records`. Strategies stay picklable.
+- **Execution-derived metrics** — `StrategyMetrics.fees_paid` (total fees
+  in the accounting unit, reported even on degenerate paths), `turnover`
+  (traded notional / mean positive NAV) and `fee_drag` (fees / initial
+  NAV); `0.0` when no telemetry was recorded.
+- **DefiLlama loaders** (`fractal.loaders.defillama`) —
+  `DefiLlamaTVLLoader` (protocol TVL per UTC day, summed across chains;
+  days where a chain is missing or null are dropped with a warning
+  rather than understated), `DefiLlamaDEXLoader` (daily volume + fees),
+  and the optional Pro-API `DefiLlamaYieldsLoader` / `DefiLlamaPoolLoader`
+  (key via `api_key=` or `DEFILLAMA_API_KEY`). Yields follow the
+  `RateHistory` convention of the Lido loader: an hourly grid of
+  per-step fractions, `(1 + apy/100) ** (1/8760) - 1`. The Pro key is
+  kept out of cache keys, error chains and urllib3 logs. New structs
+  `TVLHistory`, `DEXHistory`.
+- **Offline performance benchmarks** — `tests/benchmarks` (pytest-benchmark,
+  `benchmark` marker, excluded from the default run), `make benchmark`,
+  `make profile` / `make profile-view` (`scripts/profile_backtest.py`,
+  cProfile + SnakeViz) and a manual, non-gating CI job.
+- **Release consistency check** — `make release-check`
+  (`scripts/release_check.py`, stdlib only, no network): version, date
+  and CHANGELOG agree, `[Unreleased]` is folded in, the tag does not exist
+  yet, dependency floors match in all three places, every module has a
+  docs page, `__all__` entries exist, new data files are whitelisted and
+  examples' `fractal` imports resolve. Runs in CI on release PRs; the CI
+  workflow now declares read-only `permissions`.
+- **Pendle PT + Morpho Blue + Boros** — a fixed-term paradigm and three
+  protocol entities (supersedes #83):
+  `BaseFixedTermEntity` / `BaseFixedTermGlobalState` (`seconds_to_expiry`
+  on the global state, `is_matured`, `_check_maturity` hook);
+  `PendlePTEntity` (compounded PT price in the accounting asset,
+  `asset_price` bridge, `pyIndex` redemption haircut, `impact_model`
+  `"amm"` = `MarketMathCore` replay or `"rate_spread"`, side-effect-free
+  `quote_buy` / `quote_sell`, a buy the pool cannot fill is refused
+  rather than partially filled);
+  `MorphoEntity` (a `SimpleLendingEntity` sibling with a single LLTV,
+  oracle price for health and optional market price for PnL, Taylor
+  accrual, liquidation strictly above LLTV that closes the debt at the
+  liquidation incentive factor); `BorosEntity` (fixed-vs-floating yield
+  units in coins on `BasePerpEntity`, per-period settlement,
+  mark-to-maturity, IM/MM with rate and time floors, zero value at
+  maturity). Pure maths in `fractal.core.entities.models.{pendle_math,
+  morpho_math, boros_math}`; `fractal.core.base.time.SECONDS_PER_YEAR`
+  (ACT/365) is the single day-count home.
+- **`fractal.loaders.rpc`** — one JSON-RPC transport for every on-chain
+  read: `JsonRpcClient` (`call`, `eth_call`, `block_number`, `get_block`,
+  `block_timestamp`, `get_logs`, `iter_logs` with adaptive chunking) and
+  ABI helpers (`decode_words`, `as_signed`, `decode_address`,
+  `topic_to_address`, `topic_to_int`, `encode_address`, plus
+  `event_topic` / `function_selector` from a signature via a built-in
+  keccak-256). Any contract's events (Uniswap `Swap`, Aave `Supply` /
+  `Borrow`, ...) load through `iter_logs`; `UniswapV3SwapsLoader` now
+  runs on it and raises `RpcCallError` on node errors.
+- **Pendle / Morpho / Boros loaders** — `PendleMarketLoader` (`/v3`
+  history with the APY breakdown, forward paging, daily prefix where
+  hourly retention runs out, compounded `pt_price_asset`),
+  `PendleOHLCVLoader`, `get_market_info` and `read_market_state`
+  (`readState` over `eth_call` for the AMM parameters);
+  `MorphoMarketLoader` (`marketById`, per-bar borrow rate from the
+  effective APY, `lending_rate = 0` because Morpho Blue collateral earns
+  nothing, optional annual columns, `read_collateral_price`,
+  `read_linear_discount`);
+  `BorosMarketLoader` (`api-boros.pendle.finance`: candles, settlement
+  summary, underlying APR, pre-listing zeros dropped) and
+  `get_market_info`. New structs `PendleMarketHistory`,
+  `BorosMarketHistory`; `LendingHistory` gains optional
+  `utilization` / `borrow_apy` / `supply_apy` / `rate_at_target` columns.
+  All three take the bar length as `interval` (`"1h"` default, `"1d"`;
+  Boros also `"5m"` / `"1w"`, Pendle OHLCV `"1w"`), the convention of the
+  Binance and Hyperliquid loaders; the on-chain loaders sample any
+  pandas `freq` instead. Errors are `PendleLoaderException`,
+  `MorphoLoaderException` and `BorosLoaderException` (exported from
+  `fractal.loaders`).
+  Shared: `Loader._utc_index`, `_dt.annualise_funding`,
+  `_dt.require_no_nan`; `fractal.loaders.rpc` (see above).
+- **`LeveragedPTStrategy` / `MorphoLeveragedPT`** — PT looping (loop or
+  flash-loan multiply; `MAX_LOOPS=0` holds unlevered), LTV band
+  rebalancing with the repay amount solved on the PT entity's own sell
+  quote for the post-sale LTV, loan units converted at `debt_price`,
+  smoothed carry / borrow-APY gates, hold-to-expiry redemption or early
+  exit.
+- **`RateHedgedLeveragedPTStrategy` / `MorphoRateHedgedLeveragedPT`** —
+  the PT loop plus a long Boros yield unit as an overlay on the PT's
+  mark-to-market: sized as a hedge ratio on the PT value
+  (`HEDGE_SIZING="beta"`, `HEDGE_BETA` from the pooled regression of
+  PT vs yield-unit mark-to-market, optionally duration-scaled) or as a
+  multiple of the debt (`"debt"`), capped by the margin parked in the
+  leg, opened lazily when the market lists, re-synced after every loop
+  action, and at the PT's unwind either held to its own maturity
+  (`BOROS_EXIT_POLICY="settle"`) or closed at the mark; `"none"` is
+  byte-identical to `MorphoLeveragedPT`.
+- **`HedgedPTStrategy` / `PerpHedgedPT`** — long PT of a volatile
+  underlying hedged with a short perp sized to the PT delta, margin
+  band that re-splits capital `PT : margin = L : 1`, optional Boros
+  yield-unit short to fix the funding (kept in sync with the perp,
+  opened lazily when the YU market lists after entry).
+- **`examples/pendle_pt_backtests/`** — real-data runs on PT-USDe-25SEP2025
+  (Morpho PT-USDe/USDe, full life), PT-sUSDe-25SEP2025 (Morpho
+  PT-sUSDE/DAI, full life through the September-2025 carry
+  compression), PT-reUSD-10DEC2026 (Morpho PT-reUSD/USDC, hourly
+  through the 2026-08-25 spike), PT-sUSDe-26NOV2026 (Morpho
+  PT-sUSDE/USDC, hourly, exact AMM replay) and PT-wstETH-30DEC2027
+  (Binance ETHUSDT perp, Boros BINANCE-ETHUSDT-25DEC2026), with
+  `validation.csv` against the closed-form carry, `grid.py` through
+  `DefaultPipeline` (target LTV, loops, multiply mode, carry-gate
+  smoothing) and a README section comparing the numbers with published
+  figures.
+- **`examples/susde_pt_carry/`** — the sUSDe PT leveraged loan of #83 with
+  and without the Boros overlay on eight instruments (six expired
+  PT-sUSDe / PT-USDe markets held to redemption with ETH or BTC yield
+  units, two live markets on hourly bars): `run.py` writes
+  `validation.csv` and the showcase trajectory, `grid.py` runs the
+  parameter grid through `DefaultPipeline`, `analysis.ipynb` decomposes
+  the showcase (equity, PnL by leg, APY / drawdown, costs, Boros leg).
+
+### Changed
+
+- **ruff replaces flake8 + isort** (`ruff.toml`): pycodestyle/pyflakes
+  parity including E501 at 120 columns and the whitespace / blank-line
+  rules, import sorting, plus the UP / B / SIM / RUF rule sets with a
+  documented per-rule policy. `make lint` / `make format` and the
+  pre-commit hooks use ruff; pylint still runs at 10/10.
+- **`StrategyResult.get_metrics` treats a non-positive initial balance
+  as degenerate** (all metrics `0.0`, `fees_paid` kept): returns against
+  a negative base flip sign, which reported losing runs as gains.
+- **Loader structs reject numeric time arrays** (`TypeError`): epoch
+  seconds/milliseconds must be converted explicitly with
+  `pd.to_datetime(..., unit=...)` (or `Loader._utc_index`) so a unit is
+  never guessed; datetime inputs take a fast path without an object
+  round trip.
+- **Dependency floors raised** (`setup.py`, `requirements.txt` and the
+  pre-commit hook pins kept in sync): runtime `mlflow>=3.17.2` (was
+  `>=3.11.1`), `requests>=2.34.2` (was `>=2.33.1`); dev tooling
+  `pytest>=9.2.0`, `pytest-cov>=7.1.0`, `pylint>=4.1.3`,
+  `ruff>=0.17.3` (replacing flake8 and isort), `pre-commit>=4.6.2`, new
+  `pytest-benchmark>=5.3.0` and `snakeviz>=2.2.2`; release tooling
+  `build>=1.6.1`, `twine>=7.0.0`. CI actions bumped to `checkout@v7.0.1`,
+  `setup-python@v7`, `cache@v6`, `codecov-action@v7`.
+  `examples/agentic_trader` pins moved to `openai-agents==0.24.0` and
+  `dash==4.4.1`.
+- **`UniswapV3Loader.get_pool_decimals`** is now concrete and delegates
+  to `get_pool_info`; the Ethereum loader no longer overrides it.
+- **`UniswapV3LPEntity.update_state`** additionally validates
+  `fee_growth0/1 >= 0` when a position is open.
+
+### Fixed
+
+- **`get_market_info` (Morpho) works against the current API** — the `MarketInfo` query no longer
+  requests `Market.oracleAddress`, which the Morpho GraphQL API removed (every call failed with HTTP 400);
+  the oracle address comes from `oracle.address`.
+- **Binance kline pagination no longer stops at the first short page.** `BinancePriceLoader.get_klines` (and every price/klines subclass) dropped all later history when one 1,000-candle window held fewer candles, for example after an exchange outage or when the symbol listed after `start_time`; it now requests fixed windows through `end_time`.
+- **`MorphoMarketLoader` collateral price join** — the collateral price is left-joined onto the rate bars, so a
+  price point on an hour without rates no longer adds a NaN-rate row that made `read` raise.
+- **Keyed RPC URLs no longer leak into errors or logs.** `JsonRpcClient` routes requests to an endpoint with a path or query (`https://<host>/v3/<key>`) through a shared `_http` redaction (generalised from the DefiLlama Pro loaders): failures are re-raised as scrubbed copies with no key-bearing `__cause__`/`__context__`, and urllib3 log records are scrubbed while a request runs. Key-less URLs keep the original transport; `HttpClient` itself is unchanged.
+- **Morpho `rateAtTarget` conversion** — convert the per-second WAD value from
+  the API to the annual APY documented by `LendingHistory`.
+- **Loaders no longer silently zero missing data.** `AaveV3RatesLoader.read`
+  raises `ValueError` when a lending/borrowing leg carries NaN (the
+  outer merge of the supply and borrow series could leave a gap that
+  became a `0.0` rate) and warns when the requested window exceeds
+  what the subgraph serves; `BinanceFundingLoader.transform` raises on
+  non-numeric funding rates instead of coercing them to `0.0`.
+- **`SimplePerpEntity` liquidates at `balance <= maintenance_margin`**
+  (was strict `<`), matching the Hyperliquid entity.
+- **Negative `tvlUSD` from the uniswap-v3 subgraph** (a derived field
+  that can dip below zero on accounting glitches; observed on Base V3
+  pools) no longer crashes LP backtests on entity validation: the
+  TheGraph pool loaders clamp it to 0 with a warning naming the pool
+  and bar, mirroring the non-monotonic feeGrowth treatment.
+
 ## [v1.3.2] — 2026-05-06
 
 Citation infrastructure for academic use. No functional code changes;

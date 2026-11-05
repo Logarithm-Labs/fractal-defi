@@ -25,11 +25,10 @@ closed-form ``P · (1 + r/n)^n``.
 
 Run from the repo root:
 
-    PYTHONPATH=. python examples/quick_start.py
+    python examples/quick_start/quick_start.py
 """
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import List
 
 from fractal.core.base import Action, ActionToTake, BaseStrategy, BaseStrategyParams, NamedEntity, Observation
 from fractal.core.entities import SimpleLendingEntity, SimpleLendingGlobalState
@@ -57,7 +56,7 @@ class PassiveLenderStrategy(BaseStrategy[LendingParams]):
         ))
         self._funded: bool = False
 
-    def predict(self) -> List[ActionToTake]:
+    def predict(self) -> list[ActionToTake]:
         # First observation: deposit the entire initial balance as
         # collateral. Every subsequent tick is a no-op — the framework
         # still calls ``update_state`` which compounds the position.
@@ -69,7 +68,7 @@ class PassiveLenderStrategy(BaseStrategy[LendingParams]):
         ))]
 
 
-def build_observations(apy: float, days: int = 365) -> List[Observation]:
+def build_observations(apy: float, days: int = 365) -> list[Observation]:
     """One year of hourly snapshots with a flat lending rate.
 
     APY is converted to a per-step rate via ``apy / hours_per_year`` —

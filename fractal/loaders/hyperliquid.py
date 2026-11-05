@@ -13,7 +13,7 @@ indexed by a UTC-aware ``DatetimeIndex``.
 """
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, ClassVar
 
 import pandas as pd
 
@@ -33,8 +33,8 @@ class HyperliquidBaseLoader(Loader):
         self,
         ticker: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         url: str = DEFAULT_URL,
     ) -> None:
         super().__init__(loader_type=loader_type)
@@ -42,13 +42,13 @@ class HyperliquidBaseLoader(Loader):
         self._start_dt = to_utc(start_time) if start_time is not None else None
         self._end_dt = to_utc(end_time) if end_time is not None else utcnow()
         # ms epochs, kept as ints so we can use them as API params unchanged
-        self._start_ms: Optional[int] = to_ms(self._start_dt)
+        self._start_ms: int | None = to_ms(self._start_dt)
         self._end_ms: int = to_ms(self._end_dt)
         self._url: str = url
         self._http = HttpClient()
 
     # -------------------------------------------------------------- helpers
-    def _post(self, body: Dict[str, Any]) -> Any:
+    def _post(self, body: dict[str, Any]) -> Any:
         return self._http.post(self._url, json=body)
 
     def _cache_key(self) -> str:
@@ -79,7 +79,7 @@ class HyperliquidFundingRatesLoader(HyperliquidBaseLoader):
             self._start_ms = to_ms(self._start_dt)
 
         cursor = self._start_ms
-        all_rows: List[Dict[str, Any]] = []
+        all_rows: list[dict[str, Any]] = []
         seen: set = set()
         while True:
             batch = self._post(
@@ -134,7 +134,7 @@ class HyperliquidPerpsPricesLoader(HyperliquidBaseLoader):
     """Perp candle snapshots → :class:`PriceHistory` of open prices."""
 
     _BATCH_LIMIT = 5000  # candleSnapshot hard cap
-    _INTERVAL_MS = {
+    _INTERVAL_MS: ClassVar[dict[str, int]] = {
         "1m": 60_000,
         "3m": 3 * 60_000,
         "5m": 5 * 60_000,
@@ -151,8 +151,8 @@ class HyperliquidPerpsPricesLoader(HyperliquidBaseLoader):
         ticker: str,
         interval: str,
         loader_type: LoaderType = LoaderType.CSV,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
         url: str = DEFAULT_URL,
     ) -> None:
         super().__init__(ticker, loader_type, start_time, end_time, url)
@@ -174,7 +174,7 @@ class HyperliquidPerpsPricesLoader(HyperliquidBaseLoader):
 
         candle_ms = self._INTERVAL_MS[self._interval]
         cursor = self._start_ms
-        all_rows: List[Dict[str, Any]] = []
+        all_rows: list[dict[str, Any]] = []
         seen_t: set = set()
         while cursor < self._end_ms:
             window_end = min(self._end_ms, cursor + candle_ms * self._BATCH_LIMIT)

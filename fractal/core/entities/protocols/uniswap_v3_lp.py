@@ -1,11 +1,11 @@
 from dataclasses import dataclass
-from typing import Tuple
 
 import numpy as np
 
 from fractal.core.base.entity import EntityException, InternalState
 from fractal.core.entities.base.pool import BasePoolEntity, BasePoolGlobalState
-from fractal.core.entities.models.uniswap_v3_fees import estimate_fee, get_liquidity_delta
+from fractal.core.entities.models.uniswap_v3_fees import estimate_fee, get_liquidity_delta, position_fees_from_growth
+from fractal.core.entities.models.uniswap_v3_fees import tick_to_price as model_tick_to_price
 
 
 @dataclass
@@ -17,7 +17,15 @@ class UniswapV3LPGlobalState(BasePoolGlobalState):
     aggregate ``L`` (active-tick liquidity), not LP-token count.
     ``price`` is **notional per non-notional unit** (see
     :class:`UniswapV3LPConfig`).
+
+    ``fee_growth0`` / ``fee_growth1``: per-bar deltas of the pool's
+    ``feeGrowthGlobal{0,1}X128`` counters divided by ``2**128`` (raw
+    token units per unit of on-chain liquidity). ``None`` = no feeGrowth
+    data for the bar (``auto`` falls back to the aggregate estimate);
+    ``0.0`` = data present, zero accrual (stays on the feeGrowth path).
     """
+    fee_growth0: float | None = None
+    fee_growth1: float | None = None
 
 
 @dataclass
@@ -34,6 +42,11 @@ class UniswapV3LPInternalState(InternalState):
         price_upper (float): Position upper price bound.
         liquidity (float): Position ``L`` parameter.
         cash (float): Free notional cash held by entity.
+        fees_token0 (float): Cumulative accrued fees in token0, human
+            units. Filled only in feeGrowth mode (see
+            :class:`UniswapV3LPGlobalState`); the aggregate-``fees``
+            path cannot attribute fees to a leg.
+        fees_token1 (float): Same for token1.
     """
     token0_amount: float = 0.0
     token1_amount: float = 0.0
@@ -44,6 +57,8 @@ class UniswapV3LPInternalState(InternalState):
     price_upper: float = 0.0
     liquidity: float = 0.0
     cash: float = 0.0
+    fees_token0: float = 0.0
+    fees_token1: float = 0.0
 
 
 @dataclass
@@ -58,18 +73,53 @@ class UniswapV3LPConfig:
             swap portion depends on the range relative to current price.
         slippage_pct (float): Additional execution-cost on top of pool fee.
             Captures slippage / MEV. Default ``0.0``.
+        protocol_fee (float): Fraction of pool swap fees taken by the
+            protocol (``slot0.feeProtocol``), in ``[0, 1)``; default
+            ``0.0`` (mainnet). E.g. Base pools take 1/4 or 1/6 while
+            pool ``fees`` observations report the FULL swap fee, so
+            LPs accrue ``fees × (1 − protocol_fee)``. Applies to the
+            ``aggregate`` model only (feeGrowth counters are already
+            net of it).
+        fee_model (str): Fee-accrual scheme:
+
+            * ``"auto"`` (default) — feeGrowth deltas when the bar
+              carries them (``is not None``), else the aggregate
+              estimate. Do not mix data with and without feeGrowth in
+              one run.
+            * ``"aggregate"`` — always ``fees × L_pos/(L_pool+L_pos)``
+              × ``(1 − protocol_fee)``; feeGrowth fields ignored.
+            * ``"fee_growth"`` — only feeGrowth deltas; bars without
+              them accrue nothing.
         token0_decimals (int): Token0 decimals (used by V3 fees model).
         token1_decimals (int): Token1 decimals.
         notional_side (str): Which on-chain slot — ``"token0"`` or
             ``"token1"`` — is the notional/stable side. Default ``"token0"``.
             Pass ``GlobalState.price`` and ``price_lower`` / ``price_upper``
             in the same convention: **notional per non-notional unit**.
+        gas_cost_per_mint (float): Flat gas cost in notional units deducted
+            from ``cash`` on ``action_open_position``. Default ``0.0`` (no
+            gas accounting — preserves legacy behaviour). The caller converts
+            ``gas_units × gas_price × native_token_price`` into notional
+            before constructing the config; the entity treats it as an
+            opaque flat haircut so this stays chain-agnostic.
+        gas_cost_per_burn (float): Flat gas cost in notional units deducted
+            on the burn portion of ``action_close_position``. Default ``0.0``.
+        gas_cost_per_collect (float): Flat gas cost in notional units
+            deducted on the collect portion of ``action_close_position``.
+            Default ``0.0``. Modelled separately from burn so callers can
+            represent fee-collection-without-close on chains that bill
+            them as distinct transactions.
     """
     pool_fee_rate: float = 0.003
     slippage_pct: float = 0.0
+    protocol_fee: float = 0.0
+    fee_model: str = "auto"
     token0_decimals: int = 18
     token1_decimals: int = 18
     notional_side: str = "token0"
+    gas_cost_per_mint: float = 0.0
+    gas_cost_per_burn: float = 0.0
+    gas_cost_per_collect: float = 0.0
 
 
 class UniswapV3LPEntity(BasePoolEntity):
@@ -90,15 +140,25 @@ class UniswapV3LPEntity(BasePoolEntity):
 
       Any leftover stable that couldn't be deposited at the V3 ratio
       (typically ``stable_pre × fee``) returns to cash.
+    * :meth:`action_open_position_from_pair` mints from exact
+      ``(token0, token1)`` amounts — no swap, no fee — replicating a
+      real on-chain mint 1:1 (same amounts, same range, same ``L``).
     * :meth:`update_state` rebalances ``token0_amount`` / ``token1_amount``
       following the V3 in-range / out-of-range formulas, and accrues
-      pro-rata pool swap fees into cash.
+      swap fees into cash per ``config.fee_model``: exact per-leg
+      feeGrowth deltas (also tracked in ``fees_token0/1``) or the
+      pro-rata ``fees``-share estimate.
     * :meth:`action_close_position` (zap-out) burns the position. Stable
       leg returns at full value; volatile leg swaps back at
       ``effective_fee_rate``.
 
     Lower-level pair-based mint / burn are exposed as ``_open_from_pair``
     and ``_close_to_pair``.
+
+    Cost model: zap-in / zap-out optionally apply a flat gas haircut on
+    ``cash`` via ``gas_cost_per_mint``, ``gas_cost_per_burn`` and
+    ``gas_cost_per_collect``. Defaults are ``0.0`` so existing configs are
+    unaffected. See :class:`UniswapV3LPConfig` for details.
     """
 
     _internal_state: UniswapV3LPInternalState
@@ -117,13 +177,39 @@ class UniswapV3LPEntity(BasePoolEntity):
             raise EntityException(
                 f"slippage_pct must be >= 0, got {config.slippage_pct}"
             )
+        if config.gas_cost_per_mint < 0:
+            raise EntityException(
+                f"gas_cost_per_mint must be >= 0, got {config.gas_cost_per_mint}"
+            )
+        if config.gas_cost_per_burn < 0:
+            raise EntityException(
+                f"gas_cost_per_burn must be >= 0, got {config.gas_cost_per_burn}"
+            )
+        if config.gas_cost_per_collect < 0:
+            raise EntityException(
+                f"gas_cost_per_collect must be >= 0, got {config.gas_cost_per_collect}"
+            )
+        if not 0 <= config.protocol_fee < 1:
+            raise EntityException(
+                f"protocol_fee must be in [0, 1), got {config.protocol_fee}"
+            )
+        if config.fee_model not in ("auto", "aggregate", "fee_growth"):
+            raise EntityException(
+                f"fee_model must be 'auto', 'aggregate' or 'fee_growth', "
+                f"got {config.fee_model!r}"
+            )
         # Set config BEFORE super so any subclass override of
         # ``_initialize_states`` can rely on these.
         self.pool_fee_rate: float = config.pool_fee_rate
         self.slippage_pct: float = config.slippage_pct
+        self.protocol_fee: float = config.protocol_fee
+        self.fee_model: str = config.fee_model
         self.token0_decimals: int = config.token0_decimals
         self.token1_decimals: int = config.token1_decimals
         self.notional_side: str = config.notional_side
+        self.gas_cost_per_mint: float = config.gas_cost_per_mint
+        self.gas_cost_per_burn: float = config.gas_cost_per_burn
+        self.gas_cost_per_collect: float = config.gas_cost_per_collect
         super().__init__(*args, **kwargs)
 
     def _initialize_states(self):
@@ -229,7 +315,7 @@ class UniswapV3LPEntity(BasePoolEntity):
         token1_amount: float,
         price_lower: float,
         price_upper: float,
-    ) -> Tuple[float, float]:
+    ) -> tuple[float, float]:
         """Mint V3 position from on-chain ``(token0, token1)`` over ``[pl, pu]``.
 
         No swap, no fee. Internal/advanced — use ``action_open_position`` for
@@ -300,7 +386,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             return stable_leftover, volatile_leftover
         return volatile_leftover, stable_leftover
 
-    def _close_to_pair(self) -> Tuple[float, float]:
+    def _close_to_pair(self) -> tuple[float, float]:
         """Burn V3 LP, return current on-chain ``(token0, token1)`` amounts. No swap."""
         if not self.is_position:
             raise EntityException("No position to close.")
@@ -363,10 +449,12 @@ class UniswapV3LPEntity(BasePoolEntity):
             # Range entirely above current price — swap full notional → volatile.
             stable_at_mint = 0.0
             volatile_at_mint = (amount_in_notional / p) * (1 - fee)
+            swapped_notional = amount_in_notional
         elif p >= price_upper:
             # Range entirely below — no swap, position is 100% stable.
             stable_at_mint = amount_in_notional
             volatile_at_mint = 0.0
+            swapped_notional = 0.0
         else:
             # In range — split by V3 ratio in notional terms.
             stable_factor = sqp - sqpl                     # stable per L
@@ -376,6 +464,7 @@ class UniswapV3LPEntity(BasePoolEntity):
             volatile_value_pre = amount_in_notional * volatile_value_factor / total_factor
             stable_at_mint = stable_pre
             volatile_at_mint = (volatile_value_pre / p) * (1 - fee)
+            swapped_notional = volatile_value_pre
 
         if self.notional_side == "token0":
             token0_amt, token1_amt = stable_at_mint, volatile_at_mint
@@ -396,6 +485,50 @@ class UniswapV3LPEntity(BasePoolEntity):
                 cash_leftover += token0_leftover * p * (1 - fee)
 
         self._internal_state.cash += cash_leftover
+        # Flat gas haircut on cash. Default ``0.0`` is a no-op so legacy
+        # configs see no change. Cash may turn negative — strategies are
+        # responsible for affordability checks before issuing the action.
+        if self.gas_cost_per_mint > 0:
+            self._internal_state.cash -= self.gas_cost_per_mint
+        # Telemetry: only the swapped volatile portion paid a fee.
+        if swapped_notional > 0:
+            self.record_execution("open_position", swapped_notional, swapped_notional * fee)
+
+    def action_open_position_from_pair(
+        self,
+        token0_amount: float,
+        token1_amount: float,
+        price_lower: float,
+        price_upper: float,
+    ) -> None:
+        """Mint from exact ``(token0, token1)`` amounts — no swap, no fee;
+        replicates a real mint 1:1 (same amounts, range and ``L``).
+        Leftovers return to cash (the non-notional side converts at the
+        current price, paying ``effective_fee_rate``). ``gas_cost_per_mint``
+        is deducted from cash exactly as in :meth:`action_open_position`.
+        """
+        token0_leftover, token1_leftover = self._open_from_pair(
+            token0_amount, token1_amount, price_lower, price_upper
+        )
+        p = self._global_state.price
+        fee = self.effective_fee_rate
+        if self.notional_side == "token0":
+            cash_leftover = token0_leftover
+            if token1_leftover > 0:
+                cash_leftover += token1_leftover * p * (1 - fee)
+        else:
+            cash_leftover = token1_leftover
+            if token0_leftover > 0:
+                cash_leftover += token0_leftover * p * (1 - fee)
+        self._internal_state.cash += cash_leftover
+        # A pair-mode mint is still an on-chain mint: same gas as zap-in.
+        if self.gas_cost_per_mint > 0:
+            self._internal_state.cash -= self.gas_cost_per_mint
+        # Telemetry: the non-notional leftover converts with a fee.
+        volatile_leftover = token1_leftover if self.notional_side == "token0" else token0_leftover
+        if volatile_leftover > 0:
+            swapped_notional = volatile_leftover * p
+            self.record_execution("open_position_from_pair", swapped_notional, swapped_notional * fee)
 
     def action_close_position(self) -> None:
         """Zap-out: burn V3 LP, swap volatile leg back to notional (with fee).
@@ -418,15 +551,22 @@ class UniswapV3LPEntity(BasePoolEntity):
         volatile_proceeds = volatile_back * p * (1 - fee) if volatile_back > 0 else 0.0
 
         self._internal_state.cash += stable_back + volatile_proceeds
+        # Flat gas haircut for burn + collect. Default both ``0.0`` ⇒ no-op.
+        gas_close = self.gas_cost_per_burn + self.gas_cost_per_collect
+        if gas_close > 0:
+            self._internal_state.cash -= gas_close
+        # Telemetry: the volatile leg is swapped back with the fee.
+        swapped_notional = volatile_back * p
+        if swapped_notional > 0:
+            self.record_execution("close_position", swapped_notional, swapped_notional * fee)
 
     def update_state(self, state: UniswapV3LPGlobalState) -> None:
         """Apply pool snapshot, rebalance position by V3 formula, accrue fees.
 
-        Validates the snapshot when a position is open: ``price`` must be
-        positive (used as PnL/rebalance basis), and ``liquidity`` / ``fees``
-        / ``tvl`` must be non-negative (negative values would propagate
-        into amounts and balance). When the entity is flat we accept any
-        snapshot — degenerate values cannot mutate state in that branch.
+        Fee accrual follows ``config.fee_model`` (see
+        :class:`UniswapV3LPConfig`). With an open position the snapshot
+        is validated before any mutation: positive ``price``,
+        non-negative ``liquidity``/``fees``/``tvl``/``fee_growth``.
         """
         if self.is_position:
             if state.price <= 0:
@@ -444,6 +584,14 @@ class UniswapV3LPEntity(BasePoolEntity):
             if state.tvl < 0:
                 raise EntityException(
                     f"tvl must be >= 0, got {state.tvl}"
+                )
+            if state.fee_growth0 is not None and state.fee_growth0 < 0:
+                raise EntityException(
+                    f"fee_growth0 must be >= 0, got {state.fee_growth0}"
+                )
+            if state.fee_growth1 is not None and state.fee_growth1 < 0:
+                raise EntityException(
+                    f"fee_growth1 must be >= 0, got {state.fee_growth1}"
                 )
 
         self._global_state = state
@@ -463,7 +611,19 @@ class UniswapV3LPEntity(BasePoolEntity):
             stable = liq * (pu**0.5 - pl**0.5)
             volatile = 0.0
         self._set_position_amounts(stable, volatile)
-        self._internal_state.cash += self.calculate_fees()
+        # Presence-based: a bar with feeGrowth data (even 0.0 deltas)
+        # stays on the feeGrowth path; only data-less bars fall back.
+        has_growth = state.fee_growth0 is not None or state.fee_growth1 is not None
+        if self.fee_model == "fee_growth" or (self.fee_model == "auto" and has_growth):
+            fees0, fees1 = self.calculate_fees_from_growth()
+            self._internal_state.fees_token0 += fees0
+            self._internal_state.fees_token1 += fees1
+            if self.notional_side == "token0":
+                self._internal_state.cash += fees0 + fees1 * state.price
+            else:
+                self._internal_state.cash += fees1 + fees0 * state.price
+        else:
+            self._internal_state.cash += self.calculate_fees()
 
     @property
     def balance(self) -> float:
@@ -494,8 +654,38 @@ class UniswapV3LPEntity(BasePoolEntity):
             return 0.0
         return self.hodl_value - self.balance
 
+    def calculate_fees_from_growth(self) -> tuple[float, float]:
+        """Per-leg fees for the current bar from feeGrowth deltas.
+
+        Pure (no mutation), the ``fee_growth`` twin of
+        :meth:`calculate_fees`: in-range gate, then
+        :func:`position_fees_from_growth` with pool-liquidity dilution.
+        ``protocol_fee`` is NOT applied — the counter is already net of it.
+
+        Returns:
+            ``(fees_token0, fees_token1)`` in human token units.
+        """
+        p = self._global_state.price
+        pl = self._internal_state.price_lower
+        pu = self._internal_state.price_upper
+        if p <= 0 or pl <= 0 or pu <= 0:
+            return 0.0, 0.0
+        if p <= pl or p >= pu:
+            return 0.0, 0.0
+        return position_fees_from_growth(
+            fee_growth0=self._global_state.fee_growth0 or 0.0,
+            fee_growth1=self._global_state.fee_growth1 or 0.0,
+            liquidity=self._internal_state.liquidity,
+            token0_decimal=self.token0_decimals,
+            token1_decimal=self.token1_decimals,
+            pool_liquidity=self._global_state.liquidity,
+        )
+
     def calculate_fees(self) -> float:
         """Pro-rata share of pool swap-fees over the previous bar.
+
+        The L-share of the bar's total fees is scaled by
+        ``1 − protocol_fee`` (see :class:`UniswapV3LPConfig`).
 
         Returns 0 when out of range or when any of ``p``, ``pl``, ``pu`` is
         non-positive (degenerate state — e.g. fresh entity before first
@@ -538,11 +728,15 @@ class UniswapV3LPEntity(BasePoolEntity):
             liquidity_delta=delta_liquidity,
             liquidity=self._global_state.liquidity,
             fees=self._global_state.fees,
-        )
+        ) * (1 - self.protocol_fee)
         return min(fees, self._global_state.fees)
 
-    def price_to_tick(self, price: float) -> float:
-        return np.floor(np.log(price) / np.log(1.0001))
+    @staticmethod
+    def price_to_tick(price: float, token0_decimals: int = 0, token1_decimals: int = 0) -> float:
+        """Tick for a token1-per-token0 price; pass decimals for human units."""
+        return np.floor(np.log(price / 10 ** (token0_decimals - token1_decimals)) / np.log(1.0001))
 
-    def tick_to_price(self, tick: float) -> float:
-        return 1.0001**tick
+    @staticmethod
+    def tick_to_price(tick: float, token0_decimals: int = 0, token1_decimals: int = 0) -> float:
+        """Token1-per-token0 price of a tick; pass decimals for human units."""
+        return model_tick_to_price(tick, token0_decimals, token1_decimals)

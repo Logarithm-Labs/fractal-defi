@@ -6,7 +6,7 @@ subgraphs). Concrete loaders supply a subgraph id; this class handles
 URL construction, transport, error wrapping.
 """
 import re
-from typing import Any, Dict, Optional
+from typing import Any
 
 from fractal.loaders._http import HttpClient
 from fractal.loaders.base_loader import Loader, LoaderType
@@ -43,7 +43,7 @@ class BaseGraphLoader(Loader):
         api_key: str,
         subgraph_id: str,
         loader_type: LoaderType,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(loader_type=loader_type)
         if not api_key:
@@ -53,7 +53,7 @@ class BaseGraphLoader(Loader):
         self._url: str = f"{root_url}/{api_key}/subgraphs/id/{subgraph_id}"
         self._http: HttpClient = http or HttpClient()
 
-    def _make_request(self, query: str, *args, **kwargs) -> Dict[str, Any]:
+    def _make_request(self, query: str, *args, **kwargs) -> dict[str, Any]:
         """Run a GraphQL query and return the ``data`` payload."""
         payload = self._http.post(self._url, json={"query": query})
         if not isinstance(payload, dict):
@@ -76,7 +76,7 @@ class ArbitrumGraphLoader(BaseGraphLoader):
         api_key: str,
         subgraph_id: str,
         loader_type: LoaderType,
-        http: Optional[HttpClient] = None,
+        http: HttpClient | None = None,
     ) -> None:
         super().__init__(
             root_url=self.ROOT_URL,

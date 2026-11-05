@@ -8,12 +8,13 @@ the process happens to start.
 Supports use as a context manager so the underlying connection is
 closed deterministically.
 """
+import contextlib
 import os
 import pickle
 import sqlite3
 import tempfile
+from collections.abc import Sequence
 from datetime import datetime
-from typing import Optional, Sequence
 from uuid import uuid4
 
 from fractal.core.base.observations.observation import Observation
@@ -22,7 +23,7 @@ from fractal.core.base.observations.observations_storage import ObservationsStor
 
 class SQLiteObservationsStorage(ObservationsStorage):
 
-    def __init__(self, db_path: Optional[str] = None):
+    def __init__(self, db_path: str | None = None):
         """
         Args:
             db_path: Path to the SQLite file. ``None`` or empty string ⇒
@@ -60,8 +61,8 @@ class SQLiteObservationsStorage(ObservationsStorage):
 
     def read(
         self,
-        start_time: Optional[datetime] = None,
-        end_time: Optional[datetime] = None,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
     ) -> Sequence[Observation]:
         cursor = self.connection.cursor()
         query = "SELECT observation FROM observations"
@@ -103,7 +104,5 @@ class SQLiteObservationsStorage(ObservationsStorage):
         # Best-effort fallback — proper cleanup is via ``close()`` or
         # ``with`` block. Suppress any errors that may arise during
         # interpreter shutdown.
-        try:
+        with contextlib.suppress(Exception):  # pragma: no cover  # pylint: disable=broad-exception-caught
             self.close()
-        except Exception:  # pragma: no cover  # pylint: disable=broad-exception-caught
-            pass

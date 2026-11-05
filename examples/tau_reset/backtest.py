@@ -1,6 +1,5 @@
 import os
 from datetime import UTC, datetime
-from typing import List
 
 import pandas as pd
 
@@ -21,8 +20,8 @@ THE_GRAPH_API_KEY = os.getenv('THE_GRAPH_API_KEY')
 
 def get_observations(
         pool_data: PoolHistory, price_data: PriceHistory,
-        start_time: datetime = None, end_time: datetime = None
-    ) -> List[Observation]:
+        start_time: datetime | None = None, end_time: datetime | None = None
+    ) -> list[Observation]:
     """
     Get observations from the pool and price data for the TauResetStrategy.
 
@@ -50,8 +49,8 @@ def get_observations(
 
 def build_observations(
         ticker: str, pool_address: str, api_key: str,
-        start_time: datetime = None, end_time: datetime = None, fidelity: str = 'hour',
-    ) -> List[Observation]:
+        start_time: datetime | None = None, end_time: datetime | None = None, fidelity: str = 'hour',
+    ) -> list[Observation]:
     """
     Build observations for the TauResetStrategy from the given start and end time.
     """
@@ -97,7 +96,7 @@ if __name__ == '__main__':
 
     # Build observations
     entities = strategy.get_all_available_entities().keys()
-    observations: List[Observation] = build_observations(
+    observations: list[Observation] = build_observations(
         ticker=ticker, pool_address=pool_address, api_key=THE_GRAPH_API_KEY,
         start_time=datetime(2025, 1, 11, tzinfo=UTC), end_time=datetime(2025, 2, 11, tzinfo=UTC),
         fidelity='hour'

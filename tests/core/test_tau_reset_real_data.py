@@ -10,6 +10,9 @@ from fractal.core.base import Observation  # noqa: E402
 from fractal.core.entities import UniswapV3LPGlobalState  # noqa: E402
 from fractal.strategies.tau_reset_strategy import TauResetParams, TauResetStrategy  # noqa: E402
 
+# Ratio metrics that are ``+inf`` by policy when a path has no observed downside.
+UNBOUNDED_RATIO_METRICS = {"sortino", "calmar", "omega_ratio"}
+
 _FIXTURE = (Path(__file__).resolve().parents[2]
             / "examples" / "tau_reset" / "tau_strategy_result.csv")
 
@@ -51,9 +54,14 @@ def test_tau_reset_runs_on_real_data_one_week():
     assert final > 0
     metrics = result.get_default_metrics()
     metric_dict = metrics.__dict__ if hasattr(metrics, "__dict__") else dict(metrics)
-    for value in metric_dict.values():
-        if isinstance(value, (int, float)):
-            assert math.isfinite(value)
+    for key, value in metric_dict.items():
+        if not isinstance(value, (int, float)):
+            continue
+        if key in UNBOUNDED_RATIO_METRICS:
+            # ``+inf`` by policy when the path has no observed downside.
+            assert not math.isnan(value) and value != -math.inf, key
+        else:
+            assert math.isfinite(value), key
 
 
 @pytest.mark.slow

@@ -360,3 +360,98 @@ def test_v3_round_trip_cost_invariant_under_notional_flip():
     e0.action_close_position()
     e1.action_close_position()
     assert e0._internal_state.cash == pytest.approx(e1._internal_state.cash)
+
+
+def _v3_gas(
+    gas_mint=0.0, gas_burn=0.0, gas_collect=0.0,
+    pool_fee_rate=0.003, slippage_pct=0.0, notional_side="token0",
+):
+    cfg = UniswapV3LPConfig(
+        pool_fee_rate=pool_fee_rate,
+        slippage_pct=slippage_pct,
+        notional_side=notional_side,
+        gas_cost_per_mint=gas_mint,
+        gas_cost_per_burn=gas_burn,
+        gas_cost_per_collect=gas_collect,
+    )
+    e = UniswapV3LPEntity(cfg)
+    e.update_state(UniswapV3LPGlobalState(tvl=1_000_000, liquidity=1_000_000,
+                                          price=1.0, fees=0, volume=0))
+    return e
+
+
+@pytest.mark.core
+def test_v3_zero_gas_default_is_parity_with_legacy():
+    """Default config (no gas fields set) and explicit zero-gas config must
+    produce byte-identical cash on a full open/close round-trip — the
+    backwards-compatibility guarantee for the gas-aware additions."""
+    legacy = _v3()
+    explicit_zero = _v3_gas(gas_mint=0.0, gas_burn=0.0, gas_collect=0.0)
+    for e in (legacy, explicit_zero):
+        e.action_deposit(1000)
+        e.action_open_position(500, 0.9, 1.1)
+        e.action_close_position()
+    assert legacy._internal_state.cash == explicit_zero._internal_state.cash
+
+
+@pytest.mark.core
+def test_v3_gas_aware_round_trip_cost_decomposes():
+    """With non-zero gas and zero swap fees, a round-trip costs exactly
+    ``gas_mint + gas_burn + gas_collect`` — gas is an additive haircut
+    cleanly separable from swap-fee cost."""
+    e = _v3_gas(
+        gas_mint=2.5, gas_burn=1.5, gas_collect=1.0,
+        pool_fee_rate=0.0, slippage_pct=0.0,
+    )
+    e.action_deposit(1000)
+    e.action_open_position(500, 0.9, 1.1)
+    e.action_close_position()
+    cost = 1000.0 - e._internal_state.cash
+    assert cost == pytest.approx(2.5 + 1.5 + 1.0)
+
+
+@pytest.mark.core
+def test_v3_gas_independent_of_position_size():
+    """Gas is a flat per-action cost — opening 500 or 50 charges the same
+    ``gas_cost_per_mint``. This is the invariant that distinguishes gas
+    from swap-fee cost (which scales with swap volume)."""
+    small = _v3_gas(gas_mint=10.0, pool_fee_rate=0.0)
+    big = _v3_gas(gas_mint=10.0, pool_fee_rate=0.0)
+    small.action_deposit(1000)
+    big.action_deposit(1000)
+    small.action_open_position(50, 0.9, 1.1)
+    big.action_open_position(500, 0.9, 1.1)
+    # Pre-action cash was 1000 in both. With zero swap fees, the only cost
+    # is the gas haircut, identical between the two regardless of size.
+    small_cost = 1000.0 - small.balance
+    big_cost = 1000.0 - big.balance
+    assert small_cost == pytest.approx(10.0)
+    assert big_cost == pytest.approx(10.0)
+
+
+@pytest.mark.core
+def test_v3_gas_haircut_can_drive_cash_negative():
+    """Entity does not protect cash from going negative — caller's job to
+    affordability-check. Mirrors the existing contract: ``action_withdraw``
+    guards against insufficient funds, but mint/burn-side costs do not.
+    Documenting this as an invariant lock-in."""
+    e = _v3_gas(gas_mint=1500.0, pool_fee_rate=0.0)
+    e.action_deposit(1000)
+    e.action_open_position(500, 0.9, 1.1)
+    # Cash went negative — entity must not raise.
+    assert e._internal_state.cash < 0
+
+
+@pytest.mark.core
+def test_v3_gas_invariant_under_notional_flip():
+    """Same gas config → identical round-trip cost regardless of which
+    on-chain slot is the notional side."""
+    e0 = _v3_gas(gas_mint=3.0, gas_burn=2.0, gas_collect=1.0, notional_side="token0")
+    e1 = _v3_gas(gas_mint=3.0, gas_burn=2.0, gas_collect=1.0, notional_side="token1")
+    e0.action_deposit(1000)
+    e1.action_deposit(1000)
+    e0.action_open_position(500, 0.9, 1.1)
+    e1.action_open_position(500, 0.9, 1.1)
+    e0.action_close_position()
+    e1.action_close_position()
+    assert e0._internal_state.cash == pytest.approx(e1._internal_state.cash)
