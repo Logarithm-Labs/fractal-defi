@@ -21,8 +21,8 @@ repository-code: "https://github.com/Logarithm-Labs/fractal-defi"
 url: "https://github.com/Logarithm-Labs/fractal-defi"
 identifiers:
   - type: doi
-    value: 10.5281/zenodo.20049905
-    description: "Archived snapshot of version 1.3.2 on Zenodo"
+    value: 10.5281/zenodo.23982036
+    description: "Archived snapshot of version 1.4.0 on Zenodo"
 keywords:
   - defi
   - backtesting

@@ -224,35 +224,35 @@ defers the failure.
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every PR and push to `main` or
-`dev`:
+`.github/workflows/ci.yml` runs on every pull request to `main` or
+`dev` and on manual `workflow_dispatch`. There are no `push`
+triggers: every change lands through a PR and is gated there.
 
-| Job | Light (always) | Heavy (release-context only) |
+| Job | PR to `dev` | PR to `main` / manual run |
 |---|---|---|
-| `lint` (pre-commit) | ✓ every push + PR | |
-| `core-tests` (Python 3.10–3.13 matrix) | ✓ every push + PR | |
+| `lint` (pre-commit) | ✓ | ✓ |
+| `core-tests` (Python 3.10–3.13 matrix) | ✓ | ✓ |
 | `docs` (Sphinx, `-W`) | | ✓ |
 | `slow-tests` (CSV-replay, `-m slow`) | | ✓ |
 | `integration-tests` (live APIs, `-m integration`) | | ✓ |
 | `smoke` (wheel build + install + tests) | | ✓ |
 | `e2e-mlflow` (Docker harness) | | ✓ |
+| `release-check` (`make release-check`) | | PR to `main` only |
+| `guard-release-source` (only `dev` → `main`) | | PR to `main` only |
+| `benchmarks` | | manual run only |
 
-**Light jobs** (`lint`, `core-tests`) run on every push and pull-request
-— this is the universal "is the framework still working" gate. Total
-runtime ≈ 2-5 min.
+`graph-impact` (`.github/workflows/gitnexus.yml`) reports the
+GitNexus blast radius of each PR.
 
-**Heavy jobs** (everything else) run only in **release-context**:
-
-- push to `main` (the post-merge run)
-- manual `workflow_dispatch` from the Actions UI
-- a pull request `dev → main` (the release PR)
+**Light jobs** (`lint`, `core-tests`) are the universal "is the
+framework still working" gate, ≈ 2-5 min. **Heavy jobs** run only
+in release context — a `dev → main` PR or a manual run from
+**Actions → CI → Run workflow** — ≈ 10-15 min.
 
 Gitflow at this project is strict: **only `dev` is ever merged to
-`main`**. Feature branches and hotfixes go to `dev` first. A guard
-job (`Enforce gitflow (dev → main only)`) auto-fails CI on any PR
-to `main` whose source branch is not `dev`, so a stray
-`feature → main` or `hotfix → main` PR is rejected before reviewers
-even look. Total release-context runtime ≈ 10-15 min.
+`main`**. Feature branches and hotfixes go to `dev` first. The
+`Enforce gitflow (dev → main only)` job fails CI on any PR to `main`
+whose source branch is not `dev`.
 
 The `smoke` job uploads the freshly built ``dist/*.whl`` +
 ``dist/*.tar.gz`` as a workflow artifact (``fractal-defi-dist``,
@@ -271,9 +271,9 @@ lint  (always)
               docs runs in parallel with core-tests when triggered)
 ```
 
-PR feedback stays fast (lint + core + docs ≈ 2 min). Heavier suites
-that talk to the network or spin up Docker run on schedule + on demand
-to avoid blocking PRs on flaky upstreams.
+PR feedback stays fast (lint + core ≈ 2-5 min). Heavier suites that
+talk to the network or spin up Docker run only in release context, so
+flaky upstreams do not block feature PRs.
 
 To trigger a manual run, go to **Actions → CI → Run workflow** and
 pick the branch. To run only one job from a PR, push a draft commit
@@ -303,17 +303,27 @@ Adding an example under `examples/<name>/`:
 ## Releasing (maintainers)
 
 ```bash
-# 1. Bump setup.py version to <next>
-# 2. Move CHANGELOG.md "[v<next>] — Unreleased" to "[v<next>] — YYYY-MM-DD"
-# 3. Commit on dev: chore: bump version to <next>
-# 4. Open PR dev → main, squash-merge after review
-
-git checkout main && git pull
-git tag v<next>
-git push origin v<next>
-python -m build
-twine upload dist/*
+# 1. On dev: bump the version in setup.py, date the CHANGELOG
+#    section, update CITATION.cff and the README BibTeX version.
+make release-check            # versions, deps, docs pages, exports, examples
+# 2. Open the PR dev → main (body: .github/RELEASE_TEMPLATE.md) and
+#    wait for the full release-context CI.
+# 3. Squash-merge it. Keep GitHub's default squash message, or copy its
+#    `Co-authored-by:` lines into yours: feature work reaches `main`
+#    only through this commit, so these trailers are how external
+#    contributors are credited on the repository page. Use one closing
+#    keyword per issue (`Closes #1, closes #2`).
+git fetch origin && git tag vX.Y.Z origin/main && git push origin vX.Y.Z
+gh release create vX.Y.Z --verify-tag --latest --notes-file <changelog section>
+# 4. Publish from a clean checkout of the tag.
+git worktree add ../fractal-vX.Y.Z vX.Y.Z && cd ../fractal-vX.Y.Z
+make smoke && make release     # TWINE_PASSWORD in .env
+# 5. Realign dev with main (hard reset + force-push, asks y/N).
+cd - && git switch dev && make post-release
 ```
+
+The GitHub release triggers the Zenodo archive; put the new version
+DOI into `CITATION.cff` (`identifiers`) in a follow-up PR.
 
 ## Getting unstuck
 

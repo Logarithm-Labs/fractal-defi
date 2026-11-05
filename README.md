@@ -26,24 +26,33 @@ strategy code.
 ## Features
 
 - **Protocol-agnostic entities.** Concrete implementations for Aave V3
-  lending, Hyperliquid perps, Uniswap V2/V3 LP and spot, Lido stETH,
-  plus generic `Simple*` building blocks. Each entity is a typed state
+  lending (with opt-in partial liquidation and a reserve supply cap),
+  Morpho Blue borrowing and supply, Pendle PT, Boros yield units,
+  Hyperliquid perps, Uniswap V2/V3 LP and spot, Lido stETH, plus
+  generic `Simple*` building blocks. Each entity is a typed state
   machine with `update_state` for accruals and protocol-correct
   `action_*` methods.
 - **Composable strategies.** Register any number of entities under
   named slots, return `ActionToTake` from a single `predict()` hook,
-  get a typed `StrategyResult` with metrics and a flat DataFrame.
+  get a typed `StrategyResult` with metrics, per-trade execution
+  records and a flat DataFrame; moving-block bootstrap confidence
+  intervals for the metrics.
+- **Exact LP fee replication.** Uniswap V3 fees accrue per leg from
+  the pool's `feeGrowthGlobal` counters, validated 1:1 against real
+  on-chain positions.
 - **Live + synthetic data.** Loaders for Binance public REST,
   Hyperliquid info API, Aave V3 GraphQL, GMX, TheGraph (Uniswap V2/V3,
-  Lido), plus log-normal GBM and bootstrap simulators for offline
-  stress tests.
+  Lido), Morpho Blue, Pendle, Boros, DefiLlama, FRED, Etherscan and
+  generic on-chain logs (per-network gas history, Morpho oracle
+  prices, Uniswap V3 swaps), plus log-normal GBM and bootstrap
+  simulators for offline stress tests.
 - **Experiment tracking.** `DefaultPipeline` runs your strategy across
   a parameter grid, logs metrics + artifacts per run via MLflow, and
   supports sliding-window scenarios for stability analysis.
 - **Type-safe and dev-friendly.** `BaseStrategy[Params]` generic +
   dataclass coercion, atomic per-action validation, delegate-resolved
   action arguments, deterministic replay.
-- **Battle-tested.** 1100+ unit / invariant / real-data / integration
+- **Battle-tested.** 2000+ unit / invariant / real-data / integration
   tests, plus a Docker-based end-to-end MLflow harness in
   `tests/mlflow_tests/`.
 
@@ -53,11 +62,12 @@ strategy code.
 fractal/
 ├── core/
 │   ├── base/           # Entity / Strategy / Observation contracts
-│   ├── entities/       # Aave, Hyperliquid, Uniswap V2/V3, stETH, simple/*
+│   ├── entities/       # Aave, Morpho, Pendle PT, Boros, Hyperliquid, Uniswap V2/V3, stETH, simple/*
 │   └── pipeline.py     # MLflow grid-search pipelines
-├── loaders/            # Binance / Hyperliquid / Aave / GMX / TheGraph / sims
-└── strategies/         # BasisTrading, HyperliquidBasis, TauReset
-examples/               # quick_start, basis, tau_reset, holder, agentic_trader
+├── loaders/            # Binance / Hyperliquid / Aave / GMX / TheGraph / Morpho / Pendle / Boros /
+│                       # DefiLlama / FRED / Etherscan / onchain / sims
+└── strategies/         # basis, τ-reset and fixed-range LP, Pendle PT carry, Morpho supply
+examples/               # quick_start, basis, tau_reset, pendle_pt_backtests, morpho_supply, ...
 docs/                   # Sphinx site (make html)
 tests/
 ├── core/               # offline unit + invariant + e2e synthetic
@@ -166,6 +176,7 @@ below.
 | [`examples/ml_funding_rate_forecasting/`](examples/ml_funding_rate_forecasting/) | ML pipeline: forecasting Binance funding rates with feature engineering + CatBoost |
 | [`examples/pendle_pt_backtests/`](examples/pendle_pt_backtests/) | Pendle PT looping on Morpho Blue and PT carry hedged with a perp (+ Boros funding lock) on real data |
 | [`examples/susde_pt_carry/`](examples/susde_pt_carry/) | sUSDe PT leveraged loans with and without a Boros yield-unit overlay on eight markets; MLflow grid and an analysis notebook |
+| [`examples/dex_replication_backtest/`](examples/dex_replication_backtest/) | Replicate real Uniswap V3 LP positions on Base 1:1 and validate backtested fees against on-chain accounting |
 | [`examples/morpho_supply/`](examples/morpho_supply/) | Morpho Blue supply: single-position rotation and multi-market allocation on live hourly data, plus a replication of Baude et al. (arXiv:2608.24206) |
 
 After cloning the repo and installing the package, run an example
