@@ -79,14 +79,31 @@ def test_version_date_and_unreleased_drift_is_reported(tmp_path, monkeypatch):
     assert "[Unreleased] is not empty" in text
 
 
-@pytest.mark.core
-def test_existing_tag_means_the_version_was_not_bumped(tmp_path, monkeypatch):
+def _tagged_repo(tmp_path, monkeypatch, changed_file):
     root = _repo(tmp_path, monkeypatch)
     _git(root, "add", "-A")
     _git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "init")
     _git(root, "tag", "v1.4.0")
+    (root / changed_file).parent.mkdir(exist_ok=True)
+    (root / changed_file).write_text("changed\n")
+    _git(root, "add", "-A")
+    _git(root, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "after the tag")
+
+
+@pytest.mark.core
+def test_existing_tag_with_package_changes_means_the_version_was_not_bumped(tmp_path, monkeypatch):
+    _tagged_repo(tmp_path, monkeypatch, "fractal/new_module.py")
     release_check.check_versions("HEAD")
-    assert release_check.PROBLEMS == ["[versions] tag v1.4.0 already exists: the version was not bumped"]
+    assert release_check.PROBLEMS == [
+        "[versions] tag v1.4.0 already exists and the package changed since: bump the version"
+    ]
+
+
+@pytest.mark.core
+def test_docs_only_follow_up_to_a_tagged_release_passes(tmp_path, monkeypatch):
+    _tagged_repo(tmp_path, monkeypatch, "docs/guide.md")
+    release_check.check_versions("HEAD")
+    assert not release_check.PROBLEMS
 
 
 @pytest.mark.core

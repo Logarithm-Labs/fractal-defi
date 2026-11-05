@@ -8,8 +8,9 @@ Workflow:
   3. Replace every ``<...>`` placeholder. Drop sections that don't apply
      (HTML comments tell you which are conditional).
   4. Run the ``Pre-merge checklist`` commands locally; tick each box.
-  5. After squash-merge, create a GitHub Release from the ``vX.Y.Z`` tag —
-     paste the same body (or use ``--generate-notes`` and trim).
+  5. Squash-merge keeping the ``Co-authored-by:`` lines of GitHub's
+     default squash message: they credit external contributors on
+     ``main``. Then tag, create the GitHub Release and publish (below).
 
 Keep it human-readable. The ``CHANGELOG.md`` already holds the exhaustive
 list — this template is the elevator pitch.
@@ -49,6 +50,14 @@ list — this template is the elevator pitch.
 See [`CHANGELOG.md`](../CHANGELOG.md) `[v<X.Y.Z>]` section for the
 complete list grouped by area.
 
+### Closes
+
+<!-- One keyword per issue: GitHub links only the first number of
+     ``Closes #1, #2``. Feature PRs target ``dev``, so their own
+     keywords never fire; list every issue the release finishes. -->
+
+Closes #<a>, closes #<b>
+
 ### Pre-merge checklist
 
 <!-- Run these locally before requesting review. The numbers come from
@@ -57,6 +66,7 @@ complete list grouped by area.
      only after the command actually finished green; an unchecked box
      is a real to-do, not a placeholder. -->
 
+- [ ] `make release-check` green
 - [ ] `make smoke` green locally (build wheel + install + tests against it)
 - [ ] `make pre-commit` green (lint at 10/10, ruff clean)
 - [ ] `make docs-strict` builds with 0 warnings
@@ -74,27 +84,19 @@ complete list grouped by area.
      the PR reviewer — but having it inline keeps you from forgetting. -->
 
 ```bash
-# 1. Pull main locally
-git checkout main && git pull
+# 1. Tag the squash commit on main and create the GitHub Release
+#    (it triggers the Zenodo archive)
+git fetch origin && git tag v<X.Y.Z> origin/main && git push origin v<X.Y.Z>
+gh release create v<X.Y.Z> --verify-tag --latest --notes-file <CHANGELOG section>
 
-# 2. Build + smoke
-make clean && make smoke
-
-# 3. (optional) TestPyPI dry-run
-make release-test
-
-# 4. Production PyPI
+# 2. Build, smoke and publish from a clean checkout of the tag
+git worktree add ../fractal-v<X.Y.Z> v<X.Y.Z> && cd ../fractal-v<X.Y.Z>
+make smoke
+make release-test   # optional TestPyPI dry-run
 make release
 
-# 5. Tag the release commit + push tag
-git tag -a v<X.Y.Z> -m "v<X.Y.Z>"
-git push origin v<X.Y.Z>
+# 3. Re-align dev with main (post squash-merge sync)
+cd - && git checkout dev && make post-release
 
-# 6. GitHub Release from the tag, attach wheel + sdist
-gh release create v<X.Y.Z> --generate-notes \
-    dist/fractal_defi-<X.Y.Z>-py3-none-any.whl \
-    dist/fractal_defi-<X.Y.Z>.tar.gz
-
-# 7. Re-align dev with main (post squash-merge sync)
-git checkout dev && make post-release
+# 4. Follow-up PR to dev: the new Zenodo version DOI in CITATION.cff
 ```

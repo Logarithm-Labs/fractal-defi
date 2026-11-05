@@ -28,6 +28,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+_PACKAGE_PATHS = ("fractal", "setup.py", "requirements.txt")
 PROBLEMS: list[str] = []
 
 
@@ -58,8 +59,9 @@ def check_versions(_base: str) -> None:
     if unreleased and unreleased.group(1).strip():
         problem("versions", "CHANGELOG [Unreleased] is not empty: fold it into the release section")
     tags = git("tag", "--list", f"v{setup_v}").strip()
-    if tags:
-        problem("versions", f"tag v{setup_v} already exists: the version was not bumped")
+    # A docs-only follow-up to an already tagged release keeps its version.
+    if tags and git("diff", "--name-only", f"v{setup_v}", "HEAD", "--", *_PACKAGE_PATHS).strip():
+        problem("versions", f"tag v{setup_v} already exists and the package changed since: bump the version")
 
 
 # ---------------------------------------------------------------- deps
