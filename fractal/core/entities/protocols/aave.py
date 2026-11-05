@@ -4,6 +4,11 @@ from dataclasses import dataclass
 
 from fractal.core.base.entity import EntityException, GlobalState, InternalState
 from fractal.core.entities.base.lending import BaseLendingEntity
+from fractal.core.entities.models.aave_math import liquidation_call
+
+LIQUIDATION_MODES = ("full", "partial")
+# Capped calls halve the debt until a call may close it (HF <= 0.95 or under $2000); 256 is far above any real run.
+_MAX_LIQUIDATION_CALLS = 256
 
 
 @dataclass
@@ -20,11 +25,18 @@ class AaveGlobalState(GlobalState):
         debt_price: Price of the borrowed asset in the same accounting unit.
         lending_rate: Per-step interest credited to collateral.
         borrowing_rate: Per-step interest charged on debt.
+        supply_cap: Supply cap of the collateral reserve in collateral
+            units (``getSupplyCap``). ``None`` (default) means no cap.
+        reserve_total_supply: Collateral supplied to the reserve by
+            everyone else, excluding this position (aToken total supply
+            plus ``accruedToTreasury``). Only used with ``supply_cap``.
     """
     collateral_price: float = 0.0
     debt_price: float = 0.0
     lending_rate: float = 0.0
     borrowing_rate: float = 0.0
+    supply_cap: float | None = None
+    reserve_total_supply: float = 0.0
 
 
 @dataclass
@@ -65,6 +77,16 @@ class AaveEntity(BaseLendingEntity):
     * :attr:`collateral_value` — collateral in the accounting unit.
     * :attr:`debt_value` — debt in the accounting unit.
     * :attr:`health_factor` — distance to liquidation (``liq_thr / ltv``).
+
+    Liquidation modes (``liquidation_mode``):
+
+    * ``"full"`` (default) — once ``ltv >= liq_thr`` both legs are wiped,
+      a deliberate worst case.
+    * ``"partial"`` — Aave V3 ``liquidationCall`` as in
+      :func:`~fractal.core.entities.models.aave_math.liquidation_call`:
+      below HF 1 liquidators repay up to 50% of the debt (100% at
+      HF ≤ 0.95 or under $2000) and seize ``repaid × liquidation_bonus``
+      of collateral, repeating while HF stays below 1.
     """
 
     _internal_state: AaveInternalState
@@ -76,8 +98,21 @@ class AaveEntity(BaseLendingEntity):
         max_ltv: float = 0.8,
         liq_thr: float = 0.85,
         collateral_is_volatile: bool = False,
+        liquidation_mode: str = "full",
+        liquidation_bonus: float | None = None,
         **kwargs,
     ):
+        """
+        Args:
+            max_ltv: Maximum LTV for borrowing and withdrawals.
+            liq_thr: Liquidation threshold.
+            collateral_is_volatile: Informational direction flag.
+            liquidation_mode: ``"full"`` (wipe, default) or ``"partial"``
+                (Aave V3 close factor and liquidation bonus).
+            liquidation_bonus: Collateral bonus of the reserve as a
+                multiplier (Aave stores ``10500`` for ``1.05``). Required
+                for ``"partial"``, rejected for ``"full"``.
+        """
         if not 0 < max_ltv <= 1:
             raise EntityException(f"max_ltv must be in (0, 1], got {max_ltv}")
         if not 0 < liq_thr <= 1:
@@ -86,11 +121,29 @@ class AaveEntity(BaseLendingEntity):
             raise EntityException(
                 f"liq_thr ({liq_thr}) must be >= max_ltv ({max_ltv})"
             )
+        if liquidation_mode not in LIQUIDATION_MODES:
+            raise EntityException(
+                f"liquidation_mode must be one of {LIQUIDATION_MODES}, got {liquidation_mode!r}"
+            )
+        if liquidation_mode == "full" and liquidation_bonus is not None:
+            raise EntityException("liquidation_bonus only applies to liquidation_mode='partial'")
+        if liquidation_mode == "partial":
+            if liquidation_bonus is None:
+                raise EntityException("liquidation_bonus is required for liquidation_mode='partial'")
+            # PoolConfigurator.configureReserveAsCollateral: bonus > 100%, liq_thr · bonus <= 100%.
+            if liquidation_bonus <= 1:
+                raise EntityException(f"liquidation_bonus must be > 1, got {liquidation_bonus}")
+            if liq_thr * liquidation_bonus > 1:
+                raise EntityException(
+                    f"liq_thr · liquidation_bonus must be <= 1, got {liq_thr} · {liquidation_bonus}"
+                )
         # Set config BEFORE super so any subclass override of
         # ``_initialize_states`` can rely on ``self.max_ltv`` / ``self.liq_thr``.
         self.max_ltv: float = max_ltv
         self.liq_thr: float = liq_thr
         self.collateral_is_volatile: bool = collateral_is_volatile
+        self.liquidation_mode: str = liquidation_mode
+        self.liquidation_bonus: float | None = liquidation_bonus
         super().__init__(*args, **kwargs)
 
     def _initialize_states(self):
@@ -174,11 +227,21 @@ class AaveEntity(BaseLendingEntity):
 
         Args:
             amount_in_notional (float): The amount to be deposited in notional value.
+
+        Raises:
+            EntityException: when the amount is negative, or when
+                ``supply_cap`` is set and ``reserve_total_supply`` plus this
+                position's collateral plus the deposit would exceed it.
         """
         if amount_in_notional < 0:
             raise EntityException(
                 f"deposit amount must be >= 0, got {amount_in_notional}"
             )
+        cap = self._global_state.supply_cap
+        if cap is not None and (
+            self._global_state.reserve_total_supply + self._internal_state.collateral + amount_in_notional > cap
+        ):
+            raise EntityException("Exceeds the reserve supply cap.")
         self._internal_state.collateral += amount_in_notional
 
     def action_withdraw(self, amount_in_notional: float) -> None:
@@ -361,15 +424,40 @@ class AaveEntity(BaseLendingEntity):
         return self.liq_thr / ltv
 
     def _check_liquidation(self) -> None:
-        """Wipe position if LTV crosses liquidation threshold.
+        """Liquidate according to ``liquidation_mode``.
 
-        Liquidation when ``ltv >= liq_thr`` OR ``collateral == 0`` while
-        debt remains. Wipes both legs (loud / irreversible — model the
+        ``"full"``: liquidation when ``ltv >= liq_thr`` OR ``collateral == 0``
+        while debt remains. Wipes both legs (loud / irreversible — model the
         worst case rather than partial liquidations).
+
+        ``"partial"``: repeated Aave V3 ``liquidationCall`` while the health
+        factor is below 1 (see :func:`~fractal.core.entities.models.aave_math.liquidation_call`).
         """
+        if self.liquidation_mode == "partial":
+            self._liquidate_partially()
+            return
         if self._internal_state.collateral == 0 or self.ltv >= self.liq_thr:
             self._internal_state.collateral = 0
             self._internal_state.borrowed = 0
+
+    def _liquidate_partially(self) -> None:
+        """Apply ``liquidation_call`` until the position is healthy or the debt is gone."""
+        state = self._internal_state
+        for _ in range(_MAX_LIQUIDATION_CALLS):
+            debt_removed, seized = liquidation_call(
+                state.collateral,
+                state.borrowed,
+                self._global_state.collateral_price,
+                self._global_state.debt_price,
+                liq_thr=self.liq_thr,
+                liquidation_bonus=self.liquidation_bonus,
+            )
+            if debt_removed == 0 and seized == 0:
+                return
+            state.collateral = max(state.collateral - seized, 0.0)
+            state.borrowed = max(state.borrowed - debt_removed, 0.0)
+            if state.borrowed == 0:
+                return
 
     def check_liquidation(self) -> None:
         """Deprecated public alias of :meth:`_check_liquidation`.
@@ -390,8 +478,15 @@ class AaveEntity(BaseLendingEntity):
     def update_state(self, state: AaveGlobalState):
         """Apply Aave market state, accrue interest on both legs, check liquidation.
 
-        Rates below ``-1`` would flip the balances negative; rejected loudly.
+        Rates below ``-1`` would flip the balances negative; rejected loudly,
+        as are a negative ``supply_cap`` or ``reserve_total_supply``.
         """
+        if state.supply_cap is not None and state.supply_cap < 0:
+            raise EntityException(f"supply_cap must be >= 0, got {state.supply_cap}")
+        if state.reserve_total_supply < 0:
+            raise EntityException(
+                f"reserve_total_supply must be >= 0, got {state.reserve_total_supply}"
+            )
         if state.lending_rate < -1:
             raise EntityException(
                 f"lending_rate must be >= -1, got {state.lending_rate}"
