@@ -6,6 +6,8 @@ from pathlib import Path
 import pytest
 
 _SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "release_check.py"
+if not _SCRIPT.exists():  # the wheel smoke harness runs a copy of tests/ outside the repository
+    pytest.skip("scripts/release_check.py is repo tooling, not part of the wheel", allow_module_level=True)
 _SPEC = importlib.util.spec_from_file_location("release_check", _SCRIPT)
 release_check = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(release_check)
