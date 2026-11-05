@@ -14,6 +14,10 @@ on:
   # a PR — pick a branch in Actions → CI → Run workflow.
   workflow_dispatch:
 
+# Least privilege: every job only reads the repository.
+permissions:
+  contents: read
+
 # Cancel an in-flight run for the same ref when a new commit lands.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -44,6 +48,30 @@ jobs:
             exit 1
           fi
           echo "PR head=$head → base=main ✓"
+
+  # 0b. Release consistency (``make release-check``): version, date and
+  #     CHANGELOG agree, ``[Unreleased]`` is folded in, the tag does not
+  #     exist yet, dependency floors match in all three places, every
+  #     module has a docs page, data files are whitelisted and examples'
+  #     imports resolve. Release PRs only — on dev between releases
+  #     ``[Unreleased]`` is legitimately non-empty.
+  release-check:
+    name: Release consistency (versions, deps, docs, examples)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0  # tags + origin/main for the version and data checks
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+      - name: Install the package (exports and examples are import-checked)
+        run: pip install -e .
+      - name: Run release checks
+        run: python scripts/release_check.py --base origin/main
 
   # 1. Pre-commit: trailing whitespace, ruff (lint + import sorting), pylint, etc.
   #    Same checks developers run locally — keeps CI in lockstep.
