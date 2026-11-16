@@ -4,10 +4,10 @@
 # mirrors them for ``pip install -r`` convenience. Keep in sync with
 # ``setup.py``.
 # ── runtime ───────────────────────────────────────────────────────
-mlflow>=3.17.2
+mlflow>=3.18.0
 pandas>=2.3.3
 numpy>=2.2.6
-loguru>=0.7.3
+loguru>=0.8.0
 requests>=2.34.2
 scikit-learn>=1.7.2
 # ── dev tooling ───────────────────────────────────────────────────
