@@ -6,6 +6,19 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
+### Examples
+
+- `dex_replication_backtest`: commit the 2026-09-10 two-month re-run
+  that the v1.4.0 notes cite (`results/rerun_2026-09-10/summary.csv`,
+  all 13 positions within 0.06%, pre-release build) and a five-month
+  re-run on release 1.4.0 (`results/rerun_2026-11-27/summary.csv`: 12
+  positions within 0.05%; EURC/USDC 0.3% at −1.0%, explained in the
+  README by the fee-growth model's dilution term). Document all
+  reference runs.
+- `dex_replication_backtest`: add `plot_methods_grid.py` (fee error and
+  wall time per method) and require `fractal-defi>=1.4.0`, which the
+  `fee_growth` model needs.
+
 ## [v1.4.0] — 2026-11-05
 
 Morpho Blue supply research tooling (a supply entity, rotation and
