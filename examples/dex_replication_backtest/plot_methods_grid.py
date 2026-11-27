@@ -12,7 +12,7 @@ Reads ``results/methods_grid_results.csv`` (written by
     python plot_methods_grid.py [CSV] [OUT]
 
 Defaults: ``results/methods_grid_results.csv`` -> ``results/methods_grid.pdf``.
-Needs matplotlib. This is Figure 3 of the Fractal JORS software paper.
+Needs matplotlib. The figure appears in the Fractal JORS software paper.
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ def main(csv_path: Path = DEFAULT_CSV, out: Path = DEFAULT_OUT) -> None:
 
     plt.rcParams.update({"font.family": "sans-serif", "font.size": 8, "axes.edgecolor": MUTED,
                          "axes.labelcolor": INK, "xtick.color": MUTED, "ytick.color": MUTED})
-    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(7.2, 3.1), gridspec_kw={"width_ratios": [1.55, 1]})
+    fig, (ax_a, ax_b) = plt.subplots(1, 2, figsize=(7.2, 2.75), gridspec_kw={"width_ratios": [1.55, 1]})
 
     x = range(len(df))
     for offset, (key, label, color, marker) in zip((-0.22, 0.0, 0.22), METHODS, strict=True):
