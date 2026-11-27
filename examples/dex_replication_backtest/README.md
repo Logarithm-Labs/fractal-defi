@@ -19,6 +19,7 @@ compared per token leg with the on-chain ground truth — the un-floored
 | `helpers.py` | Registry loading, on-chain ground truth (web3.py), observation building, mint-anchor correction. |
 | `backtest.py` | The replication run (`fee_model="fee_growth"`). Saves per-bar trajectories + `results/summary.csv`. |
 | `methods_grid_backtests.py` | Reproducible comparison of three fee-accounting methods over the same positions. |
+| `plot_methods_grid.py` | Plots `results/methods_grid_results.csv`: fee error per position and wall time per method. |
 
 ## Setup
 

@@ -1,2 +1,3 @@
-fractal-defi>=1.3.1
+fractal-defi>=1.4.0
 web3>=7.0.0
+matplotlib>=3.8
