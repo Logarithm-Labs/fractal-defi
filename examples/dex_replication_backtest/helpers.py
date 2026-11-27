@@ -208,7 +208,10 @@ def build_observations(df: pd.DataFrame) -> list[Observation]:
     """Assemble LP-entity observations. Bars are not filtered on ``tvl``
     (per-bar feeGrowth deltas are non-recoverable); ``None`` marks bars
     without feeGrowth data so the ``auto`` fee model falls back
-    explicitly.
+    explicitly. The subgraph's ``tvlUSD`` occasionally dips negative
+    (seen on ETH/cbBTC 1% in August 2026); ``tvl`` does not enter the
+    ``fee_growth`` accrual, so such bars are clamped to 0 instead of
+    aborting the run.
     """
     df = df.sort_index()
     has_growth = {"fee_growth0", "fee_growth1"}.issubset(df.columns)
@@ -217,7 +220,7 @@ def build_observations(df: pd.DataFrame) -> list[Observation]:
             timestamp=timestamp,
             states={
                 'UNISWAP_V3': UniswapV3LPGlobalState(
-                    price=row.price, tvl=row.tvl if pd.notna(row.tvl) else 0.0,
+                    price=row.price, tvl=max(row.tvl, 0.0) if pd.notna(row.tvl) else 0.0,
                     volume=row.volume,
                     fees=row.fees, liquidity=row.liquidity,
                     fee_growth0=row.fee_growth0 if has_growth else None,

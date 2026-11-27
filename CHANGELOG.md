@@ -6,6 +6,14 @@ with one-line bullets per change.
 
 ## [Unreleased]
 
+### Examples
+
+- `dex_replication_backtest`: commit the 2026-09-10 two-month re-run
+  (`results/rerun_2026-09-10/summary.csv`, all 13 positions within
+  0.06%) that the v1.4.0 notes cite, document both reference runs, and
+  clamp the subgraph's occasional negative `tvlUSD` to 0 so a fresh run
+  no longer aborts on it.
+
 ## [v1.4.0] — 2026-11-05
 
 Morpho Blue supply research tooling (a supply entity, rotation and

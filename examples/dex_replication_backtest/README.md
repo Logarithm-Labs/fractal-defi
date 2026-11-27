@@ -56,6 +56,23 @@ zero/missing; a backtest that accrued exactly nothing against positive
 truth reads as `0.0`. Positions with no hourly bars after the mint yet
 (fresh mints in quiet pools) are skipped with a warning.
 
+## Reference results
+
+Committed outputs from two runs of the same 13 positions (minted
+2026-07-03, Base); on-chain truth is anchored at the chain head of each
+run, so a fresh run measures a longer window and does not reproduce
+these files byte for byte.
+
+| Run | Window | Hourly bars / position | Files | Worst deviation (`fee_growth`, any leg) |
+|---|---|---|---|---|
+| 2026-07-09 | 2026-07-03 → 07-09 (~6 days) | 11–149 | `results/summary.csv`, `results/methods_grid_results.csv` | 0.14% |
+| 2026-09-10 | 2026-07-03 → 09-10 (~2 months) | 111–1664 | `results/rerun_2026-09-10/summary.csv` | 0.06% |
+
+The 2026-09-10 file is `backtest.py`'s `summary.csv` from that date.
+The worst position in both runs is ETH/USDC 0.03%; every other
+position and leg is within 0.02%. The three-method grid was run only
+in July.
+
 ## Fee-accounting methods
 
 | Method | Data | Idea |
