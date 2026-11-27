@@ -68,11 +68,22 @@ these files byte for byte.
 |---|---|---|---|---|
 | 2026-07-09 | 2026-07-03 → 07-09 (~6 days) | 11–149 | `results/summary.csv`, `results/methods_grid_results.csv` | 0.14% |
 | 2026-09-10 | 2026-07-03 → 09-10 (~2 months) | 111–1664 | `results/rerun_2026-09-10/summary.csv` | 0.06% |
+| 2026-11-27 | 2026-07-03 → 11-27 (~5 months) | 284–3534 | `results/rerun_2026-11-27/summary.csv` | 0.05% for 12 positions; EURC/USDC 0.3%: −1.0% USD (−1.5% token0) |
 
-The 2026-09-10 file is `backtest.py`'s `summary.csv` from that date.
-The worst position in both runs is ETH/USDC 0.03%; every other
-position and leg is within 0.02%. The three-method grid was run only
+Each file is `backtest.py`'s `summary.csv` from that date. The
+2026-11-27 run uses release 1.4.0; the earlier runs (and the grid) were
+produced during development with pre-release builds of the same models. The three-method grid was run only
 in July.
+
+The EURC/USDC 0.3% gap in the five-month run is the fee-growth model's
+dilution term, not missing data. `position_fees_from_growth` scales each
+bar by `pool_L / (pool_L + L_position)`, treating the position as liquidity
+added on top of the pool, which is right for counterfactuals. A replicated
+position is already inside `pool_L`, so the term undercounts; this is
+negligible while the position is a tiny share of the pool. This pool's
+active liquidity fell in October 2026 until the position was up to ~3% of
+it. Summing the same per-bar counter deltas × `L` without the term gives
+exactly the on-chain accrual.
 
 ## Fee-accounting methods
 
